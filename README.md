@@ -1,7 +1,5 @@
 # LawBot - Legal Assistant Mobile App
 
-![LawBot Logo](assets/images/logo.png)
-
 ## Overview
 
 LawBot is a comprehensive mobile application designed to provide accessible legal assistance and information about cybercrime laws in the Philippines. The app serves as a personal legal assistant, helping users understand complex legal concepts, access relevant resources, and get guidance on cybercrime-related issues.
