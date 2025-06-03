@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "940247359181",
+    "project_id": "lawbotfirebase",
+    "storage_bucket": "lawbotfirebase.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:940247359181:android:e24d9f7f6b8448405e5384",
+        "android_client_info": {
+          "package_name": "com.example.lawbot"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB7clmGkru3fQZAIJpfvOGlhgCkAb5VF8A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
