@@ -4,14 +4,14 @@ import 'package:provider/provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 
-class HomeTab extends StatefulWidget {
-  const HomeTab({super.key});
+class ChatTab extends StatefulWidget {
+  const ChatTab({super.key});
 
   @override
-  State<HomeTab> createState() => _HomeTabState();
+  State<ChatTab> createState() => _ChatTabState();
 }
 
-class _HomeTabState extends State<HomeTab> {
+class _ChatTabState extends State<ChatTab> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isTyping = false;

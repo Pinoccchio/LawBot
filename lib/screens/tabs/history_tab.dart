@@ -75,7 +75,7 @@ class _HistoryTabState extends State<HistoryTab> {
         backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
         elevation: 0,
         title: Text(
-          languageProvider.translate('chat_history'),
+          'Chat History',
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.bold,
@@ -177,7 +177,7 @@ class _HistoryTabState extends State<HistoryTab> {
                     const SizedBox(height: 16),
                     Text(
                       _chatHistory.isEmpty
-                          ? languageProvider.translate('no_chat_history')
+                          ? 'No chat history yet'
                           : languageProvider.translate('no_filtered_history'),
                       style: TextStyle(
                         fontSize: 16,

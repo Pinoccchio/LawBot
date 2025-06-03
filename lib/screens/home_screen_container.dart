@@ -3,7 +3,7 @@ import 'package:lawbot/screens/tabs/resources_tabs.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/language_provider.dart';
-import 'tabs/home_tab.dart';
+import 'tabs/chat_tab.dart';  // Updated import
 import 'tabs/history_tab.dart';
 import 'tabs/profile_tab.dart';
 import 'tabs/settings_tab.dart';
@@ -19,7 +19,7 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
   int _currentIndex = 0;
 
   final List<Widget> _tabs = [
-    const HomeTab(),
+    const ChatTab(),  // Updated from HomeTab to ChatTab
     const ResourcesTab(),
     const HistoryTab(),
     const ProfileTab(),
@@ -65,36 +65,40 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
           selectedLabelStyle: const TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 12,
+            letterSpacing: 0.5,
           ),
           unselectedLabelStyle: const TextStyle(
             fontWeight: FontWeight.w500,
             fontSize: 12,
+            letterSpacing: 0.5,
           ),
+          showSelectedLabels: true,
+          showUnselectedLabels: true,
           items: [
             BottomNavigationBarItem(
-              icon: const Icon(Icons.home_outlined),
-              activeIcon: const Icon(Icons.home),
-              label: languageProvider.translate('home'),
+              icon: const Icon(Icons.chat_outlined),
+              activeIcon: const Icon(Icons.chat),
+              label: languageProvider.translate('chat') ?? 'Chat',
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.library_books_outlined),
               activeIcon: const Icon(Icons.library_books),
-              label: languageProvider.translate('resources'),
+              label: languageProvider.translate('resources') ?? 'Resources',
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.history_outlined),
               activeIcon: const Icon(Icons.history),
-              label: languageProvider.translate('history'),
+              label: languageProvider.translate('history') ?? 'History',
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.person_outline),
               activeIcon: const Icon(Icons.person),
-              label: languageProvider.translate('profile'),
+              label: languageProvider.translate('profile') ?? 'Profile',
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.settings_outlined),
               activeIcon: const Icon(Icons.settings),
-              label: languageProvider.translate('settings'),
+              label: languageProvider.translate('settings') ?? 'Settings',
             ),
           ],
         ),
