@@ -80,7 +80,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   _buildWelcomePage(isDark, languageProvider),
                   _buildChatbotPage(isDark, languageProvider),
-                  _buildAnalyticsPage(isDark, languageProvider),
+                  _buildHistoryAndResourcesPage(isDark, languageProvider),
                 ],
               ),
             ),
@@ -346,14 +346,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildAnalyticsPage(bool isDark, LanguageProvider languageProvider) {
+  Widget _buildHistoryAndResourcesPage(bool isDark, LanguageProvider languageProvider) {
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const SizedBox(height: 20),
-          // Analytics Illustration
+          // History & Resources Illustration
           Container(
             width: 160,
             height: 160,
@@ -373,7 +373,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               alignment: Alignment.center,
               children: [
                 Icon(
-                  Icons.analytics_outlined,
+                  Icons.library_books_outlined,
                   size: 60,
                   color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
                 ),
@@ -381,10 +381,38 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   top: 25,
                   right: 25,
                   child: Container(
-                    width: 10,
-                    height: 10,
+                    width: 24,
+                    height: 24,
                     decoration: BoxDecoration(
-                      color: Colors.green,
+                      gradient: LinearGradient(
+                        colors: [Colors.amber[600]!, Colors.orange[600]!],
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.amber.withOpacity(0.5),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.bookmark,
+                      color: Colors.white,
+                      size: 12,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 25,
+                  left: 25,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.green[600]!, Colors.teal[600]!],
+                      ),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
@@ -393,6 +421,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           spreadRadius: 1,
                         ),
                       ],
+                    ),
+                    child: const Icon(
+                      Icons.history,
+                      color: Colors.white,
+                      size: 12,
                     ),
                   ),
                 ),
@@ -403,7 +436,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Title
           Text(
-            languageProvider.translate('prescriptive_analytics'),
+            'Organize & Access',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -415,7 +448,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Description
           Text(
-            languageProvider.translate('analytics_description'),
+            'Keep track of your legal conversations, save important advice, and access comprehensive legal resources whenever you need them.',
             style: TextStyle(
               fontSize: 14,
               color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -425,7 +458,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 32),
 
-          // Benefits
+          // Features
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -439,21 +472,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             child: Column(
               children: [
-                _buildBenefitItem(
-                  Icons.trending_up,
-                  languageProvider.translate('track_patterns'),
+                _buildFeatureItem(
+                  Icons.history,
+                  'Chat History - Review all your legal conversations',
                   isDark,
                 ),
                 const SizedBox(height: 12),
-                _buildBenefitItem(
-                  Icons.lightbulb_outline,
-                  languageProvider.translate('get_recommendations'),
+                _buildFeatureItem(
+                  Icons.bookmark,
+                  'Saved Advice - Bookmark important legal guidance',
                   isDark,
                 ),
                 const SizedBox(height: 12),
-                _buildBenefitItem(
-                  Icons.notifications_active,
-                  languageProvider.translate('receive_alerts'),
+                _buildFeatureItem(
+                  Icons.library_books,
+                  'Legal Resources - Access comprehensive law references',
+                  isDark,
+                ),
+                const SizedBox(height: 12),
+                _buildFeatureItem(
+                  Icons.category,
+                  'Organized by Category - Find information by legal topic',
                   isDark,
                 ),
               ],
@@ -529,28 +568,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ),
         const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 13,
-              color: isDark ? Colors.grey[300] : Colors.grey[700],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBenefitItem(IconData icon, String text, bool isDark) {
-    return Row(
-      children: [
-        Icon(
-          icon,
-          color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-          size: 20,
-        ),
-        const SizedBox(width: 12),
         Expanded(
           child: Text(
             text,

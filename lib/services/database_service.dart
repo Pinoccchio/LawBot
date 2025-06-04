@@ -1,14 +1,22 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:uuid/uuid.dart';
 import 'dart:io';
 import 'dart:typed_data';
+import '../utils/philippine_time.dart';
 
 class DatabaseService {
   final SupabaseClient _supabase = Supabase.instance.client;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final Uuid _uuid = const Uuid();
 
   // Get current user ID from Firebase
   String? get currentUserId => _auth.currentUser?.uid;
+
+  // Generate session ID for conversation grouping
+  String generateSessionId() {
+    return _uuid.v4();
+  }
 
   // User Profile Operations
   Future<Map<String, dynamic>?> getUserProfile() async {
@@ -38,6 +46,8 @@ class DatabaseService {
         'firebase_uid': firebaseUid,
         'email': email,
         'full_name': fullName,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (e) {
       print('Error creating user profile: $e');
@@ -55,7 +65,7 @@ class DatabaseService {
       if (currentUserId == null) throw 'User not authenticated';
 
       final updateData = <String, dynamic>{
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 
       if (fullName != null) updateData['full_name'] = fullName;
@@ -63,7 +73,10 @@ class DatabaseService {
       if (avatarUrl != null) updateData['avatar_url'] = avatarUrl;
       if (preferredLanguage != null) updateData['preferred_language'] = preferredLanguage;
 
-      await _supabase.from('user_profiles').update(updateData).eq('firebase_uid', currentUserId!);
+      await _supabase
+          .from('user_profiles')
+          .update(updateData)
+          .eq('firebase_uid', currentUserId!);
     } catch (e) {
       print('Error updating user profile: $e');
       throw 'Failed to update user profile';
@@ -99,6 +112,12 @@ class DatabaseService {
           .delete()
           .eq('user_id', currentUserId!);
 
+      // Delete user's analytics
+      await _supabase
+          .from('user_analytics')
+          .delete()
+          .eq('user_id', currentUserId!);
+
       // Delete profile picture if exists
       final userProfile = await getUserProfile();
       if (userProfile != null && userProfile['avatar_url'] != null) {
@@ -123,15 +142,43 @@ class DatabaseService {
     }
   }
 
-  // Chat History Operations
-  Future<List<Map<String, dynamic>>> getChatHistory({int limit = 50}) async {
+  // Enhanced Chat History Operations with proper timezone handling
+  Future<List<Map<String, dynamic>>> getChatHistory({
+    int limit = 50,
+    String? category,
+    String? sessionId,
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async {
     try {
       if (currentUserId == null) return [];
 
-      final response = await _supabase
+      var queryBuilder = _supabase
           .from('chat_history')
           .select()
-          .eq('user_id', currentUserId!)
+          .eq('user_id', currentUserId!);
+
+      if (category != null && category != 'All') {
+        queryBuilder = queryBuilder.eq('category', category);
+      }
+
+      if (sessionId != null) {
+        queryBuilder = queryBuilder.eq('session_id', sessionId);
+      }
+
+      if (fromDate != null) {
+        // Convert Philippine time to UTC for database query
+        final utcFromDate = PhilippineTime.toUtc(fromDate);
+        queryBuilder = queryBuilder.gte('created_at', utcFromDate.toIso8601String());
+      }
+
+      if (toDate != null) {
+        // Convert Philippine time to UTC for database query
+        final utcToDate = PhilippineTime.toUtc(toDate);
+        queryBuilder = queryBuilder.lte('created_at', utcToDate.toIso8601String());
+      }
+
+      final response = await queryBuilder
           .order('created_at', ascending: false)
           .limit(limit);
 
@@ -142,29 +189,152 @@ class DatabaseService {
     }
   }
 
-  Future<void> saveChatMessage({
+  // Get recent chat history for profile (last 5 conversations)
+  Future<List<Map<String, dynamic>>> getRecentChatHistory() async {
+    try {
+      if (currentUserId == null) return [];
+
+      final response = await _supabase
+          .from('chat_history')
+          .select()
+          .eq('user_id', currentUserId!)
+          .order('created_at', ascending: false)
+          .limit(5);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error getting recent chat history: $e');
+      return [];
+    }
+  }
+
+  // Get chat history for AI conversation context
+  Future<List<Map<String, String>>> getChatHistoryForContext({
+    String? sessionId,
+    int limit = 10,
+  }) async {
+    try {
+      if (currentUserId == null) return [];
+
+      var queryBuilder = _supabase
+          .from('chat_history')
+          .select('question, answer, created_at, category')
+          .eq('user_id', currentUserId!);
+
+      if (sessionId != null) {
+        queryBuilder = queryBuilder.eq('session_id', sessionId);
+      }
+
+      final response = await queryBuilder
+          .order('created_at', ascending: true)
+          .limit(limit);
+
+      List<Map<String, String>> context = [];
+      for (var chat in response) {
+        // Convert UTC timestamp to Philippine time for context
+        final philippineTime = PhilippineTime.parseDatabaseTime(chat['created_at']);
+        final timeString = philippineTime != null
+            ? PhilippineTime.formatDateTime(philippineTime)
+            : 'Unknown time';
+
+        // Add user message
+        context.add({
+          'text': chat['question'] ?? '',
+          'isBot': 'false',
+          'timestamp': timeString,
+          'category': chat['category'] ?? 'General',
+        });
+        // Add bot response
+        context.add({
+          'text': chat['answer'] ?? '',
+          'isBot': 'true',
+          'timestamp': timeString,
+          'category': chat['category'] ?? 'General',
+        });
+      }
+
+      return context;
+    } catch (e) {
+      print('Error fetching chat context: $e');
+      return [];
+    }
+  }
+
+  // Enhanced save chat message with proper timezone handling
+  Future<String?> saveChatMessage({
     required String question,
     required String answer,
     required String category,
     double? confidenceScore,
     String? sessionId,
+    List<String>? keywords,
+    List<String>? recommendations,
     Map<String, dynamic>? metadata,
   }) async {
     try {
       if (currentUserId == null) throw 'User not authenticated';
 
-      await _supabase.from('chat_history').insert({
+      // Get current Philippine time for metadata
+      final philippineNow = PhilippineTime.now();
+      final utcNow = DateTime.now().toUtc();
+
+      // Prepare enhanced metadata with timezone info
+      Map<String, dynamic> enhancedMetadata = {
+        'keywords': keywords ?? [],
+        'recommendations': recommendations ?? [],
+        'response_time': utcNow.millisecondsSinceEpoch,
+        'ai_model': 'gemini-2.0-flash',
+        'philippine_time': PhilippineTime.toPhilippineIsoString(philippineNow),
+        'timezone': 'Asia/Manila',
+        'user_local_time': PhilippineTime.formatDateTime(philippineNow),
+        ...?metadata,
+      };
+
+      final response = await _supabase.from('chat_history').insert({
         'user_id': currentUserId!,
         'question': question,
         'answer': answer,
         'category': category,
         'confidence_score': confidenceScore,
         'session_id': sessionId,
-        'metadata': metadata,
-      });
+        'metadata': enhancedMetadata,
+        'created_at': utcNow.toIso8601String(), // Store in UTC
+      }).select('id').single();
+
+      return response['id'] as String?;
     } catch (e) {
       print('Error saving chat message: $e');
-      throw 'Failed to save chat message';
+      return null;
+    }
+  }
+
+  // Search chat history
+  Future<List<Map<String, dynamic>>> searchChatHistory({
+    required String searchQuery,
+    String? category,
+    int limit = 20,
+  }) async {
+    try {
+      if (currentUserId == null) return [];
+
+      var query = _supabase
+          .from('chat_history')
+          .select()
+          .eq('user_id', currentUserId!)
+          .or('question.ilike.%$searchQuery%,answer.ilike.%$searchQuery%');
+
+      if (category != null && category != 'All') {
+        query = query.eq('category', category);
+      }
+
+      final response = await query
+          .order('created_at', ascending: false)
+          .limit(limit);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error searching chat history: $e');
+      return [];
     }
   }
 
@@ -206,7 +376,7 @@ class DatabaseService {
     }
   }
 
-  // Analytics Operations
+  // Enhanced Analytics Operations with timezone handling
   Future<Map<String, dynamic>> getUserAnalytics() async {
     try {
       if (currentUserId == null) return {};
@@ -236,12 +406,54 @@ class DatabaseService {
       var sortedCategories = categoryCount.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
-      // Get recent activity (last 7 days)
+      // Get recent activity (last 7 days) - convert to UTC for query
+      final sevenDaysAgo = PhilippineTime.now().subtract(const Duration(days: 7));
+      final utcSevenDaysAgo = PhilippineTime.toUtc(sevenDaysAgo);
+
       final recentActivity = await _supabase
           .from('chat_history')
           .select('created_at')
           .eq('user_id', currentUserId!)
-          .gte('created_at', DateTime.now().subtract(const Duration(days: 7)).toIso8601String());
+          .gte('created_at', utcSevenDaysAgo.toIso8601String());
+
+      // Get average confidence score
+      final confidenceResponse = await _supabase
+          .from('chat_history')
+          .select('confidence_score')
+          .eq('user_id', currentUserId!)
+          .not('confidence_score', 'is', null);
+
+      double avgConfidence = 0.0;
+      if (confidenceResponse.isNotEmpty) {
+        final scores = confidenceResponse
+            .map((item) => (item['confidence_score'] as num).toDouble())
+            .toList();
+        avgConfidence = scores.reduce((a, b) => a + b) / scores.length;
+      }
+
+      // Get top keywords from metadata
+      final keywordsResponse = await _supabase
+          .from('chat_history')
+          .select('metadata')
+          .eq('user_id', currentUserId!)
+          .not('metadata', 'is', null);
+
+      final allKeywords = <String>[];
+      for (var item in keywordsResponse) {
+        final metadata = item['metadata'] as Map<String, dynamic>?;
+        if (metadata != null && metadata['keywords'] is List) {
+          allKeywords.addAll((metadata['keywords'] as List).cast<String>());
+        }
+      }
+
+      final keywordFrequency = <String, int>{};
+      for (var keyword in allKeywords) {
+        keywordFrequency[keyword] = (keywordFrequency[keyword] ?? 0) + 1;
+      }
+
+      final topKeywords = keywordFrequency.entries
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
 
       return {
         'total_questions': totalQuestions,
@@ -251,11 +463,47 @@ class DatabaseService {
           'percentage': totalQuestions > 0 ? ((e.value / totalQuestions) * 100).round() : 0,
         }).toList(),
         'recent_activity_count': recentActivity.length,
-        'accuracy_rate': 89, // This would come from feedback analysis
+        'accuracy_rate': (avgConfidence * 100).round(),
+        'avg_confidence': avgConfidence,
+        'top_keywords': topKeywords.take(10).map((e) => e.key).toList(),
+        'category_distribution': categoryCount,
+        'last_activity': totalQuestions > 0
+            ? PhilippineTime.getCurrentDateTimeString()
+            : null,
       };
     } catch (e) {
       print('Error getting user analytics: $e');
       return {};
+    }
+  }
+
+  // Save user analytics event with proper timezone
+  Future<bool> saveUserAnalytics({
+    required String metricName,
+    required Map<String, dynamic> metricValue,
+  }) async {
+    try {
+      if (currentUserId == null) return false;
+
+      final utcNow = DateTime.now().toUtc();
+      final philippineNow = PhilippineTime.now();
+
+      await _supabase.from('user_analytics').insert({
+        'user_id': currentUserId!,
+        'metric_name': metricName,
+        'metric_value': {
+          ...metricValue,
+          'philippine_time': PhilippineTime.toPhilippineIsoString(philippineNow),
+          'timezone': 'Asia/Manila',
+        },
+        'date_recorded': PhilippineTime.formatDate(philippineNow).split(',')[0], // Just the date part
+        'created_at': utcNow.toIso8601String(),
+      });
+
+      return true;
+    } catch (e) {
+      print('Error saving analytics: $e');
+      return false;
     }
   }
 
@@ -270,6 +518,8 @@ class DatabaseService {
     try {
       if (currentUserId == null) throw 'User not authenticated';
 
+      final utcNow = DateTime.now().toUtc();
+
       await _supabase.from('saved_advice').insert({
         'user_id': currentUserId!,
         'question': question,
@@ -277,10 +527,48 @@ class DatabaseService {
         'category': category,
         'tags': tags,
         'notes': notes,
+        'created_at': utcNow.toIso8601String(),
+        'updated_at': utcNow.toIso8601String(),
       });
     } catch (e) {
       print('Error saving legal advice: $e');
       throw 'Failed to save legal advice';
+    }
+  }
+
+  // Save advice to bookmarks (alternative method name for consistency with chat_tab.dart)
+  Future<String> saveAdvice({
+    required String question,
+    required String answer,
+    required String category,
+    List<String>? tags,
+    String? notes,
+  }) async {
+    try {
+      if (currentUserId == null) throw 'User not authenticated';
+
+      final utcNow = DateTime.now().toUtc();
+
+      final response = await _supabase
+          .from('saved_advice')
+          .insert({
+        'user_id': currentUserId!,
+        'question': question,
+        'answer': answer,
+        'category': category,
+        'tags': tags ?? [],
+        'notes': notes,
+        'is_favorite': false,
+        'created_at': utcNow.toIso8601String(),
+        'updated_at': utcNow.toIso8601String(),
+      })
+          .select('id')
+          .single();
+
+      return response['id'] as String;
+    } catch (e) {
+      print('Error saving advice: $e');
+      throw 'Failed to save advice';
     }
   }
 
@@ -301,6 +589,22 @@ class DatabaseService {
     }
   }
 
+  // Remove saved advice (alternative method name for consistency)
+  Future<void> removeSavedAdvice(String adviceId) async {
+    try {
+      if (currentUserId == null) throw 'User not authenticated';
+
+      await _supabase
+          .from('saved_advice')
+          .delete()
+          .eq('id', adviceId)
+          .eq('user_id', currentUserId!);
+    } catch (e) {
+      print('Error removing saved advice: $e');
+      throw 'Failed to remove saved advice';
+    }
+  }
+
   Future<void> deleteSavedAdvice(String adviceId) async {
     try {
       if (currentUserId == null) throw 'User not authenticated';
@@ -316,13 +620,55 @@ class DatabaseService {
     }
   }
 
+  // Check if advice is already saved
+  Future<bool> isAdviceSaved(String question, String answer) async {
+    try {
+      if (currentUserId == null) return false;
+
+      final response = await _supabase
+          .from('saved_advice')
+          .select('id')
+          .eq('user_id', currentUserId!)
+          .eq('question', question)
+          .eq('answer', answer)
+          .limit(1);
+
+      return response.isNotEmpty;
+    } catch (e) {
+      print('Error checking if advice is saved: $e');
+      return false;
+    }
+  }
+
+  // Toggle favorite status (alternative method name for consistency)
+  Future<void> toggleFavorite(String adviceId, bool isFavorite) async {
+    try {
+      if (currentUserId == null) throw 'User not authenticated';
+
+      await _supabase
+          .from('saved_advice')
+          .update({
+        'is_favorite': isFavorite,
+        'updated_at': DateTime.now().toUtc().toIso8601String()
+      })
+          .eq('id', adviceId)
+          .eq('user_id', currentUserId!);
+    } catch (e) {
+      print('Error toggling favorite: $e');
+      throw 'Failed to toggle favorite';
+    }
+  }
+
   Future<void> toggleAdviceFavorite(String adviceId, bool isFavorite) async {
     try {
       if (currentUserId == null) throw 'User not authenticated';
 
       await _supabase
           .from('saved_advice')
-          .update({'is_favorite': isFavorite, 'updated_at': DateTime.now().toIso8601String()})
+          .update({
+        'is_favorite': isFavorite,
+        'updated_at': DateTime.now().toUtc().toIso8601String()
+      })
           .eq('id', adviceId)
           .eq('user_id', currentUserId!);
     } catch (e) {
@@ -347,8 +693,8 @@ class DatabaseService {
     }
   }
 
-  // Feedback Operations
-  Future<void> submitFeedback({
+  // Enhanced Feedback Operations
+  Future<bool> submitFeedback({
     required String chatHistoryId,
     required int rating,
     String? feedbackText,
@@ -361,10 +707,31 @@ class DatabaseService {
         'rating': rating,
         'feedback_text': feedbackText,
         'feedback_type': feedbackType,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
+      return true;
     } catch (e) {
       print('Error submitting feedback: $e');
-      throw 'Failed to submit feedback';
+      return false;
+    }
+  }
+
+  // Get feedback for a specific chat message
+  Future<Map<String, dynamic>?> getFeedbackForChat(String chatHistoryId) async {
+    try {
+      if (currentUserId == null) return null;
+
+      final response = await _supabase
+          .from('feedback')
+          .select()
+          .eq('user_id', currentUserId!)
+          .eq('chat_history_id', chatHistoryId)
+          .maybeSingle();
+
+      return response;
+    } catch (e) {
+      print('Error getting feedback: $e');
+      return null;
     }
   }
 
@@ -392,11 +759,13 @@ class DatabaseService {
 
   Future<void> markNotificationAsRead(String notificationId) async {
     try {
+      final utcNow = DateTime.now().toUtc();
+
       await _supabase
           .from('notifications')
           .update({
         'is_read': true,
-        'read_at': DateTime.now().toIso8601String(),
+        'read_at': utcNow.toIso8601String(),
       })
           .eq('id', notificationId)
           .eq('user_id', currentUserId!);
@@ -419,6 +788,35 @@ class DatabaseService {
     } catch (e) {
       print('Error getting unread notification count: $e');
       return 0;
+    }
+  }
+
+  // Save notification
+  Future<bool> saveNotification({
+    required String title,
+    required String message,
+    required String type, // 'info', 'warning', 'success', 'legal_update', 'system'
+    String? actionUrl,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      if (currentUserId == null) return false;
+
+      await _supabase.from('notifications').insert({
+        'user_id': currentUserId!,
+        'title': title,
+        'message': message,
+        'type': type,
+        'action_url': actionUrl,
+        'metadata': metadata,
+        'is_read': false,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+      return true;
+    } catch (e) {
+      print('Error saving notification: $e');
+      return false;
     }
   }
 
@@ -470,7 +868,23 @@ class DatabaseService {
     }
   }
 
-  // FIXED: Upload profile picture to Supabase storage
+  // Get popular legal topics (for recommendations)
+  Future<List<Map<String, dynamic>>> getPopularLegalTopics({int limit = 10}) async {
+    try {
+      final response = await _supabase
+          .from('popular_legal_topics')
+          .select()
+          .order('question_count', ascending: false)
+          .limit(limit);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error fetching popular topics: $e');
+      return [];
+    }
+  }
+
+  // Upload profile picture to Supabase storage
   Future<String> uploadProfilePicture(String filePath) async {
     try {
       if (currentUserId == null) throw 'User not authenticated';
@@ -529,7 +943,7 @@ class DatabaseService {
     }
   }
 
-  // FIXED: Delete profile picture from Supabase storage
+  // Delete profile picture from Supabase storage
   Future<void> deleteProfilePicture(String imageUrl) async {
     try {
       if (currentUserId == null) throw 'User not authenticated';

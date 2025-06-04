@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/notification_provider.dart';
@@ -132,9 +133,7 @@ class SettingsTab extends StatelessWidget {
                 Icons.chevron_right,
                 color: isDark ? Colors.grey[400] : Colors.grey[600],
               ),
-              onTap: () {
-                _showSnackBar(context, 'Privacy Policy - Coming Soon', isDark);
-              },
+              onTap: () => _showPrivacyPolicyDialog(context),
             ),
 
             // Terms of Service
@@ -147,9 +146,7 @@ class SettingsTab extends StatelessWidget {
                 Icons.chevron_right,
                 color: isDark ? Colors.grey[400] : Colors.grey[600],
               ),
-              onTap: () {
-                _showSnackBar(context, 'Terms of Service - Coming Soon', isDark);
-              },
+              onTap: () => _showTermsOfServiceDialog(context),
             ),
 
             // Help & Support
@@ -163,9 +160,7 @@ class SettingsTab extends StatelessWidget {
                 Icons.chevron_right,
                 color: isDark ? Colors.grey[400] : Colors.grey[600],
               ),
-              onTap: () {
-                _showSnackBar(context, 'Help & Support - Coming Soon', isDark);
-              },
+              onTap: () => _showHelpSupportDialog(context),
             ),
 
             const SizedBox(height: 24),
@@ -295,6 +290,642 @@ class SettingsTab extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _showPrivacyPolicyDialog(BuildContext context) {
+    final themeProvider = context.read<ThemeProvider>();
+    final isDark = themeProvider.isDarkMode;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.8,
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)]
+                        : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.shield,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Privacy Policy',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _getPrivacyPolicyContent(),
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTermsOfServiceDialog(BuildContext context) {
+    final themeProvider = context.read<ThemeProvider>();
+    final isDark = themeProvider.isDarkMode;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.8,
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [const Color(0xFF10B981), const Color(0xFF047857)]
+                        : [const Color(0xFF059669), const Color(0xFF047857)],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.description,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Terms of Service',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
+                    _getTermsOfServiceContent(),
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showHelpSupportDialog(BuildContext context) {
+    final themeProvider = context.read<ThemeProvider>();
+    final isDark = themeProvider.isDarkMode;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.8,
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [const Color(0xFFF59E0B), const Color(0xFFD97706)]
+                        : [const Color(0xFFF59E0B), const Color(0xFFD97706)],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.help,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Help & Support',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHelpSection(
+                        'Frequently Asked Questions',
+                        _getFAQContent(),
+                        isDark,
+                      ),
+                      const SizedBox(height: 24),
+                      _buildHelpSection(
+                        'Contact Support',
+                        _getContactContent(),
+                        isDark,
+                      ),
+
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHelpSection(String title, String content, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : Colors.black,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          content,
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.5,
+            color: isDark ? Colors.grey[300] : Colors.grey[700],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContactButtons(BuildContext context, bool isDark) {
+    return Column(
+      children: [
+        Text(
+          'Get in Touch',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : Colors.black,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _launchEmail(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.email, color: Colors.white, size: 20),
+                label: const Text(
+                  'Email',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _launchPhone(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.phone, color: Colors.white, size: 20),
+                label: const Text(
+                  'Call',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _getPrivacyPolicyContent() {
+    return '''
+PRIVACY POLICY
+
+Last updated: ${DateTime.now().year}
+
+1. INFORMATION WE COLLECT
+
+We collect information you provide directly to us, such as:
+• Account information (name, email, phone number)
+• Profile information and preferences
+• Legal questions and chat history
+• Usage data and analytics
+
+2. HOW WE USE YOUR INFORMATION
+
+We use your information to:
+• Provide and improve our AI legal assistance services
+• Personalize your experience and recommendations
+• Send important updates and notifications
+• Ensure security and prevent fraud
+• Comply with legal obligations
+
+3. DATA STORAGE AND SECURITY
+
+• Your data is stored securely using industry-standard encryption
+• We implement appropriate technical and organizational measures
+• Access to personal data is strictly limited to authorized personnel
+• Regular security audits and monitoring are conducted
+
+4. SHARING YOUR INFORMATION
+
+We do not sell, trade, or rent your personal information to third parties. We may share your information only:
+• With your explicit consent
+• To comply with legal obligations
+• To protect our rights and safety
+• With trusted service providers under strict confidentiality agreements
+
+5. YOUR RIGHTS
+
+You have the right to:
+• Access, update, or delete your personal information
+• Opt-out of non-essential communications
+• Request data portability
+• File complaints with relevant authorities
+
+6. COOKIES AND TRACKING
+
+We use cookies and similar technologies to:
+• Remember your preferences
+• Analyze usage patterns
+• Improve our services
+• Provide personalized content
+
+7. CHILDREN'S PRIVACY
+
+Our services are not intended for children under 13. We do not knowingly collect personal information from children under 13.
+
+8. INTERNATIONAL TRANSFERS
+
+Your information may be transferred to and processed in countries other than your country of residence, always with appropriate safeguards.
+
+9. CHANGES TO THIS POLICY
+
+We may update this privacy policy periodically. We will notify you of significant changes via email or app notification.
+
+10. CONTACT US
+
+If you have questions about this privacy policy, please contact us at:
+Email: privacy@lawbot.ph
+Phone: +63 xxx-xxx-xxxx
+
+This privacy policy is governed by the laws of the Republic of the Philippines.
+''';
+  }
+
+  String _getTermsOfServiceContent() {
+    return '''
+TERMS OF SERVICE
+
+Last updated: ${DateTime.now().year}
+
+1. ACCEPTANCE OF TERMS
+
+By accessing and using LawBot, you accept and agree to be bound by these Terms of Service and our Privacy Policy.
+
+2. DESCRIPTION OF SERVICE
+
+LawBot is an AI-powered legal information assistant that provides general information about Philippine cybercrime laws and related legal topics.
+
+3. IMPORTANT DISCLAIMERS
+
+• LawBot provides general legal information, NOT legal advice
+• Our AI responses are for informational purposes only
+• We do not create attorney-client relationships
+• Always consult qualified legal professionals for legal advice
+• We are not responsible for decisions made based on our information
+
+4. USER RESPONSIBILITIES
+
+You agree to:
+• Provide accurate and truthful information
+• Use the service for lawful purposes only
+• Respect intellectual property rights
+• Not attempt to reverse engineer or hack our systems
+• Not use the service to harass or harm others
+
+5. PROHIBITED USES
+
+You may not use LawBot to:
+• Seek advice for illegal activities
+• Share confidential or privileged information
+• Spam or send malicious content
+• Violate any applicable laws or regulations
+• Impersonate others or provide false information
+
+6. INTELLECTUAL PROPERTY
+
+• LawBot and its content are protected by copyright and trademark laws
+• You retain ownership of your questions and input
+• We may use aggregated, anonymized data to improve our services
+• You grant us a license to use your feedback for service improvement
+
+7. SERVICE AVAILABILITY
+
+• We strive for 99.9% uptime but cannot guarantee uninterrupted service
+• We may temporarily suspend service for maintenance
+• Features may be modified or discontinued with notice
+
+8. LIMITATION OF LIABILITY
+
+To the maximum extent permitted by law:
+• We are not liable for decisions made based on our information
+• Our liability is limited to the amount you paid for our services
+• We disclaim warranties except as required by law
+• We are not responsible for third-party content or services
+
+9. INDEMNIFICATION
+
+You agree to indemnify and hold us harmless from claims arising from your use of our service or violation of these terms.
+
+10. TERMINATION
+
+• You may delete your account at any time
+• We may terminate accounts for violations of these terms
+• Certain provisions survive termination (privacy, intellectual property)
+
+11. GOVERNING LAW
+
+These terms are governed by the laws of the Republic of the Philippines. Disputes will be resolved in Philippine courts.
+
+12. CHANGES TO TERMS
+
+We may update these terms periodically. Continued use after changes constitutes acceptance of new terms.
+
+13. CONTACT INFORMATION
+
+For questions about these terms:
+Email: legal@lawbot.ph
+Phone: +63 xxx-xxx-xxxx
+Address: Philippines
+
+By using LawBot, you acknowledge that you have read, understood, and agree to these Terms of Service.
+''';
+  }
+
+  String _getFAQContent() {
+    return '''
+Q: Is LawBot a replacement for a real lawyer?
+A: No, LawBot provides general legal information only. Always consult a qualified attorney for legal advice specific to your situation.
+
+Q: How accurate is the legal information provided?
+A: We strive for accuracy, but laws change frequently. Always verify information with current legal sources or professionals.
+
+Q: Can I trust LawBot with confidential information?
+A: While we protect your privacy, avoid sharing highly sensitive details. Use general scenarios instead of specific confidential information.
+
+Q: What areas of law does LawBot cover?
+A: LawBot specializes in Philippine cybercrime laws, data privacy, online harassment, e-commerce fraud, and related digital legal issues.
+
+Q: Is my chat history private?
+A: Yes, your conversations are private and secured. We don't share your personal legal questions with third parties.
+
+Q: Can I download or print my chat history?
+A: Yes, you can save important advice and share relevant information through the app's built-in sharing features.
+
+Q: How often is the legal information updated?
+A: Our knowledge base is regularly updated to reflect current Philippine laws and regulations.
+
+Q: What should I do in a legal emergency?
+A: For urgent legal matters, contact a lawyer immediately or call relevant authorities. LawBot is not for emergency situations.
+''';
+  }
+
+  String _getContactContent() {
+    return '''
+Need additional help? Our support team is here to assist you.
+
+📧 Email Support: support@lawbot.ph
+• Response time: 24-48 hours
+• Available 24/7 for urgent issues
+
+📞 Phone Support: +63 xxx-xxx-xxxx
+• Business hours: Monday-Friday, 9 AM - 6 PM (PHT)
+• For technical issues and general inquiries
+
+💬 In-App Support:
+• Use the feedback feature in the app
+• Report bugs or suggest improvements
+• Rate your experience
+
+🌐 Online Resources:
+• Visit our website for additional guides
+• Check our blog for legal updates
+• Follow us on social media for tips
+
+🏢 Office Address:
+LawBot Philippines
+[Address to be provided]
+Philippines
+
+For urgent legal matters, please contact emergency services or seek immediate legal counsel.
+''';
+  }
+
+  Future<void> _launchEmail() async {
+    final Uri emailLaunchUri = Uri(
+      scheme: 'mailto',
+      path: 'support@lawbot.ph',
+      query: 'subject=LawBot Support Request',
+    );
+
+    try {
+      if (await canLaunchUrl(emailLaunchUri)) {
+        await launchUrl(emailLaunchUri);
+      }
+    } catch (e) {
+      print('Could not launch email: $e');
+    }
+  }
+
+  Future<void> _launchPhone() async {
+    final Uri phoneLaunchUri = Uri(
+      scheme: 'tel',
+      path: '+63xxxxxxxxx', // Replace with actual phone number
+    );
+
+    try {
+      if (await canLaunchUrl(phoneLaunchUri)) {
+        await launchUrl(phoneLaunchUri);
+      }
+    } catch (e) {
+      print('Could not launch phone: $e');
+    }
   }
 
   void _showModernLanguageDialog(BuildContext context) {
@@ -736,7 +1367,7 @@ class SettingsTab extends StatelessWidget {
       SnackBar(
         content: Row(
           children: [
-            SizedBox(
+            const SizedBox(
               width: 16,
               height: 16,
               child: CircularProgressIndicator(
@@ -767,7 +1398,7 @@ class SettingsTab extends StatelessWidget {
       SnackBar(
         content: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.check_circle,
               color: Colors.white,
               size: 16,
@@ -797,7 +1428,7 @@ class SettingsTab extends StatelessWidget {
       SnackBar(
         content: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.error,
               color: Colors.white,
               size: 16,
