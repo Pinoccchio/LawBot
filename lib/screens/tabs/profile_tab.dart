@@ -454,9 +454,9 @@ class _ProfileTabState extends State<ProfileTab> {
                     : _savedAdvice.isEmpty
                     ? _buildEmptyStateCard(
                   isDark: isDark,
-                  icon: Icons.bookmark_outline,
+                  icon: Icons.bookmark_border,
                   title: 'No saved advice yet',
-                  description: 'Bookmark important legal advice for quick reference',
+                  description: 'Save important legal advice from your conversations for quick reference',
                 )
                     : Column(
                   children: _savedAdvice.take(3).map((advice) => _buildSavedAdviceCard(advice, isDark)).toList(),
@@ -540,252 +540,554 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   Widget _buildRecentCaseCard(Map<String, dynamic> chat, bool isDark) {
+    final categories = chat['categories'] as List<dynamic>?;
+    final avgConfidence = chat['avg_confidence'] as double?;
+    final messageCount = chat['message_count'] as int? ?? 0;
+    final firstQuestion = chat['first_question'] as String? ?? 'No question';
+    final hasRecommendations = chat['has_recommendations'] as bool? ?? false;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          border: Border.all(
-            color: isDark ? const Color(0xFF374151) : const Color(0xFFE5E7EB),
-            width: 1,
-          ),
           boxShadow: [
             BoxShadow(
               color: isDark
-                  ? Colors.black.withOpacity(0.2)
-                  : Colors.grey.withOpacity(0.05),
+                  ? Colors.black.withOpacity(0.3)
+                  : Colors.grey.withOpacity(0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isDark
-                          ? [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)]
-                          : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _navigateToRecentCases(),
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header row with categories and metadata
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Category badges
+                      Flexible(
+                        flex: 2,
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: (categories?.take(2) ?? ['General']).map((category) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: isDark
+                                    ? [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)]
+                                    : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              category.toString(),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          )).toList(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Message count and confidence section
+                      Flexible(
+                        flex: 3,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            // Message count badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.blue.withOpacity(0.2)
+                                    : Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isDark ? Colors.blue[700]! : Colors.blue[200]!,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.forum_rounded,
+                                    size: 10,
+                                    color: isDark ? Colors.blue[300] : Colors.blue[700],
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '$messageCount',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      color: isDark ? Colors.blue[300] : Colors.blue[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+
+                            // Recommendations indicator
+                            if (hasRecommendations) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.orange,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.lightbulb_outline,
+                                      size: 10,
+                                      color: Colors.orange[700],
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      'Tips',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: Colors.orange[700],
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+
+                            if (avgConfidence != null) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: avgConfidence > 0.8
+                                      ? Colors.green.withOpacity(0.1)
+                                      : avgConfidence > 0.6
+                                      ? Colors.orange.withOpacity(0.1)
+                                      : Colors.grey.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: avgConfidence > 0.8
+                                        ? Colors.green
+                                        : avgConfidence > 0.6
+                                        ? Colors.orange
+                                        : Colors.grey,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.verified_rounded,
+                                      size: 10,
+                                      color: avgConfidence > 0.8
+                                          ? Colors.green
+                                          : avgConfidence > 0.6
+                                          ? Colors.orange
+                                          : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${(avgConfidence * 100).round()}%',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: avgConfidence > 0.8
+                                            ? Colors.green
+                                            : avgConfidence > 0.6
+                                            ? Colors.orange
+                                            : Colors.grey,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    chat['category'] ?? 'General',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Flexible(
-                  child: Text(
-                    PhilippineTime.formatChatHistoryTime(chat['created_at']),
+                  const SizedBox(height: 12),
+
+                  // Question text
+                  Text(
+                    firstQuestion,
                     style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? Colors.grey[400] : Colors.grey[500],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      height: 1.4,
                     ),
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              chat['question'] ?? 'No question',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : const Color(0xFF1E293B),
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              chat['answer'] ?? 'No answer',
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? Colors.grey[300] : Colors.grey[600],
-                height: 1.4,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (chat['confidence_score'] != null) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(
-                    Icons.verified_rounded,
-                    size: 14,
-                    color: (chat['confidence_score'] as double) > 0.8
-                        ? Colors.green
-                        : (chat['confidence_score'] as double) > 0.6
-                        ? Colors.orange
-                        : Colors.grey,
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      '${((chat['confidence_score'] as double) * 100).round()}% Confidence',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: (chat['confidence_score'] as double) > 0.8
-                            ? Colors.green
-                            : (chat['confidence_score'] as double) > 0.6
-                            ? Colors.orange
-                            : Colors.grey,
-                        fontWeight: FontWeight.w500,
+                  const SizedBox(height: 8),
+
+                  // Session summary
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          messageCount == 1
+                              ? 'Single question conversation'
+                              : '$messageCount messages in this conversation',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.grey[300] : Colors.grey[600],
+                            height: 1.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                      if (hasRecommendations) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.orange.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.lightbulb_outline,
+                                size: 12,
+                                color: Colors.orange[700],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Has recommendations',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.orange[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
-            ],
-          ],
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildSavedAdviceCard(Map<String, dynamic> advice, bool isDark) {
+    final categories = advice['categories'] as List<dynamic>?;
+    final avgConfidence = advice['avg_confidence'] as double?;
+    final messageCount = advice['message_count'] as int? ?? 0;
+    final firstQuestion = advice['first_question'] as String? ?? 'No question';
+    final hasRecommendations = advice['has_recommendations'] as bool? ?? false;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          border: Border.all(
-            color: isDark ? const Color(0xFF374151) : const Color(0xFFE5E7EB),
-            width: 1,
-          ),
           boxShadow: [
             BoxShadow(
               color: isDark
-                  ? Colors.black.withOpacity(0.2)
-                  : Colors.grey.withOpacity(0.05),
+                  ? Colors.black.withOpacity(0.3)
+                  : Colors.grey.withOpacity(0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: (isDark ? Colors.amber[900] : Colors.amber[50])?.withOpacity(0.8),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: (isDark ? Colors.amber[700] : Colors.amber[200])!,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _navigateToSavedAdvice(),
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header row with categories and metadata
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.bookmark,
-                        size: 12,
-                        color: isDark ? Colors.amber[300] : Colors.amber[700],
+                      // Category badges
+                      Flexible(
+                        flex: 2,
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: (categories?.take(2) ?? ['General']).map((category) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: isDark
+                                    ? [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)]
+                                    : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              category.toString(),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          )).toList(),
+                        ),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Saved',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: isDark ? Colors.amber[300] : Colors.amber[700],
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(width: 8),
+
+                      // Message count and confidence section
+                      Flexible(
+                        flex: 3,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            // Message count badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.blue.withOpacity(0.2)
+                                    : Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isDark ? Colors.blue[700]! : Colors.blue[200]!,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.forum_rounded,
+                                    size: 10,
+                                    color: isDark ? Colors.blue[300] : Colors.blue[700],
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '$messageCount',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      color: isDark ? Colors.blue[300] : Colors.blue[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+
+                            // Recommendations indicator
+                            if (hasRecommendations) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.orange,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.lightbulb_outline,
+                                      size: 10,
+                                      color: Colors.orange[700],
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      'Tips',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: Colors.orange[700],
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+
+                            if (avgConfidence != null) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: avgConfidence > 0.8
+                                      ? Colors.green.withOpacity(0.1)
+                                      : avgConfidence > 0.6
+                                      ? Colors.orange.withOpacity(0.1)
+                                      : Colors.grey.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: avgConfidence > 0.8
+                                        ? Colors.green
+                                        : avgConfidence > 0.6
+                                        ? Colors.orange
+                                        : Colors.grey,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.verified_rounded,
+                                      size: 10,
+                                      color: avgConfidence > 0.8
+                                          ? Colors.green
+                                          : avgConfidence > 0.6
+                                          ? Colors.orange
+                                          : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${(avgConfidence * 100).round()}%',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: avgConfidence > 0.8
+                                            ? Colors.green
+                                            : avgConfidence > 0.6
+                                            ? Colors.orange
+                                            : Colors.grey,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-                const Spacer(),
-                Flexible(
-                  child: Text(
-                    PhilippineTime.formatChatHistoryTime(advice['created_at']),
+                  const SizedBox(height: 12),
+
+                  // Question text
+                  Text(
+                    firstQuestion,
                     style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? Colors.grey[400] : Colors.grey[500],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      height: 1.4,
                     ),
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => _showDeleteAdviceConfirmation(advice),
-                  child: Icon(
-                    Icons.delete_outline,
-                    size: 16,
-                    color: Colors.red.withOpacity(0.7),
+                  const SizedBox(height: 8),
+
+                  // Session summary
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          messageCount == 1
+                              ? 'Single question conversation'
+                              : '$messageCount messages in this conversation',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.grey[300] : Colors.grey[600],
+                            height: 1.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (hasRecommendations) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.orange.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.lightbulb_outline,
+                                size: 12,
+                                color: Colors.orange[700],
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Has recommendations',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.orange[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              advice['question'] ?? 'No question',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                ],
               ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 8),
-            Text(
-              advice['answer'] ?? 'No answer',
-              style: TextStyle(
-                fontSize: 13,
-                color: isDark ? Colors.grey[300] : Colors.grey[600],
-                height: 1.4,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (advice['tags'] != null && (advice['tags'] as List).isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: (advice['tags'] as List).take(3).map((tag) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: (isDark ? Colors.blue[900] : Colors.blue[50])?.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: (isDark ? Colors.blue[700] : Colors.blue[200])!,
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    tag.toString(),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isDark ? Colors.blue[300] : Colors.blue[700],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                )).toList(),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -1503,30 +1805,6 @@ class _ProfileTabState extends State<ProfileTab> {
                 _pickImage(ImageSource.gallery, authProvider);
               },
             ),
-            if (authProvider.userProfile?['avatar_url'] != null)
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.delete,
-                    color: Colors.red,
-                  ),
-                ),
-                title: Text(
-                  'Remove current photo',
-                  style: TextStyle(
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _removeProfilePicture(authProvider);
-                },
-              ),
             const SizedBox(height: 16),
           ],
         ),
@@ -1584,46 +1862,6 @@ class _ProfileTabState extends State<ProfileTab> {
 
       if (mounted) {
         _showErrorSnackBar('Failed to upload profile picture. Please try again.');
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _removeProfilePicture(AuthProvider authProvider) async {
-    if (!mounted) return;
-
-    final databaseService = DatabaseService();
-    final avatarUrl = authProvider.userProfile?['avatar_url'];
-
-    if (avatarUrl == null) return;
-
-    setState(() {
-      _isUploading = true;
-    });
-
-    try {
-      await databaseService.deleteProfilePicture(avatarUrl);
-
-      if (mounted) {
-        _showSuccessSnackBar('Profile picture removed successfully!');
-
-        await authProvider.updateProfile(
-          fullName: authProvider.userProfile?['full_name'] ??
-              authProvider.user?.displayName ??
-              'User',
-          avatarUrl: null,
-        );
-      }
-    } catch (e) {
-      print('Error removing profile picture: $e');
-
-      if (mounted) {
-        _showErrorSnackBar('Failed to remove profile picture. Please try again.');
       }
     } finally {
       if (mounted) {

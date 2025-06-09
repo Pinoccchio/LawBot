@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lawbot/screens/tabs/resources_tabs.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
@@ -139,7 +140,10 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
               ),
             ),
             ElevatedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+                SystemNavigator.pop(); // This will completely exit the app
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),

@@ -18,7 +18,11 @@ class DatabaseService {
     return _uuid.v4();
   }
 
-  // User Profile Operations
+  // =============================================
+  // USER PROFILE OPERATIONS
+  // =============================================
+
+  // Get user profile
   Future<Map<String, dynamic>?> getUserProfile() async {
     try {
       if (currentUserId == null) return null;
@@ -36,42 +40,78 @@ class DatabaseService {
     }
   }
 
+  // Create user profile with proper JSON handling
   Future<void> createUserProfile({
     required String firebaseUid,
     required String email,
     required String fullName,
+    String userType = 'CLIENT',
+    String preferredLanguage = 'en',
+    Map<String, dynamic>? notificationPreferences,
   }) async {
     try {
+      print('Creating user profile for: $firebaseUid');
+
+      // Prepare notification preferences
+      final defaultPreferences = {
+        'email': true,
+        'push': true,
+        'legal_updates': true,
+        'marketing': false,
+        'security_alerts': true,
+      };
+
+      final finalPreferences = {...defaultPreferences, ...?notificationPreferences};
+
+      // Insert directly with all required fields
       await _supabase.from('user_profiles').insert({
         'firebase_uid': firebaseUid,
         'email': email,
         'full_name': fullName,
+        'user_type': userType,
+        'user_status': 'active',
+        'preferred_language': preferredLanguage,
+        'notification_preferences': finalPreferences,
+        'last_active': DateTime.now().toUtc().toIso8601String(),
         'created_at': DateTime.now().toUtc().toIso8601String(),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
+
+      print('User profile created successfully');
     } catch (e) {
       print('Error creating user profile: $e');
+      print('Full error details: ${e.toString()}');
       throw 'Failed to create user profile: $e';
     }
   }
 
+  // Update user profile with proper JSON encoding
   Future<void> updateUserProfile({
     String? fullName,
     String? phoneNumber,
     String? avatarUrl,
     String? preferredLanguage,
+    Map<String, dynamic>? notificationPreferences,
+    String? userStatus,
   }) async {
     try {
       if (currentUserId == null) throw 'User not authenticated';
 
       final updateData = <String, dynamic>{
         'updated_at': DateTime.now().toUtc().toIso8601String(),
+        'last_active': DateTime.now().toUtc().toIso8601String(),
       };
 
       if (fullName != null) updateData['full_name'] = fullName;
       if (phoneNumber != null) updateData['phone_number'] = phoneNumber;
       if (avatarUrl != null) updateData['avatar_url'] = avatarUrl;
       if (preferredLanguage != null) updateData['preferred_language'] = preferredLanguage;
+      if (userStatus != null) updateData['user_status'] = userStatus;
+
+      // Handle notification preferences as proper JSON
+      if (notificationPreferences != null) {
+        updateData['notification_preferences'] = notificationPreferences;
+      }
 
       await _supabase
           .from('user_profiles')
@@ -80,6 +120,64 @@ class DatabaseService {
     } catch (e) {
       print('Error updating user profile: $e');
       throw 'Failed to update user profile';
+    }
+  }
+
+  // Update user's last active timestamp
+  Future<void> updateUserLastActive() async {
+    try {
+      if (currentUserId == null) return;
+
+      // Try RPC function first
+      try {
+        await _supabase.rpc('update_user_last_active', params: {
+          'p_firebase_uid': currentUserId!,
+        });
+      } catch (rpcError) {
+        // Fallback: direct update
+        await _supabase
+            .from('user_profiles')
+            .update({'last_active': DateTime.now().toUtc().toIso8601String()})
+            .eq('firebase_uid', currentUserId!);
+      }
+    } catch (e) {
+      print('Error updating last active: $e');
+      // Don't throw error for this, as it's not critical
+    }
+  }
+
+  // Get user status and type
+  Future<Map<String, String>?> getUserStatusAndType() async {
+    try {
+      if (currentUserId == null) return null;
+
+      final response = await _supabase
+          .from('user_profiles')
+          .select('user_type, user_status')
+          .eq('firebase_uid', currentUserId!)
+          .maybeSingle();
+
+      if (response != null) {
+        return {
+          'user_type': response['user_type'] ?? 'CLIENT',
+          'user_status': response['user_status'] ?? 'active',
+        };
+      }
+      return null;
+    } catch (e) {
+      print('Error getting user status and type: $e');
+      return null;
+    }
+  }
+
+  // Check if user account is active
+  Future<bool> isUserAccountActive() async {
+    try {
+      final statusInfo = await getUserStatusAndType();
+      return statusInfo?['user_status'] == 'active';
+    } catch (e) {
+      print('Error checking user account status: $e');
+      return true; // Default to active if error
     }
   }
 
@@ -100,6 +198,12 @@ class DatabaseService {
           .delete()
           .eq('user_id', currentUserId!);
 
+      // Delete user's chat sessions
+      await _supabase
+          .from('chat_sessions')
+          .delete()
+          .eq('user_id', currentUserId!);
+
       // Delete user's feedback
       await _supabase
           .from('feedback')
@@ -115,6 +219,12 @@ class DatabaseService {
       // Delete user's analytics
       await _supabase
           .from('user_analytics')
+          .delete()
+          .eq('user_id', currentUserId!);
+
+      // Delete user's sessions
+      await _supabase
+          .from('user_sessions')
           .delete()
           .eq('user_id', currentUserId!);
 
@@ -142,7 +252,500 @@ class DatabaseService {
     }
   }
 
-  // Enhanced Chat History Operations with proper timezone handling
+  // =============================================
+  // ENHANCED SESSION MANAGEMENT WITH STATUS
+  // =============================================
+
+  /// Start a new conversation and complete previous active sessions
+  Future<String> startNewConversation() async {
+    try {
+      if (currentUserId == null) throw 'User not authenticated';
+
+      print('🚀 Starting new conversation for user: $currentUserId');
+
+      // Step 1: Complete all active sessions for this user
+      try {
+        final response = await _supabase.rpc('complete_user_active_sessions', params: {
+          'p_user_id': currentUserId!,
+        });
+        print('✅ Completed ${response ?? 0} active sessions');
+      } catch (e) {
+        print('⚠️ Could not complete active sessions via RPC: $e');
+        // Fallback: direct update
+        try {
+          await _supabase
+              .from('chat_sessions')
+              .update({
+            'status': 'completed',
+            'completed_at': DateTime.now().toUtc().toIso8601String(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+              .eq('user_id', currentUserId!)
+              .eq('status', 'active');
+          print('✅ Completed active sessions via direct update');
+        } catch (directError) {
+          print('⚠️ Direct update also failed: $directError');
+        }
+      }
+
+      // Step 2: Generate new session ID
+      final newSessionId = generateSessionId();
+
+      // Step 3: Create new active session record
+      try {
+        await _supabase.rpc('upsert_chat_session', params: {
+          'p_session_id': newSessionId,
+          'p_user_id': currentUserId!,
+          'p_title': 'New Conversation',
+          'p_status': 'active',
+        });
+        print('✅ Created new active session: $newSessionId');
+      } catch (e) {
+        print('⚠️ Could not create session via RPC: $e');
+        // Fallback: direct insert
+        try {
+          await _supabase.from('chat_sessions').insert({
+            'session_id': newSessionId,
+            'user_id': currentUserId!,
+            'title': 'New Conversation',
+            'status': 'active',
+            'total_messages': 0,
+            'first_message_at': DateTime.now().toUtc().toIso8601String(),
+            'last_message_at': DateTime.now().toUtc().toIso8601String(),
+            'created_at': DateTime.now().toUtc().toIso8601String(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          });
+          print('✅ Created new session via direct insert: $newSessionId');
+        } catch (directError) {
+          print('⚠️ Direct session creation also failed: $directError');
+        }
+      }
+
+      print('🎉 New conversation started successfully: $newSessionId');
+      return newSessionId;
+    } catch (e) {
+      print('❌ Error starting new conversation: $e');
+      // Return a fallback session ID
+      final fallbackSessionId = generateSessionId();
+      return fallbackSessionId;
+    }
+  }
+
+  /// Get current active session for the user
+  Future<Map<String, dynamic>?> getCurrentActiveSession() async {
+    try {
+      if (currentUserId == null) return null;
+
+      try {
+        // Try RPC function first
+        final response = await _supabase.rpc('get_user_active_session', params: {
+          'p_user_id': currentUserId!,
+        });
+
+        if (response != null && response.isNotEmpty) {
+          final sessionData = response.first;
+          return {
+            'session_id': sessionData['session_id'],
+            'title': sessionData['title'],
+            'total_messages': sessionData['total_messages'],
+            'last_message_at': sessionData['last_message_at'],
+            'status': sessionData['status'],
+          };
+        }
+      } catch (e) {
+        print('⚠️ RPC get_user_active_session failed: $e');
+
+        // Fallback: direct query
+        final response = await _supabase
+            .from('chat_sessions')
+            .select()
+            .eq('user_id', currentUserId!)
+            .eq('status', 'active')
+            .order('last_message_at', ascending: false)
+            .limit(1);
+
+        if (response.isNotEmpty) {
+          return response.first;
+        }
+      }
+
+      return null;
+    } catch (e) {
+      print('Error getting active session: $e');
+      return null;
+    }
+  }
+
+  /// Complete a specific session
+  Future<bool> completeSession(String sessionId) async {
+    try {
+      if (currentUserId == null) return false;
+
+      try {
+        // Try RPC function first
+        final result = await _supabase.rpc('complete_chat_session', params: {
+          'p_session_id': sessionId,
+        });
+        return result == true;
+      } catch (e) {
+        print('⚠️ RPC complete_chat_session failed: $e');
+
+        // Fallback: direct update
+        await _supabase
+            .from('chat_sessions')
+            .update({
+          'status': 'completed',
+          'completed_at': DateTime.now().toUtc().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+            .eq('session_id', sessionId)
+            .eq('user_id', currentUserId!)
+            .eq('status', 'active');
+
+        return true;
+      }
+    } catch (e) {
+      print('Error completing session: $e');
+      return false;
+    }
+  }
+
+  /// Enhanced getChatSessions with status information
+  Future<List<Map<String, dynamic>>> getChatSessions({
+    int limit = 50,
+    String? category,
+    DateTime? fromDate,
+    DateTime? toDate,
+    String? status, // New: filter by status
+  }) async {
+    try {
+      if (currentUserId == null) return [];
+
+      // Update last active when accessing chat data
+      updateUserLastActive();
+
+      List<Map<String, dynamic>> sessions = [];
+
+      try {
+        // Try using the enhanced database function first
+        final response = await _supabase.rpc('get_chat_sessions_with_status', params: {
+          'p_user_id': currentUserId!,
+          'p_limit': limit,
+        });
+
+        sessions = List<Map<String, dynamic>>.from(response);
+
+        // Add enhanced session information
+        for (var session in sessions) {
+          await _enhanceSessionData(session);
+        }
+
+      } catch (rpcError) {
+        print('❌ RPC function failed: $rpcError');
+
+        // Fallback: Query chat_sessions table directly
+        try {
+          // Build the base query
+          var query = _supabase
+              .from('chat_sessions')
+              .select()
+              .eq('user_id', currentUserId!);
+          
+          // Apply status filter if provided
+          if (status != null) {
+            query = query.eq('status', status);
+          }
+          
+          // Execute the query with ordering and limit
+          final sessionResponse = await query
+              .order('last_message_at', ascending: false)
+              .limit(limit);
+
+          // Convert session records to expected format
+          sessions = [];
+          for (var sessionRecord in sessionResponse) {
+            // Get first and last questions for this session
+            final messagesResponse = await _supabase
+                .from('chat_history')
+                .select('question, created_at, category, confidence_score')
+                .eq('user_id', currentUserId!)
+                .eq('session_id', sessionRecord['session_id'])
+                .order('created_at', ascending: true);
+
+            if (messagesResponse.isNotEmpty) {
+              final messages = messagesResponse;
+              final firstMessage = messages.first;
+              final lastMessage = messages.last;
+
+              // Calculate average confidence
+              double totalConfidence = 0;
+              int confidenceCount = 0;
+              Set<String> categories = {};
+
+              for (var msg in messages) {
+                if (msg['confidence_score'] != null) {
+                  totalConfidence += (msg['confidence_score'] as num).toDouble();
+                  confidenceCount++;
+                }
+                if (msg['category'] != null) {
+                  categories.add(msg['category'].toString());
+                }
+              }
+
+              final avgConfidence = confidenceCount > 0 ? totalConfidence / confidenceCount : null;
+
+              sessions.add({
+                'session_id': sessionRecord['session_id'],
+                'title': sessionRecord['title'],
+                'first_question': firstMessage['question'] ?? 'No question',
+                'last_question': lastMessage['question'] ?? firstMessage['question'] ?? 'No question',
+                'message_count': sessionRecord['total_messages'] ?? messages.length,
+                'status': sessionRecord['status'],
+                'categories': categories.toList(),
+                'first_created_at': sessionRecord['first_message_at'],
+                'last_created_at': sessionRecord['last_message_at'],
+                'completed_at': sessionRecord['completed_at'],
+                'avg_confidence': avgConfidence,
+                'has_recommendations': false, // Will be set by _enhanceSessionData
+              });
+            }
+          }
+        } catch (directError) {
+          print('❌ Direct query also failed: $directError');
+          throw directError;
+        }
+      }
+
+      // Apply filters
+      if (status != null) {
+        sessions = sessions.where((session) => session['status'] == status).toList();
+      }
+
+      if (category != null && category != 'All') {
+        sessions = sessions.where((session) {
+          final categories = session['categories'] as List?;
+          return categories?.contains(category) ?? false;
+        }).toList();
+      }
+
+      if (fromDate != null || toDate != null) {
+        sessions = sessions.where((session) {
+          try {
+            final sessionDate = DateTime.parse(session['last_created_at']);
+            bool passesFromDate = fromDate == null || sessionDate.isAfter(PhilippineTime.toUtc(fromDate));
+            bool passesToDate = toDate == null || sessionDate.isBefore(PhilippineTime.toUtc(toDate));
+            return passesFromDate && passesToDate;
+          } catch (e) {
+            return true;
+          }
+        }).toList();
+      }
+
+      return sessions;
+    } catch (e) {
+      print('❌ Overall error getting chat sessions: $e');
+      return [];
+    }
+  }
+
+  /// Helper method to enhance session data with additional information
+  Future<void> _enhanceSessionData(Map<String, dynamic> session) async {
+    try {
+      // Check for recommendations and other metadata
+      final sessionId = session['session_id']?.toString();
+      if (sessionId == null) {
+        session['has_recommendations'] = false;
+        return;
+      }
+
+      // Check if any message in this session has recommendations
+      final messages = await _supabase
+          .from('chat_history')
+          .select('metadata')
+          .eq('user_id', currentUserId!)
+          .eq('session_id', sessionId)
+          .not('metadata', 'is', null);
+
+      bool hasRecommendations = false;
+      for (var message in messages) {
+        if (_messageHasRecommendations(message)) {
+          hasRecommendations = true;
+          break;
+        }
+      }
+
+      session['has_recommendations'] = hasRecommendations;
+
+      // Add status display formatting
+      session['status_display'] = _formatStatusForDisplay(session['status'] ?? 'unknown');
+
+      // Add time ago formatting
+      if (session['last_created_at'] != null) {
+        final lastTime = DateTime.parse(session['last_created_at']);
+        session['time_ago'] = _formatTimeAgo(lastTime);
+      }
+
+    } catch (e) {
+      session['has_recommendations'] = false;
+      session['status_display'] = 'Unknown';
+    }
+  }
+
+  /// Format status for display in UI
+  String _formatStatusForDisplay(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return 'Active';
+      case 'completed':
+        return 'Completed';
+      case 'inactive':
+        return 'Inactive';
+      default:
+        return 'Unknown';
+    }
+  }
+
+  /// Format time ago for display
+  String _formatTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      return '${(difference.inDays / 7).floor()}w ago';
+    }
+  }
+
+  // Get all messages in a specific session with fallback
+  Future<List<Map<String, dynamic>>> getSessionMessages(String sessionId) async {
+    try {
+      if (currentUserId == null) return [];
+
+      try {
+        // Try RPC function first
+        final response = await _supabase.rpc('get_session_messages', params: {
+          'p_user_id': currentUserId!,
+          'p_session_id': sessionId,
+        });
+
+        return List<Map<String, dynamic>>.from(response);
+      } catch (rpcError) {
+        print('❌ RPC get_session_messages failed: $rpcError');
+
+        // Fallback: direct query
+        final response = await _supabase
+            .from('chat_history')
+            .select()
+            .eq('user_id', currentUserId!)
+            .eq('session_id', sessionId)
+            .order('created_at', ascending: true);
+
+        return List<Map<String, dynamic>>.from(response);
+      }
+    } catch (e) {
+      print('Error getting session messages: $e');
+      return [];
+    }
+  }
+
+  // Search chat sessions with fallback
+  Future<List<Map<String, dynamic>>> searchChatSessions({
+    required String searchQuery,
+    String? category,
+    int limit = 20,
+  }) async {
+    try {
+      if (currentUserId == null) return [];
+
+      try {
+        // Try RPC function first
+        final response = await _supabase.rpc('search_chat_sessions', params: {
+          'p_user_id': currentUserId!,
+          'p_search_query': searchQuery,
+          'p_category': category == 'All' ? null : category,
+          'p_limit': limit,
+        });
+
+        return List<Map<String, dynamic>>.from(response);
+      } catch (rpcError) {
+        print('❌ RPC search_chat_sessions failed: $rpcError');
+
+        // Fallback: direct search
+        var query = _supabase
+            .from('chat_history')
+            .select()
+            .eq('user_id', currentUserId!)
+            .not('session_id', 'is', null)
+            .or('question.ilike.%$searchQuery%,answer.ilike.%$searchQuery%');
+
+        if (category != null && category != 'All') {
+          query = query.eq('category', category);
+        }
+
+        final response = await query
+            .order('created_at', ascending: false)
+            .limit(limit);
+
+        // Convert individual messages to session format
+        Map<String, List<Map<String, dynamic>>> grouped = {};
+
+        for (var message in response) {
+          final sessionId = message['session_id'].toString();
+          if (!grouped.containsKey(sessionId)) {
+            grouped[sessionId] = [];
+          }
+          grouped[sessionId]!.add(message);
+        }
+
+        // Convert to session format (simplified for search)
+        final sessions = grouped.entries.map((entry) {
+          final sessionMessages = entry.value;
+          final firstMessage = sessionMessages.first;
+
+          return {
+            'session_id': entry.key,
+            'first_question': firstMessage['question'] ?? 'No question',
+            'last_question': firstMessage['question'] ?? 'No question',
+            'message_count': sessionMessages.length,
+            'categories': [firstMessage['category'] ?? 'General'],
+            'first_created_at': firstMessage['created_at'],
+            'last_created_at': firstMessage['created_at'],
+            'avg_confidence': firstMessage['confidence_score'],
+            'match_score': 1,
+            'has_recommendations': _messageHasRecommendations(firstMessage),
+          };
+        }).toList();
+
+        return sessions;
+      }
+    } catch (e) {
+      print('Error searching chat sessions: $e');
+      return [];
+    }
+  }
+
+  // Helper method to check if a message has recommendations
+  bool _messageHasRecommendations(Map<String, dynamic> message) {
+    try {
+      final metadata = message['metadata'] as Map<String, dynamic>?;
+      if (metadata != null && metadata['recommendations'] is List) {
+        final recommendations = metadata['recommendations'] as List;
+        return recommendations.isNotEmpty;
+      }
+    } catch (e) {
+      // Silent fail
+    }
+    return false;
+  }
+
+  // Updated getChatHistory method with robust fallbacks
   Future<List<Map<String, dynamic>>> getChatHistory({
     int limit = 50,
     String? category,
@@ -153,39 +756,35 @@ class DatabaseService {
     try {
       if (currentUserId == null) return [];
 
-      var queryBuilder = _supabase
-          .from('chat_history')
-          .select()
-          .eq('user_id', currentUserId!);
-
-      if (category != null && category != 'All') {
-        queryBuilder = queryBuilder.eq('category', category);
-      }
-
+      // If sessionId is provided, get messages for that session
       if (sessionId != null) {
-        queryBuilder = queryBuilder.eq('session_id', sessionId);
+        return await getSessionMessages(sessionId);
       }
 
-      if (fromDate != null) {
-        // Convert Philippine time to UTC for database query
-        final utcFromDate = PhilippineTime.toUtc(fromDate);
-        queryBuilder = queryBuilder.gte('created_at', utcFromDate.toIso8601String());
-      }
-
-      if (toDate != null) {
-        // Convert Philippine time to UTC for database query
-        final utcToDate = PhilippineTime.toUtc(toDate);
-        queryBuilder = queryBuilder.lte('created_at', utcToDate.toIso8601String());
-      }
-
-      final response = await queryBuilder
-          .order('created_at', ascending: false)
-          .limit(limit);
-
-      return List<Map<String, dynamic>>.from(response);
+      // Otherwise, get sessions (grouped conversations)
+      return await getChatSessions(
+        limit: limit,
+        category: category,
+        fromDate: fromDate,
+        toDate: toDate,
+      );
     } catch (e) {
-      print('Error getting chat history: $e');
-      return [];
+      print('❌ Error in getChatHistory: $e');
+
+      // Final fallback: just get all messages
+      try {
+        final response = await _supabase
+            .from('chat_history')
+            .select()
+            .eq('user_id', currentUserId!)
+            .order('created_at', ascending: false)
+            .limit(limit);
+
+        return List<Map<String, dynamic>>.from(response);
+      } catch (finalError) {
+        print('❌ Final fallback failed: $finalError');
+        return [];
+      }
     }
   }
 
@@ -194,14 +793,7 @@ class DatabaseService {
     try {
       if (currentUserId == null) return [];
 
-      final response = await _supabase
-          .from('chat_history')
-          .select()
-          .eq('user_id', currentUserId!)
-          .order('created_at', ascending: false)
-          .limit(5);
-
-      return List<Map<String, dynamic>>.from(response);
+      return await getChatSessions(limit: 5);
     } catch (e) {
       print('Error getting recent chat history: $e');
       return [];
@@ -260,7 +852,7 @@ class DatabaseService {
     }
   }
 
-  // Enhanced save chat message with proper timezone handling
+  // Enhanced save chat message with proper timezone handling and session management
   Future<String?> saveChatMessage({
     required String question,
     required String answer,
@@ -273,6 +865,9 @@ class DatabaseService {
   }) async {
     try {
       if (currentUserId == null) throw 'User not authenticated';
+
+      // Update last active when user chats
+      updateUserLastActive();
 
       // Get current Philippine time for metadata
       final philippineNow = PhilippineTime.now();
@@ -290,6 +885,7 @@ class DatabaseService {
         ...?metadata,
       };
 
+      // Save the chat message (this will automatically trigger session update via database trigger)
       final response = await _supabase.from('chat_history').insert({
         'user_id': currentUserId!,
         'question': question,
@@ -298,17 +894,21 @@ class DatabaseService {
         'confidence_score': confidenceScore,
         'session_id': sessionId,
         'metadata': enhancedMetadata,
-        'created_at': utcNow.toIso8601String(), // Store in UTC
+        'created_at': utcNow.toIso8601String(),
       }).select('id').single();
 
-      return response['id'] as String?;
+      final chatId = response['id'] as String?;
+
+      print('✅ Chat message saved: $chatId for session: $sessionId');
+
+      return chatId;
     } catch (e) {
-      print('Error saving chat message: $e');
+      print('❌ Error saving chat message: $e');
       return null;
     }
   }
 
-  // Search chat history
+  // Search method that works with both old individual messages and new sessions
   Future<List<Map<String, dynamic>>> searchChatHistory({
     required String searchQuery,
     String? category,
@@ -317,6 +917,19 @@ class DatabaseService {
     try {
       if (currentUserId == null) return [];
 
+      // First try to search sessions
+      final sessionResults = await searchChatSessions(
+        searchQuery: searchQuery,
+        category: category,
+        limit: limit,
+      );
+
+      // If session results found, return them
+      if (sessionResults.isNotEmpty) {
+        return sessionResults;
+      }
+
+      // Fallback to old individual message search for backward compatibility
       var query = _supabase
           .from('chat_history')
           .select()
@@ -338,7 +951,80 @@ class DatabaseService {
     }
   }
 
-  // Legal Resources Operations
+  /// Get session statistics for analytics
+  Future<Map<String, dynamic>> getSessionStatistics() async {
+    try {
+      if (currentUserId == null) return {};
+
+      final sessions = await getChatSessions(limit: 1000);
+
+      final totalSessions = sessions.length;
+      final activeSessions = sessions.where((s) => s['status'] == 'active').length;
+      final completedSessions = sessions.where((s) => s['status'] == 'completed').length;
+      final totalMessages = sessions.fold<int>(0, (sum, session) => sum + (session['message_count'] as int? ?? 0));
+
+      final avgMessagesPerSession = totalSessions > 0 ? totalMessages / totalSessions : 0.0;
+
+      // Get recent activity (last 7 days)
+      final sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
+      final recentSessions = sessions.where((session) {
+        try {
+          final sessionDate = DateTime.parse(session['last_created_at']);
+          return sessionDate.isAfter(sevenDaysAgo);
+        } catch (e) {
+          return false;
+        }
+      }).length;
+
+      return {
+        'total_sessions': totalSessions,
+        'active_sessions': activeSessions,
+        'completed_sessions': completedSessions,
+        'total_messages': totalMessages,
+        'avg_messages_per_session': avgMessagesPerSession,
+        'recent_sessions_7d': recentSessions,
+        'completion_rate': totalSessions > 0 ? (completedSessions / totalSessions * 100).round() : 0,
+      };
+    } catch (e) {
+      print('Error getting session statistics: $e');
+      return {};
+    }
+  }
+
+  /// Get active sessions count (for admin dashboard)
+  Future<int> getActiveSessionsCount() async {
+    try {
+      final response = await _supabase
+          .from('chat_sessions')
+          .select('id')
+          .eq('status', 'active');
+
+      return response.length;
+    } catch (e) {
+      print('Error getting active sessions count: $e');
+      return 0;
+    }
+  }
+
+  /// Get completed sessions count (for admin dashboard)
+  Future<int> getCompletedSessionsCount() async {
+    try {
+      final response = await _supabase
+          .from('chat_sessions')
+          .select('id')
+          .eq('status', 'completed');
+
+      return response.length;
+    } catch (e) {
+      print('Error getting completed sessions count: $e');
+      return 0;
+    }
+  }
+
+  // =============================================
+  // LEGAL RESOURCES OPERATIONS
+  // =============================================
+
   Future<List<Map<String, dynamic>>> getLegalResources({
     String? category,
     String? searchQuery,
@@ -376,73 +1062,90 @@ class DatabaseService {
     }
   }
 
+  // =============================================
+  // ANALYTICS OPERATIONS
+  // =============================================
+
   // Enhanced Analytics Operations with timezone handling
   Future<Map<String, dynamic>> getUserAnalytics() async {
     try {
       if (currentUserId == null) return {};
 
-      // Get total questions count
-      final questionsResponse = await _supabase
-          .from('chat_history')
-          .select()
-          .eq('user_id', currentUserId!);
+      // Get session-based analytics instead of individual message analytics
+      final sessionsResponse = await getChatSessions(limit: 1000);
 
-      final totalQuestions = questionsResponse.length;
+      if (sessionsResponse.isEmpty) {
+        return {
+          'total_conversations': 0,
+          'total_messages': 0,
+          'avg_messages_per_conversation': 0.0,
+          'top_categories': <Map<String, dynamic>>[],
+          'recent_activity_count': 0,
+          'accuracy_rate': 0,
+          'avg_confidence': 0.0,
+          'top_keywords': <String>[],
+          'last_activity': null,
+        };
+      }
 
-      // Get category breakdown
-      final categoriesResponse = await _supabase
-          .from('chat_history')
-          .select('category')
-          .eq('user_id', currentUserId!);
+      final totalConversations = sessionsResponse.length;
+      final totalMessages = sessionsResponse.fold<int>(0, (sum, session) => sum + (session['message_count'] as int));
+      final avgMessagesPerConversation = totalMessages / totalConversations;
 
-      // Process categories
+      // Get category breakdown from sessions
       Map<String, int> categoryCount = {};
-      for (var item in categoriesResponse) {
-        String category = item['category'] ?? 'Other';
-        categoryCount[category] = (categoryCount[category] ?? 0) + 1;
+      double totalConfidence = 0.0;
+      int confidenceCount = 0;
+
+      for (var session in sessionsResponse) {
+        final categories = session['categories'] as List?;
+        if (categories != null) {
+          for (var category in categories) {
+            categoryCount[category.toString()] = (categoryCount[category.toString()] ?? 0) + 1;
+          }
+        }
+
+        final confidence = session['avg_confidence'];
+        if (confidence != null) {
+          totalConfidence += (confidence as num).toDouble();
+          confidenceCount++;
+        }
       }
 
       // Sort categories by count
       var sortedCategories = categoryCount.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
-      // Get recent activity (last 7 days) - convert to UTC for query
+      final avgConfidence = confidenceCount > 0 ? totalConfidence / confidenceCount : 0.0;
+
+      // Get recent activity (last 7 days)
       final sevenDaysAgo = PhilippineTime.now().subtract(const Duration(days: 7));
-      final utcSevenDaysAgo = PhilippineTime.toUtc(sevenDaysAgo);
+      final recentSessions = sessionsResponse.where((session) {
+        final sessionDate = DateTime.parse(session['last_created_at']);
+        return sessionDate.isAfter(PhilippineTime.toUtc(sevenDaysAgo));
+      }).length;
 
-      final recentActivity = await _supabase
-          .from('chat_history')
-          .select('created_at')
-          .eq('user_id', currentUserId!)
-          .gte('created_at', utcSevenDaysAgo.toIso8601String());
-
-      // Get average confidence score
-      final confidenceResponse = await _supabase
-          .from('chat_history')
-          .select('confidence_score')
-          .eq('user_id', currentUserId!)
-          .not('confidence_score', 'is', null);
-
-      double avgConfidence = 0.0;
-      if (confidenceResponse.isNotEmpty) {
-        final scores = confidenceResponse
-            .map((item) => (item['confidence_score'] as num).toDouble())
-            .toList();
-        avgConfidence = scores.reduce((a, b) => a + b) / scores.length;
-      }
-
-      // Get top keywords from metadata
-      final keywordsResponse = await _supabase
-          .from('chat_history')
-          .select('metadata')
-          .eq('user_id', currentUserId!)
-          .not('metadata', 'is', null);
+      // Get keywords from the most recent sessions
+      final recentSessionIds = sessionsResponse.take(10).map((s) => s['session_id'].toString()).toList();
 
       final allKeywords = <String>[];
-      for (var item in keywordsResponse) {
-        final metadata = item['metadata'] as Map<String, dynamic>?;
-        if (metadata != null && metadata['keywords'] is List) {
-          allKeywords.addAll((metadata['keywords'] as List).cast<String>());
+      if (recentSessionIds.isNotEmpty) {
+        try {
+          final keywordsResponse = await _supabase
+              .from('chat_history')
+              .select('metadata')
+              .eq('user_id', currentUserId!)
+              .contains('session_id', recentSessionIds)
+              .not('metadata', 'is', null);
+
+          for (var item in keywordsResponse) {
+            final metadata = item['metadata'] as Map<String, dynamic>?;
+            if (metadata != null && metadata['keywords'] is List) {
+              allKeywords.addAll((metadata['keywords'] as List).cast<String>());
+            }
+          }
+        } catch (e) {
+          print('Error fetching keywords: $e');
         }
       }
 
@@ -456,18 +1159,20 @@ class DatabaseService {
         ..sort((a, b) => b.value.compareTo(a.value));
 
       return {
-        'total_questions': totalQuestions,
+        'total_conversations': totalConversations,
+        'total_messages': totalMessages,
+        'avg_messages_per_conversation': avgMessagesPerConversation,
         'top_categories': sortedCategories.take(5).map((e) => {
           'category': e.key,
           'count': e.value,
-          'percentage': totalQuestions > 0 ? ((e.value / totalQuestions) * 100).round() : 0,
+          'percentage': totalConversations > 0 ? ((e.value / totalConversations) * 100).round() : 0,
         }).toList(),
-        'recent_activity_count': recentActivity.length,
+        'recent_activity_count': recentSessions,
         'accuracy_rate': (avgConfidence * 100).round(),
         'avg_confidence': avgConfidence,
         'top_keywords': topKeywords.take(10).map((e) => e.key).toList(),
         'category_distribution': categoryCount,
-        'last_activity': totalQuestions > 0
+        'last_activity': totalConversations > 0
             ? PhilippineTime.getCurrentDateTimeString()
             : null,
       };
@@ -507,7 +1212,10 @@ class DatabaseService {
     }
   }
 
-  // Saved Legal Advice Operations
+  // =============================================
+  // SAVED LEGAL ADVICE OPERATIONS
+  // =============================================
+
   Future<void> saveLegalAdvice({
     required String question,
     required String answer,
@@ -677,7 +1385,10 @@ class DatabaseService {
     }
   }
 
-  // Legal Categories Operations
+  // =============================================
+  // LEGAL CATEGORIES OPERATIONS
+  // =============================================
+
   Future<List<Map<String, dynamic>>> getLegalCategories() async {
     try {
       final response = await _supabase
@@ -693,7 +1404,10 @@ class DatabaseService {
     }
   }
 
-  // Enhanced Feedback Operations
+  // =============================================
+  // FEEDBACK OPERATIONS
+  // =============================================
+
   Future<bool> submitFeedback({
     required String chatHistoryId,
     required int rating,
@@ -735,7 +1449,10 @@ class DatabaseService {
     }
   }
 
-  // Notifications Operations
+  // =============================================
+  // NOTIFICATIONS OPERATIONS
+  // =============================================
+
   Future<List<Map<String, dynamic>>> getNotifications({bool unreadOnly = false}) async {
     try {
       if (currentUserId == null) return [];
@@ -820,7 +1537,10 @@ class DatabaseService {
     }
   }
 
-  // Search Operations
+  // =============================================
+  // SEARCH OPERATIONS
+  // =============================================
+
   Future<List<Map<String, dynamic>>> searchLegalResources(String query) async {
     try {
       final response = await _supabase
@@ -883,6 +1603,10 @@ class DatabaseService {
       return [];
     }
   }
+
+  // =============================================
+  // FILE UPLOAD OPERATIONS
+  // =============================================
 
   // Upload profile picture to Supabase storage
   Future<String> uploadProfilePicture(String filePath) async {

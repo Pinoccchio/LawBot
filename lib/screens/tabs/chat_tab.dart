@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
-
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/gemini_service.dart';
@@ -30,6 +30,10 @@ class _ChatTabState extends State<ChatTab> {
   String? _currentUserId;
   List<ChatMessage> _messages = [];
   Timer? _timeUpdateTimer;
+  bool _isLoadingHistory = false;
+  Map<String, dynamic>? _currentActiveSession;
+  static const String _sessionKeyPrefix = 'current_session_';
+  static const String _sessionTimePrefix = 'session_time_';
 
   @override
   void initState() {
@@ -55,10 +59,207 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> _initializeChat() async {
-    _sessionId = _databaseService.generateSessionId();
     final user = FirebaseAuth.instance.currentUser;
     _currentUserId = user?.uid ?? 'guest_${DateTime.now().millisecondsSinceEpoch}';
 
+    setState(() {
+      _isLoadingHistory = true;
+    });
+
+    try {
+      print('🔄 Initializing chat for user: $_currentUserId');
+
+      // Step 1: Check for existing active session in database
+      _currentActiveSession = await _databaseService.getCurrentActiveSession();
+
+      if (_currentActiveSession != null) {
+        // Continue existing active session
+        _sessionId = _currentActiveSession!['session_id'];
+        print('✅ Found active session: $_sessionId');
+        await _loadSessionMessages();
+      } else {
+        // Check for stored session ID (fallback)
+        final storedSessionId = await _getStoredSessionId();
+
+        if (storedSessionId != null && await _isSessionStillValid(storedSessionId)) {
+          // Continue with stored session
+          _sessionId = storedSessionId;
+          print('✅ Continuing with stored session: $_sessionId');
+          await _loadSessionMessages();
+        } else {
+          // Start completely new session
+          print('🚀 Starting new session');
+          await _startNewSession();
+        }
+      }
+    } catch (e) {
+      print('❌ Error initializing chat: $e');
+      // Fallback to new session
+      await _startNewSession();
+    } finally {
+      setState(() {
+        _isLoadingHistory = false;
+      });
+    }
+  }
+
+  Future<String?> _getStoredSessionId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final sessionId = prefs.getString('$_sessionKeyPrefix$_currentUserId');
+      final sessionTime = prefs.getInt('$_sessionTimePrefix$_currentUserId');
+
+      if (sessionId != null && sessionTime != null) {
+        // Check if session is within last 24 hours
+        final lastActivity = DateTime.fromMillisecondsSinceEpoch(sessionTime);
+        final now = DateTime.now();
+
+        if (now.difference(lastActivity).inHours < 24) {
+          return sessionId;
+        }
+      }
+
+      return null;
+    } catch (e) {
+      print('Error getting stored session: $e');
+      return null;
+    }
+  }
+
+  Future<void> _storeSessionId(String sessionId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('$_sessionKeyPrefix$_currentUserId', sessionId);
+      await prefs.setInt('$_sessionTimePrefix$_currentUserId', DateTime.now().millisecondsSinceEpoch);
+    } catch (e) {
+      print('Error storing session: $e');
+    }
+  }
+
+  Future<void> _clearStoredSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('$_sessionKeyPrefix$_currentUserId');
+      await prefs.remove('$_sessionTimePrefix$_currentUserId');
+    } catch (e) {
+      print('Error clearing stored session: $e');
+    }
+  }
+
+  Future<bool> _isSessionStillValid(String sessionId) async {
+    try {
+      // Check if session exists in database and get its status
+      final sessions = await _databaseService.getChatSessions(limit: 100);
+      final session = sessions.firstWhere(
+            (s) => s['session_id'] == sessionId,
+        orElse: () => {},
+      );
+
+      // Session is valid if it exists and is active
+      return session.isNotEmpty && session['status'] == 'active';
+    } catch (e) {
+      print('Error checking session validity: $e');
+      return false;
+    }
+  }
+
+  Future<void> _loadSessionMessages() async {
+    try {
+      if (_sessionId == null) return;
+
+      print('📥 Loading messages for session: $_sessionId');
+      final sessionMessages = await _databaseService.getSessionMessages(_sessionId!);
+
+      if (sessionMessages.isNotEmpty) {
+        setState(() {
+          _messages = sessionMessages.map((msg) {
+            final createdAt = DateTime.parse(msg['created_at']);
+            final philippineTime = PhilippineTime.fromUtc(createdAt);
+
+            return ChatMessage(
+              text: msg['question'] ?? '',
+              isBot: false,
+              time: PhilippineTime.formatTime(philippineTime),
+              philippineDateTime: philippineTime,
+              category: 'User',
+              chatId: msg['id'],
+            );
+          }).expand((userMsg) {
+            // Find corresponding message for the answer
+            final msgData = sessionMessages.firstWhere(
+                  (m) => m['id'] == userMsg.chatId,
+              orElse: () => <String, dynamic>{},
+            );
+
+            if (msgData.isNotEmpty) {
+              final createdAt = DateTime.parse(msgData['created_at']);
+              final philippineTime = PhilippineTime.fromUtc(createdAt);
+
+              final botMsg = ChatMessage(
+                text: msgData['answer'] ?? '',
+                isBot: true,
+                time: PhilippineTime.formatTime(philippineTime),
+                philippineDateTime: philippineTime,
+                category: msgData['category'] ?? 'General',
+                confidenceScore: msgData['confidence_score']?.toDouble(),
+                keywords: (msgData['metadata']?['keywords'] as List?)?.cast<String>(),
+                recommendations: (msgData['metadata']?['recommendations'] as List?)?.cast<String>(),
+                chatId: msgData['id'],
+              );
+
+              return [userMsg, botMsg];
+            }
+            return [userMsg];
+          }).toList();
+        });
+
+        print('✅ Loaded ${_messages.length} messages');
+
+        // Scroll to bottom after loading
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToBottom();
+        });
+      } else {
+        // Empty session, show welcome message
+        print('📝 Empty session, showing welcome message');
+        _addWelcomeMessage();
+      }
+    } catch (e) {
+      print('❌ Error loading session messages: $e');
+      _addWelcomeMessage();
+    }
+  }
+
+  Future<void> _startNewSession() async {
+    try {
+      print('🚀 Starting new conversation session');
+
+      // Use the enhanced database method to start new conversation
+      _sessionId = await _databaseService.startNewConversation();
+
+      // Store the new session ID locally
+      await _storeSessionId(_sessionId!);
+
+      // Update current active session
+      _currentActiveSession = {
+        'session_id': _sessionId,
+        'status': 'active',
+        'title': 'New Conversation',
+        'total_messages': 0,
+      };
+
+      print('✅ New session created: $_sessionId');
+      _addWelcomeMessage();
+    } catch (e) {
+      print('❌ Error starting new session: $e');
+      // Fallback: generate session ID manually
+      _sessionId = _databaseService.generateSessionId();
+      await _storeSessionId(_sessionId!);
+      _addWelcomeMessage();
+    }
+  }
+
+  void _addWelcomeMessage() {
     final welcomeTime = PhilippineTime.now();
     setState(() {
       _messages = [
@@ -95,6 +296,11 @@ class _ChatTabState extends State<ChatTab> {
     });
 
     _scrollToBottom();
+
+    // Update session timestamp
+    if (_sessionId != null) {
+      await _storeSessionId(_sessionId!);
+    }
 
     try {
       final chatHistory = await _databaseService.getChatHistoryForContext(
@@ -179,14 +385,40 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> _clearChat() async {
-    setState(() {
-      _messages.clear();
-      _sessionId = _databaseService.generateSessionId();
-    });
-    await _initializeChat();
+    try {
+      print('🧹 Starting new conversation...');
+
+      setState(() {
+        _isLoadingHistory = true;
+      });
+
+      // Clear stored session
+      await _clearStoredSession();
+
+      // Clear current messages
+      setState(() {
+        _messages.clear();
+      });
+
+      // Start new conversation (this will complete previous active sessions)
+      await _startNewSession();
+
+      print('✅ New conversation started successfully');
+    } catch (e) {
+      print('❌ Error clearing chat: $e');
+      // Fallback
+      setState(() {
+        _messages.clear();
+      });
+      _addWelcomeMessage();
+    } finally {
+      setState(() {
+        _isLoadingHistory = false;
+      });
+    }
   }
 
-  // Bookmark functionality
+  // Enhanced bookmark functionality with session context
   Future<void> _bookmarkMessage(ChatMessage message) async {
     if (FirebaseAuth.instance.currentUser == null) {
       _showSignInRequiredDialog();
@@ -215,6 +447,7 @@ class _ChatTabState extends State<ChatTab> {
           answer: message.text,
           category: message.category,
           tags: message.keywords,
+          notes: 'Saved from conversation: ${_currentActiveSession?['title'] ?? 'Chat Session'}',
         );
 
         _showSnackBar('Legal advice saved to your bookmarks!', Colors.green);
@@ -225,7 +458,7 @@ class _ChatTabState extends State<ChatTab> {
     }
   }
 
-  // Share functionality
+  // Enhanced share functionality with session info
   Future<void> _shareMessage(ChatMessage message) async {
     try {
       // Get the user question that preceded this bot response
@@ -245,6 +478,7 @@ ${message.text}
 
 📂 Category: ${message.category}
 ⏰ ${message.time}
+💬 Session: ${_currentActiveSession?['title'] ?? 'Chat Session'}
 
 ---
 Generated by LawBot - Your AI Legal Assistant for Philippine Cybercrime Laws
@@ -257,6 +491,7 @@ ${message.text}
 
 📂 Category: ${message.category}
 ⏰ ${message.time}
+💬 Session: ${_currentActiveSession?['title'] ?? 'Chat Session'}
 
 ---
 Generated by LawBot - Your AI Legal Assistant for Philippine Cybercrime Laws
@@ -364,6 +599,65 @@ Generated by LawBot - Your AI Legal Assistant for Philippine Cybercrime Laws
               ),
             ),
             const SizedBox(height: 20),
+
+            // Session Status Info (if active session exists)
+            if (_currentActiveSession != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.blue[900]?.withOpacity(0.3)
+                      : Colors.blue[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? Colors.blue[700]! : Colors.blue[200]!,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.circle,
+                      size: 12,
+                      color: _currentActiveSession!['status'] == 'active'
+                          ? Colors.green
+                          : Colors.orange,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Current Session',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.blue[300] : Colors.blue[700],
+                            ),
+                          ),
+                          Text(
+                            _currentActiveSession!['title'] ?? 'Active Conversation',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDark ? Colors.white : Colors.black,
+                            ),
+                          ),
+                          Text(
+                            'Status: ${_currentActiveSession!['status']?.toString().toUpperCase() ?? 'ACTIVE'}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             ListTile(
               leading: Container(
                 padding: const EdgeInsets.all(8),
@@ -374,7 +668,11 @@ Generated by LawBot - Your AI Legal Assistant for Philippine Cybercrime Laws
                 child: const Icon(Icons.refresh_rounded, color: Colors.blue),
               ),
               title: const Text('New Conversation'),
-              subtitle: const Text('Start a fresh conversation'),
+              subtitle: Text(
+                  _currentActiveSession != null
+                      ? 'Complete current session and start fresh'
+                      : 'Start a fresh conversation'
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _clearChat();
@@ -479,17 +777,24 @@ Generated by LawBot - Your AI Legal Assistant for Philippine Cybercrime Laws
                       Container(
                         width: 8,
                         height: 8,
-                        decoration: const BoxDecoration(
-                          color: Colors.green,
+                        decoration: BoxDecoration(
+                          color: _currentActiveSession != null && _currentActiveSession!['status'] == 'active'
+                              ? Colors.green
+                              : Colors.orange,
                           shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        'Online • Philippine Time: ${PhilippineTime.getCurrentTimeString()}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      Expanded(
+                        child: Text(
+                          _currentActiveSession != null
+                              ? 'Active Session • ${PhilippineTime.getCurrentTimeString()}'
+                              : 'Online • Philippine Time: ${PhilippineTime.getCurrentTimeString()}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -510,7 +815,18 @@ Generated by LawBot - Your AI Legal Assistant for Philippine Cybercrime Laws
         ],
         automaticallyImplyLeading: false,
       ),
-      body: Column(
+      body: _isLoadingHistory
+          ? const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading conversation...'),
+          ],
+        ),
+      )
+          : Column(
         children: [
           Expanded(
             child: ListView.builder(
@@ -524,8 +840,8 @@ Generated by LawBot - Your AI Legal Assistant for Philippine Cybercrime Laws
                 final message = _messages[index];
                 return ChatBubble(
                   message: message,
-                  onBookmark: () => _bookmarkMessage(message),
-                  onShare: () => _shareMessage(message),
+                  onBookmark: message.isBot ? () => _bookmarkMessage(message) : null,
+                  onShare: message.isBot ? () => _shareMessage(message) : null,
                 );
               },
             ),

@@ -17,6 +17,12 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
   Map<String, dynamic>? get userProfile => _userProfile;
 
+  // NEW: Get user type and status
+  String get userType => _userProfile?['user_type'] ?? 'CLIENT';
+  String get userStatus => _userProfile?['user_status'] ?? 'active';
+  bool get isAdmin => userType == 'ADMIN';
+  bool get isAccountActive => userStatus == 'active';
+
   AuthProvider() {
     _initializeAuth();
   }
@@ -44,6 +50,12 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _loadUserProfile() async {
     try {
       _userProfile = await _databaseService.getUserProfile();
+
+      // Update last active when profile is loaded
+      if (_userProfile != null) {
+        _databaseService.updateUserLastActive();
+      }
+
       notifyListeners();
     } catch (e) {
       print('Error loading user profile: $e');
@@ -63,6 +75,14 @@ class AuthProvider extends ChangeNotifier {
       if (user != null) {
         _user = user;
         await _loadUserProfile();
+
+        // Check if account is active
+        if (!isAccountActive) {
+          await signOut();
+          _setError('Your account has been suspended. Please contact support.');
+          return false;
+        }
+
         notifyListeners();
         return true;
       }
@@ -75,7 +95,14 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> signUp(String email, String password, String fullName) async {
+  // UPDATED: Enhanced signup with all required fields
+  Future<bool> signUp(
+      String email,
+      String password,
+      String fullName, {
+        String preferredLanguage = 'en',
+        Map<String, dynamic>? notificationPreferences,
+      }) async {
     _setLoading(true);
     _clearError();
 
@@ -89,11 +116,17 @@ class AuthProvider extends ChangeNotifier {
       if (user != null) {
         _user = user;
 
-        // Create user profile in Supabase
+        // Create user profile in Supabase with all new fields
         await _databaseService.createUserProfile(
           firebaseUid: user.uid,
           email: email,
           fullName: fullName,
+          userType: 'CLIENT', // Default to CLIENT
+          preferredLanguage: preferredLanguage,
+          notificationPreferences: notificationPreferences ?? {
+            'email': true,
+            'push': true,
+          },
         );
 
         await _loadUserProfile();
@@ -138,11 +171,13 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // UPDATED: Enhanced profile update with new fields
   Future<void> updateProfile({
     required String fullName,
     String? phoneNumber,
     String? avatarUrl,
     String? preferredLanguage,
+    Map<String, dynamic>? notificationPreferences,
   }) async {
     _setLoading(true);
     _clearError();
@@ -151,12 +186,51 @@ class AuthProvider extends ChangeNotifier {
       // Update Firebase Auth display name
       await _authService.updateUserDisplayName(fullName);
 
-      // Update Supabase profile
+      // Update Supabase profile with all new fields
       await _databaseService.updateUserProfile(
         fullName: fullName,
         phoneNumber: phoneNumber,
         avatarUrl: avatarUrl,
         preferredLanguage: preferredLanguage,
+        notificationPreferences: notificationPreferences,
+      );
+
+      // Reload profile
+      await _loadUserProfile();
+    } catch (e) {
+      _setError(e.toString());
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // NEW: Update notification preferences
+  Future<void> updateNotificationPreferences(Map<String, dynamic> preferences) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      await _databaseService.updateUserProfile(
+        notificationPreferences: preferences,
+      );
+
+      // Reload profile
+      await _loadUserProfile();
+    } catch (e) {
+      _setError(e.toString());
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // NEW: Update preferred language
+  Future<void> updatePreferredLanguage(String language) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      await _databaseService.updateUserProfile(
+        preferredLanguage: language,
       );
 
       // Reload profile
@@ -215,6 +289,53 @@ class AuthProvider extends ChangeNotifier {
     } finally {
       _setLoading(false);
     }
+  }
+
+  // NEW: Check account status
+  Future<bool> checkAccountStatus() async {
+    try {
+      final statusInfo = await _databaseService.getUserStatusAndType();
+      if (statusInfo != null) {
+        final status = statusInfo['user_status'];
+        if (status != 'active') {
+          await signOut();
+          _setError('Your account has been ${status}. Please contact support.');
+          return false;
+        }
+      }
+      return true;
+    } catch (e) {
+      print('Error checking account status: $e');
+      return true; // Don't block user if check fails
+    }
+  }
+
+  // NEW: Get user preferences safely
+  Map<String, dynamic> getNotificationPreferences() {
+    return _userProfile?['notification_preferences'] ?? {
+      'email': true,
+      'push': true,
+    };
+  }
+
+  String getPreferredLanguage() {
+    return _userProfile?['preferred_language'] ?? 'en';
+  }
+
+  DateTime? getLastActiveTime() {
+    final lastActiveStr = _userProfile?['last_active'];
+    if (lastActiveStr != null) {
+      return DateTime.tryParse(lastActiveStr);
+    }
+    return null;
+  }
+
+  DateTime? getAccountCreatedTime() {
+    final createdAtStr = _userProfile?['created_at'];
+    if (createdAtStr != null) {
+      return DateTime.tryParse(createdAtStr);
+    }
+    return null;
   }
 
   void _setLoading(bool loading) {

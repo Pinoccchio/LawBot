@@ -19,6 +19,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
+  // NEW: User preferences during signup
+  String _selectedLanguage = 'en';
+  bool _emailNotifications = true;
+  bool _pushNotifications = true;
+  bool _legalUpdates = true;
+
+  final List<Map<String, String>> _languages = [
+    {'code': 'en', 'name': 'English'},
+    {'code': 'fil', 'name': 'Filipino'},
+    {'code': 'es', 'name': 'Español'},
+  ];
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -54,6 +66,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
+    // Email validation
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(_emailController.text.trim())) {
+      _showErrorSnackBar('Please enter a valid email address');
+      return;
+    }
+
     if (_passwordController.text.length < 6) {
       _showErrorSnackBar('Password must be at least 6 characters');
       return;
@@ -64,11 +83,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    // Call the auth provider to sign up
+    // UPDATED: Call the enhanced sign up with preferences
+    // UPDATED: Simplify notification preferences structure
     final success = await authProvider.signUp(
       _emailController.text.trim(),
       _passwordController.text,
       _nameController.text.trim(),
+      preferredLanguage: _selectedLanguage,
+      notificationPreferences: {
+        'email': _emailNotifications,
+        'push': _pushNotifications,
+        'legal_updates': _legalUpdates,
+        'marketing': false,
+        'security_alerts': true,
+      },
     );
 
     if (success && mounted) {
@@ -143,13 +171,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
               ),
             ],
           ),
-          content: Text(
-            'Your account has been successfully created! Please sign in with your email and password to continue.',
-            style: TextStyle(
-              color: isDark ? Colors.grey[300] : Colors.grey[700],
-              fontSize: 16,
-              height: 1.4,
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Your account has been successfully created with the following preferences:',
+                style: TextStyle(
+                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+                  fontSize: 16,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _buildPreferenceSummary(isDark),
+              const SizedBox(height: 16),
+              Text(
+                'Please sign in with your email and password to continue.',
+                style: TextStyle(
+                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+                  fontSize: 16,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
           actions: [
             SizedBox(
@@ -180,6 +225,64 @@ class _SignUpScreenState extends State<SignUpScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildPreferenceSummary(bool isDark) {
+    final selectedLangName = _languages.firstWhere(
+          (lang) => lang['code'] == _selectedLanguage,
+      orElse: () => {'name': 'English'},
+    )['name'];
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark
+            ? const Color(0xFF334155).withOpacity(0.5)
+            : Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDark
+              ? const Color(0xFF475569)
+              : Colors.blue.shade200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '• Language: $selectedLangName',
+            style: TextStyle(
+              color: isDark ? Colors.grey[300] : Colors.grey[700],
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '• Email notifications: ${_emailNotifications ? "Enabled" : "Disabled"}',
+            style: TextStyle(
+              color: isDark ? Colors.grey[300] : Colors.grey[700],
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '• Push notifications: ${_pushNotifications ? "Enabled" : "Disabled"}',
+            style: TextStyle(
+              color: isDark ? Colors.grey[300] : Colors.grey[700],
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '• Legal updates: ${_legalUpdates ? "Enabled" : "Disabled"}',
+            style: TextStyle(
+              color: isDark ? Colors.grey[300] : Colors.grey[700],
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -412,7 +515,166 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     fillColor: isDark ? const Color(0xFF1E293B) : Colors.grey[50],
                   ),
                 ),
-                const SizedBox(height: 40),
+                const SizedBox(height: 30),
+
+                // NEW: Preferences Section
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E293B) : Colors.grey[50],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Preferences',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Language Selection
+                      Text(
+                        'Preferred Language',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.grey[300] : Colors.grey[700],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: _selectedLanguage,
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: isDark ? Colors.grey[600]! : Colors.grey[300]!,
+                            ),
+                          ),
+                          filled: true,
+                          fillColor: isDark ? const Color(0xFF334155) : Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        dropdownColor: isDark ? const Color(0xFF334155) : Colors.white,
+                        style: TextStyle(
+                          color: isDark ? Colors.white : Colors.black,
+                        ),
+                        items: _languages.map((lang) {
+                          return DropdownMenuItem<String>(
+                            value: lang['code'],
+                            child: Text(lang['name']!),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedLanguage = value!;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Notification Preferences
+                      Text(
+                        'Notification Preferences',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.grey[300] : Colors.grey[700],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Email Notifications
+                      SwitchListTile(
+                        value: _emailNotifications,
+                        onChanged: (value) {
+                          setState(() {
+                            _emailNotifications = value;
+                          });
+                        },
+                        title: Text(
+                          'Email Notifications',
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black,
+                            fontSize: 14,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Receive email updates and alerts',
+                          style: TextStyle(
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                        activeColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+
+                      // Push Notifications
+                      SwitchListTile(
+                        value: _pushNotifications,
+                        onChanged: (value) {
+                          setState(() {
+                            _pushNotifications = value;
+                          });
+                        },
+                        title: Text(
+                          'Push Notifications',
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black,
+                            fontSize: 14,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Receive push notifications on your device',
+                          style: TextStyle(
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                        activeColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+
+                      // Legal Updates
+                      SwitchListTile(
+                        value: _legalUpdates,
+                        onChanged: (value) {
+                          setState(() {
+                            _legalUpdates = value;
+                          });
+                        },
+                        title: Text(
+                          'Legal Updates',
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black,
+                            fontSize: 14,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Get notified about new laws and legal changes',
+                          style: TextStyle(
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            fontSize: 12,
+                          ),
+                        ),
+                        activeColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 30),
+
                 // Sign Up Button
                 SizedBox(
                   width: double.infinity,
