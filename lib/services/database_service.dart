@@ -19,7 +19,7 @@ class DatabaseService {
   }
 
   // =============================================
-  // USER PROFILE OPERATIONS
+  // USER PROFILE OPERATIONS (UPDATED)
   // =============================================
 
   // Get user profile
@@ -40,7 +40,7 @@ class DatabaseService {
     }
   }
 
-  // Create user profile with proper JSON handling
+  // Enhanced create user profile with automatic notification triggers
   Future<void> createUserProfile({
     required String firebaseUid,
     required String email,
@@ -63,7 +63,7 @@ class DatabaseService {
 
       final finalPreferences = {...defaultPreferences, ...?notificationPreferences};
 
-      // Insert directly with all required fields
+      // Insert user profile - this will automatically trigger admin notifications via database trigger
       await _supabase.from('user_profiles').insert({
         'firebase_uid': firebaseUid,
         'email': email,
@@ -77,13 +77,375 @@ class DatabaseService {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
 
-      print('User profile created successfully');
+      print('✅ User profile created successfully');
+
+      // Send welcome notification to the new user using template
+      try {
+        await createNotificationFromTemplate(
+          templateKey: 'welcome_user',
+          recipientUid: firebaseUid,
+          variables: {
+            'user_name': fullName,
+          },
+          actionUrl: '/welcome',
+        );
+        print('✅ Welcome notification sent to user');
+      } catch (welcomeError) {
+        print('⚠️ Failed to send welcome notification: $welcomeError');
+        // Don't fail the entire signup process if welcome notification fails
+      }
+
+      print('🎉 User signup process completed with notifications');
     } catch (e) {
-      print('Error creating user profile: $e');
-      print('Full error details: ${e.toString()}');
+      print('❌ Error creating user profile: $e');
       throw 'Failed to create user profile: $e';
     }
   }
+
+  // =============================================
+  // NOTIFICATION OPERATIONS (NEW)
+  // =============================================
+
+  // Get notifications for current user with enhanced filtering
+  Future<List<Map<String, dynamic>>> getNotifications({
+    bool unreadOnly = false,
+    String? category,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      if (currentUserId == null) return [];
+
+      final response = await _supabase.rpc('get_notifications', params: {
+        'p_user_id': currentUserId!,
+        'p_unread_only': unreadOnly,
+        'p_category': category,
+        'p_limit': limit,
+        'p_offset': offset,
+      });
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error getting notifications: $e');
+      return [];
+    }
+  }
+
+  // Get notification statistics
+  Future<Map<String, dynamic>> getNotificationStats() async {
+    try {
+      if (currentUserId == null) return {};
+
+      final response = await _supabase.rpc('get_notification_stats', params: {
+        'p_user_id': currentUserId!,
+      });
+
+      if (response.isNotEmpty) {
+        final stats = response.first;
+        return {
+          'total_notifications': stats['total_notifications'] ?? 0,
+          'unread_notifications': stats['unread_notifications'] ?? 0,
+          'urgent_notifications': stats['urgent_notifications'] ?? 0,
+          'notifications_today': stats['notifications_today'] ?? 0,
+        };
+      }
+
+      return {
+        'total_notifications': 0,
+        'unread_notifications': 0,
+        'urgent_notifications': 0,
+        'notifications_today': 0,
+      };
+    } catch (e) {
+      print('Error getting notification stats: $e');
+      return {};
+    }
+  }
+
+  // Mark notification as read
+  Future<bool> markNotificationAsRead(String notificationId) async {
+    try {
+      if (currentUserId == null) return false;
+
+      final result = await _supabase.rpc('mark_notification_read', params: {
+        'p_notification_id': notificationId,
+        'p_user_id': currentUserId!,
+      });
+
+      return result == true;
+    } catch (e) {
+      print('Error marking notification as read: $e');
+      return false;
+    }
+  }
+
+  // Send admin notification (for admins only)
+  Future<Map<String, dynamic>?> sendAdminNotification({
+    required String title,
+    required String message,
+    String? recipientUserId, // null = all users
+    String type = 'admin_message',
+    String category = 'announcement',
+    String priority = 'normal',
+    String? actionUrl,
+    DateTime? expiresAt,
+  }) async {
+    try {
+      if (currentUserId == null) throw 'User not authenticated';
+
+      // Verify current user is admin
+      final userProfile = await getUserProfile();
+      if (userProfile == null || userProfile['user_type'] != 'ADMIN') {
+        throw 'Only admins can send notifications';
+      }
+
+      final response = await _supabase.rpc('send_admin_notification', params: {
+        'p_sender_admin_uid': currentUserId!,
+        'p_title': title,
+        'p_message': message,
+        'p_recipient_user_uid': recipientUserId,
+        'p_type': type,
+        'p_category': category,
+        'p_priority': priority,
+        'p_action_url': actionUrl,
+        'p_expires_at': expiresAt?.toUtc().toIso8601String(),
+      });
+
+      if (response.isNotEmpty) {
+        final result = response.first;
+        return {
+          'notification_id': result['notification_id'],
+          'recipient_count': result['recipient_count'],
+          'success': true,
+        };
+      }
+
+      return {'success': false};
+    } catch (e) {
+      print('Error sending admin notification: $e');
+      throw 'Failed to send notification: $e';
+    }
+  }
+
+  // Create notification from template
+  Future<String?> createNotificationFromTemplate({
+    required String templateKey,
+    required String recipientUid,
+    String? senderUid,
+    Map<String, dynamic>? variables,
+    String? actionUrl,
+  }) async {
+    try {
+      final variablesJson = variables ?? {};
+
+      final response = await _supabase.rpc('create_notification_from_template', params: {
+        'p_template_key': templateKey,
+        'p_recipient_uid': recipientUid,
+        'p_sender_uid': senderUid,
+        'p_variables': variablesJson,
+        'p_action_url': actionUrl,
+      });
+
+      return response?.toString();
+    } catch (e) {
+      print('Error creating notification from template: $e');
+      return null;
+    }
+  }
+
+  // Get unread notification count (for badges)
+  Future<int> getUnreadNotificationCount() async {
+    try {
+      final stats = await getNotificationStats();
+      return stats['unread_notifications'] ?? 0;
+    } catch (e) {
+      print('Error getting unread notification count: $e');
+      return 0;
+    }
+  }
+
+  // Get urgent notifications (for immediate display)
+  Future<List<Map<String, dynamic>>> getUrgentNotifications() async {
+    try {
+      if (currentUserId == null) return [];
+
+      final notifications = await getNotifications(
+        unreadOnly: true,
+        limit: 10,
+      );
+
+      return notifications
+          .where((notification) => notification['priority'] == 'urgent')
+          .toList();
+    } catch (e) {
+      print('Error getting urgent notifications: $e');
+      return [];
+    }
+  }
+
+  // Check for admin signup notifications (for admin users)
+  Future<List<Map<String, dynamic>>> getAdminSignupNotifications() async {
+    try {
+      if (currentUserId == null) return [];
+
+      // Verify current user is admin
+      final userProfile = await getUserProfile();
+      if (userProfile == null || userProfile['user_type'] != 'ADMIN') {
+        return [];
+      }
+
+      return await getNotifications(
+        unreadOnly: true,
+        category: 'user_management',
+        limit: 20,
+      );
+    } catch (e) {
+      print('Error getting admin signup notifications: $e');
+      return [];
+    }
+  }
+
+  // Mark all notifications as read
+  Future<bool> markAllNotificationsAsRead() async {
+    try {
+      if (currentUserId == null) return false;
+
+      await _supabase
+          .from('notifications')
+          .update({
+        'is_read': true,
+        'read_at': DateTime.now().toUtc().toIso8601String(),
+        'delivery_status': 'read',
+      })
+          .eq('user_id', currentUserId!)
+          .eq('is_read', false);
+
+      return true;
+    } catch (e) {
+      print('Error marking all notifications as read: $e');
+      return false;
+    }
+  }
+
+  // Delete notification
+  Future<bool> deleteNotification(String notificationId) async {
+    try {
+      if (currentUserId == null) return false;
+
+      await _supabase
+          .from('notifications')
+          .delete()
+          .eq('id', notificationId)
+          .eq('user_id', currentUserId!);
+
+      return true;
+    } catch (e) {
+      print('Error deleting notification: $e');
+      return false;
+    }
+  }
+
+  // Get notification preferences for current user
+  Future<List<Map<String, dynamic>>> getNotificationPreferences() async {
+    try {
+      if (currentUserId == null) return [];
+
+      final response = await _supabase
+          .from('notification_preferences')
+          .select()
+          .eq('user_id', currentUserId!)
+          .order('notification_category');
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error getting notification preferences: $e');
+      return [];
+    }
+  }
+
+  // Update notification preferences
+  Future<bool> updateNotificationPreferences({
+    required String category,
+    bool? emailEnabled,
+    bool? pushEnabled,
+    bool? inAppEnabled,
+    String? frequency,
+    String? quietHoursStart,
+    String? quietHoursEnd,
+  }) async {
+    try {
+      if (currentUserId == null) return false;
+
+      final updateData = <String, dynamic>{
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      if (emailEnabled != null) updateData['email_enabled'] = emailEnabled;
+      if (pushEnabled != null) updateData['push_enabled'] = pushEnabled;
+      if (inAppEnabled != null) updateData['in_app_enabled'] = inAppEnabled;
+      if (frequency != null) updateData['frequency'] = frequency;
+      if (quietHoursStart != null) updateData['quiet_hours_start'] = quietHoursStart;
+      if (quietHoursEnd != null) updateData['quiet_hours_end'] = quietHoursEnd;
+
+      await _supabase
+          .from('notification_preferences')
+          .upsert({
+        'user_id': currentUserId!,
+        'notification_category': category,
+        ...updateData,
+      });
+
+      return true;
+    } catch (e) {
+      print('Error updating notification preferences: $e');
+      return false;
+    }
+  }
+
+  // Clean up expired notifications (admin function)
+  Future<int> cleanupExpiredNotifications() async {
+    try {
+      final result = await _supabase.rpc('cleanup_expired_notifications');
+      return result ?? 0;
+    } catch (e) {
+      print('Error cleaning up expired notifications: $e');
+      return 0;
+    }
+  }
+
+  // Save notification (generic method for system notifications)
+  Future<bool> saveNotification({
+    required String title,
+    required String message,
+    required String type, // 'info', 'warning', 'success', 'legal_update', 'system'
+    String? actionUrl,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      if (currentUserId == null) return false;
+
+      await _supabase.from('notifications').insert({
+        'user_id': currentUserId!,
+        'title': title,
+        'message': message,
+        'type': type,
+        'notification_category': 'system',
+        'action_url': actionUrl,
+        'metadata': metadata,
+        'is_read': false,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+      return true;
+    } catch (e) {
+      print('Error saving notification: $e');
+      return false;
+    }
+  }
+
+  // =============================================
+  // USER PROFILE OPERATIONS (CONTINUED)
+  // =============================================
 
   // Update user profile with proper JSON encoding
   Future<void> updateUserProfile({
@@ -216,6 +578,12 @@ class DatabaseService {
           .delete()
           .eq('user_id', currentUserId!);
 
+      // Delete user's notification preferences
+      await _supabase
+          .from('notification_preferences')
+          .delete()
+          .eq('user_id', currentUserId!);
+
       // Delete user's analytics
       await _supabase
           .from('user_analytics')
@@ -253,7 +621,7 @@ class DatabaseService {
   }
 
   // =============================================
-  // ENHANCED SESSION MANAGEMENT WITH STATUS
+  // ENHANCED SESSION MANAGEMENT WITH DASHBOARD FILTERING
   // =============================================
 
   /// Start a new conversation and complete previous active sessions
@@ -410,7 +778,7 @@ class DatabaseService {
     }
   }
 
-  /// Enhanced getChatSessions with status information
+  /// FIXED: Enhanced getChatSessions with Dashboard Filtering Patterns
   Future<List<Map<String, dynamic>>> getChatSessions({
     int limit = 50,
     String? category,
@@ -430,10 +798,34 @@ class DatabaseService {
         // Try using the enhanced database function first
         final response = await _supabase.rpc('get_chat_sessions_with_status', params: {
           'p_user_id': currentUserId!,
-          'p_limit': limit,
+          'p_limit': limit * 2, // Get more to account for filtering
         });
 
         sessions = List<Map<String, dynamic>>.from(response);
+
+        // CRITICAL: Filter out placeholder sessions like the dashboard does
+        sessions = sessions.where((session) {
+          final title = session['title']?.toString() ?? '';
+          final messageCount = session['message_count'] as int? ?? 0;
+          final sessionStatus = session['status']?.toString() ?? '';
+
+          // Filter out placeholder sessions - exact dashboard pattern
+          bool isValidSession = title != 'New Conversation' &&
+              title.trim().isNotEmpty &&
+              messageCount > 0;
+
+          // Additional check: if it's an active session with no real content, filter it out
+          if (sessionStatus == 'active' && messageCount <= 1 && title == 'New Conversation') {
+            return false;
+          }
+
+          return isValidSession;
+        }).toList();
+
+        // Limit after filtering
+        if (sessions.length > limit) {
+          sessions = sessions.take(limit).toList();
+        }
 
         // Add enhanced session information
         for (var session in sessions) {
@@ -443,80 +835,107 @@ class DatabaseService {
       } catch (rpcError) {
         print('❌ RPC function failed: $rpcError');
 
-        // Fallback: Query chat_sessions table directly
+        // Fallback: Use dashboard pattern - get sessions but exclude placeholders
         try {
-          // Build the base query
           var query = _supabase
               .from('chat_sessions')
               .select()
-              .eq('user_id', currentUserId!);
-          
+              .eq('user_id', currentUserId!)
+              .neq('title', 'New Conversation')  // ← EXCLUDE placeholder sessions
+              .gt('total_messages', 0);          // ← EXCLUDE empty sessions
+
           // Apply status filter if provided
           if (status != null) {
             query = query.eq('status', status);
           }
-          
-          // Execute the query with ordering and limit
+
           final sessionResponse = await query
               .order('last_message_at', ascending: false)
               .limit(limit);
 
-          // Convert session records to expected format
           sessions = [];
           for (var sessionRecord in sessionResponse) {
-            // Get first and last questions for this session
-            final messagesResponse = await _supabase
+            // FIXED: Get actual Q&A pairs count like dashboard does
+            final actualMessages = await _supabase
                 .from('chat_history')
-                .select('question, created_at, category, confidence_score')
+                .select('session_id')
                 .eq('user_id', currentUserId!)
                 .eq('session_id', sessionRecord['session_id'])
-                .order('created_at', ascending: true);
+                .not('question', 'is', null)      // ← Dashboard filtering pattern
+                .not('answer', 'is', null);       // ← Dashboard filtering pattern
 
-            if (messagesResponse.isNotEmpty) {
-              final messages = messagesResponse;
-              final firstMessage = messages.first;
-              final lastMessage = messages.last;
+            final actualMessageCount = actualMessages.length;
 
-              // Calculate average confidence
-              double totalConfidence = 0;
-              int confidenceCount = 0;
-              Set<String> categories = {};
+            // Only include sessions that have actual Q&A pairs
+            if (actualMessageCount > 0) {
+              // Get session metadata with Q&A filtering
+              final messagesResponse = await _supabase
+                  .from('chat_history')
+                  .select('question, answer, created_at, category, confidence_score')
+                  .eq('user_id', currentUserId!)
+                  .eq('session_id', sessionRecord['session_id'])
+                  .not('question', 'is', null)    // ← Only complete Q&A pairs
+                  .not('answer', 'is', null)      // ← Only complete Q&A pairs
+                  .order('created_at', ascending: true);
 
-              for (var msg in messages) {
-                if (msg['confidence_score'] != null) {
-                  totalConfidence += (msg['confidence_score'] as num).toDouble();
-                  confidenceCount++;
+              if (messagesResponse.isNotEmpty) {
+                final messages = messagesResponse;
+                final firstMessage = messages.first;
+                final lastMessage = messages.last;
+
+                // Calculate average confidence from actual messages
+                double totalConfidence = 0;
+                int confidenceCount = 0;
+                Set<String> categories = {};
+
+                for (var msg in messages) {
+                  if (msg['confidence_score'] != null) {
+                    totalConfidence += (msg['confidence_score'] as num).toDouble();
+                    confidenceCount++;
+                  }
+                  if (msg['category'] != null) {
+                    categories.add(msg['category'].toString());
+                  }
                 }
-                if (msg['category'] != null) {
-                  categories.add(msg['category'].toString());
-                }
+
+                final avgConfidence = confidenceCount > 0 ? totalConfidence / confidenceCount : null;
+
+                sessions.add({
+                  'session_id': sessionRecord['session_id'],
+                  'title': sessionRecord['title'],
+                  'first_question': firstMessage['question'] ?? 'No question',
+                  'last_question': lastMessage['question'] ?? firstMessage['question'] ?? 'No question',
+                  'message_count': actualMessageCount, // ← Use actual Q&A pair count (dashboard pattern)
+                  'status': sessionRecord['status'],
+                  'categories': categories.toList(),
+                  'first_created_at': sessionRecord['first_message_at'],
+                  'last_created_at': sessionRecord['last_message_at'],
+                  'completed_at': sessionRecord['completed_at'],
+                  'avg_confidence': avgConfidence,
+                  'has_recommendations': false, // Will be set by _enhanceSessionData
+                });
               }
-
-              final avgConfidence = confidenceCount > 0 ? totalConfidence / confidenceCount : null;
-
-              sessions.add({
-                'session_id': sessionRecord['session_id'],
-                'title': sessionRecord['title'],
-                'first_question': firstMessage['question'] ?? 'No question',
-                'last_question': lastMessage['question'] ?? firstMessage['question'] ?? 'No question',
-                'message_count': sessionRecord['total_messages'] ?? messages.length,
-                'status': sessionRecord['status'],
-                'categories': categories.toList(),
-                'first_created_at': sessionRecord['first_message_at'],
-                'last_created_at': sessionRecord['last_message_at'],
-                'completed_at': sessionRecord['completed_at'],
-                'avg_confidence': avgConfidence,
-                'has_recommendations': false, // Will be set by _enhanceSessionData
-              });
             }
           }
         } catch (directError) {
           print('❌ Direct query also failed: $directError');
-          throw directError;
+
+          // Final fallback: Use chat_history directly with dashboard filtering
+          final historyResponse = await _supabase
+              .from('chat_history')
+              .select()
+              .eq('user_id', currentUserId!)
+              .not('question', 'is', null)      // ← Dashboard filtering
+              .not('answer', 'is', null)        // ← Dashboard filtering
+              .not('session_id', 'is', null)
+              .order('created_at', ascending: false)
+              .limit(limit * 5);
+
+          sessions = _convertMessagesToSessions(historyResponse);
         }
       }
 
-      // Apply filters
+      // Apply additional filters
       if (status != null) {
         sessions = sessions.where((session) => session['status'] == status).toList();
       }
@@ -548,6 +967,154 @@ class DatabaseService {
     }
   }
 
+  /// FIXED: Convert messages to sessions with Dashboard filtering patterns
+  List<Map<String, dynamic>> _convertMessagesToSessions(List<Map<String, dynamic>> messages) {
+    if (messages.isEmpty) return [];
+
+    // Group messages by session_id (only include complete Q&A pairs - dashboard pattern)
+    Map<String, List<Map<String, dynamic>>> grouped = {};
+
+    for (var message in messages) {
+      // CRITICAL: Skip incomplete Q&A pairs (dashboard pattern)
+      if (message['question'] == null ||
+          message['answer'] == null ||
+          message['question'].toString().trim().isEmpty ||
+          message['answer'].toString().trim().isEmpty) {
+        continue;
+      }
+
+      String sessionKey = message['session_id']?.toString() ?? 'single_${message['id'] ?? DateTime.now().millisecondsSinceEpoch}';
+
+      if (!grouped.containsKey(sessionKey)) {
+        grouped[sessionKey] = [];
+      }
+      grouped[sessionKey]!.add(message);
+    }
+
+    // Convert to session format
+    List<Map<String, dynamic>> sessions = [];
+
+    grouped.forEach((sessionId, sessionMessages) {
+      try {
+        // Sort messages by creation time
+        sessionMessages.sort((a, b) {
+          final aTime = a['created_at']?.toString();
+          final bTime = b['created_at']?.toString();
+
+          if (aTime == null || bTime == null) return 0;
+
+          try {
+            return DateTime.parse(aTime).compareTo(DateTime.parse(bTime));
+          } catch (e) {
+            return 0;
+          }
+        });
+
+        final firstMessage = sessionMessages.first;
+        final lastMessage = sessionMessages.last;
+
+        // Generate title from first question (dashboard pattern)
+        final firstQuestion = firstMessage['question']?.toString() ?? 'No question';
+        String sessionTitle = firstQuestion;
+
+        // Create meaningful title
+        if (firstQuestion.length > 50) {
+          sessionTitle = '${firstQuestion.substring(0, 47)}...';
+        }
+
+        // CRITICAL: Skip if this looks like a placeholder session (dashboard pattern)
+        if (sessionTitle == 'New Conversation' ||
+            sessionTitle.trim().isEmpty ||
+            firstQuestion == 'New Conversation') {
+          return; // Skip this session
+        }
+
+        // Calculate average confidence
+        double totalConfidence = 0;
+        int confidenceCount = 0;
+
+        for (var msg in sessionMessages) {
+          if (msg['confidence_score'] != null) {
+            try {
+              totalConfidence += (msg['confidence_score'] as num).toDouble();
+              confidenceCount++;
+            } catch (e) {
+              // Silent error handling
+            }
+          }
+        }
+
+        final avgConfidence = confidenceCount > 0 ? totalConfidence / confidenceCount : null;
+
+        // Get unique categories
+        Set<String> categories = {};
+        for (var msg in sessionMessages) {
+          if (msg['category'] != null && msg['category'].toString().isNotEmpty) {
+            categories.add(msg['category'].toString());
+          }
+        }
+
+        if (categories.isEmpty) {
+          categories.add('General');
+        }
+
+        // Check if any message has recommendations
+        bool hasRecommendations = false;
+        for (var msg in sessionMessages) {
+          try {
+            final metadata = msg['metadata'] as Map<String, dynamic>?;
+            if (metadata != null && metadata['recommendations'] is List) {
+              final recommendations = metadata['recommendations'] as List;
+              if (recommendations.isNotEmpty) {
+                hasRecommendations = true;
+                break;
+              }
+            }
+          } catch (e) {
+            // Silent error handling
+          }
+        }
+
+        final lastQuestion = lastMessage['question']?.toString() ?? firstQuestion;
+        final firstCreatedAt = firstMessage['created_at']?.toString() ?? DateTime.now().toUtc().toIso8601String();
+        final lastCreatedAt = lastMessage['created_at']?.toString() ?? firstCreatedAt;
+
+        sessions.add({
+          'session_id': sessionId.startsWith('single_') ? null : sessionId,
+          'title': sessionTitle,
+          'first_question': firstQuestion,
+          'last_question': lastQuestion,
+          'message_count': sessionMessages.length, // ← Accurate Q&A pair count
+          'status': 'completed', // Assume old sessions are completed
+          'categories': categories.toList(),
+          'first_created_at': firstCreatedAt,
+          'last_created_at': lastCreatedAt,
+          'avg_confidence': avgConfidence,
+          'has_recommendations': hasRecommendations,
+        });
+      } catch (e) {
+        print('Error processing session $sessionId: $e');
+        // Skip this session if there's an error but continue with others
+      }
+    });
+
+    // Sort by last created date (newest first)
+    sessions.sort((a, b) {
+      try {
+        final aTime = a['last_created_at']?.toString();
+        final bTime = b['last_created_at']?.toString();
+
+        if (aTime == null || bTime == null) return 0;
+
+        return DateTime.parse(bTime).compareTo(DateTime.parse(aTime));
+      } catch (e) {
+        return 0;
+      }
+    });
+
+    return sessions;
+  }
+
   /// Helper method to enhance session data with additional information
   Future<void> _enhanceSessionData(Map<String, dynamic> session) async {
     try {
@@ -558,12 +1125,14 @@ class DatabaseService {
         return;
       }
 
-      // Check if any message in this session has recommendations
+      // Check if any message in this session has recommendations (with Q&A filtering)
       final messages = await _supabase
           .from('chat_history')
           .select('metadata')
           .eq('user_id', currentUserId!)
           .eq('session_id', sessionId)
+          .not('question', 'is', null)    // ← Dashboard filtering
+          .not('answer', 'is', null)      // ← Dashboard filtering
           .not('metadata', 'is', null);
 
       bool hasRecommendations = false;
@@ -623,7 +1192,7 @@ class DatabaseService {
     }
   }
 
-  // Get all messages in a specific session with fallback
+  /// FIXED: Get session messages with Dashboard Q&A filtering
   Future<List<Map<String, dynamic>>> getSessionMessages(String sessionId) async {
     try {
       if (currentUserId == null) return [];
@@ -639,94 +1208,20 @@ class DatabaseService {
       } catch (rpcError) {
         print('❌ RPC get_session_messages failed: $rpcError');
 
-        // Fallback: direct query
+        // Fallback: direct query with Dashboard Q&A filtering
         final response = await _supabase
             .from('chat_history')
             .select()
             .eq('user_id', currentUserId!)
             .eq('session_id', sessionId)
+            .not('question', 'is', null)    // ← Dashboard filtering pattern
+            .not('answer', 'is', null)      // ← Dashboard filtering pattern
             .order('created_at', ascending: true);
 
         return List<Map<String, dynamic>>.from(response);
       }
     } catch (e) {
       print('Error getting session messages: $e');
-      return [];
-    }
-  }
-
-  // Search chat sessions with fallback
-  Future<List<Map<String, dynamic>>> searchChatSessions({
-    required String searchQuery,
-    String? category,
-    int limit = 20,
-  }) async {
-    try {
-      if (currentUserId == null) return [];
-
-      try {
-        // Try RPC function first
-        final response = await _supabase.rpc('search_chat_sessions', params: {
-          'p_user_id': currentUserId!,
-          'p_search_query': searchQuery,
-          'p_category': category == 'All' ? null : category,
-          'p_limit': limit,
-        });
-
-        return List<Map<String, dynamic>>.from(response);
-      } catch (rpcError) {
-        print('❌ RPC search_chat_sessions failed: $rpcError');
-
-        // Fallback: direct search
-        var query = _supabase
-            .from('chat_history')
-            .select()
-            .eq('user_id', currentUserId!)
-            .not('session_id', 'is', null)
-            .or('question.ilike.%$searchQuery%,answer.ilike.%$searchQuery%');
-
-        if (category != null && category != 'All') {
-          query = query.eq('category', category);
-        }
-
-        final response = await query
-            .order('created_at', ascending: false)
-            .limit(limit);
-
-        // Convert individual messages to session format
-        Map<String, List<Map<String, dynamic>>> grouped = {};
-
-        for (var message in response) {
-          final sessionId = message['session_id'].toString();
-          if (!grouped.containsKey(sessionId)) {
-            grouped[sessionId] = [];
-          }
-          grouped[sessionId]!.add(message);
-        }
-
-        // Convert to session format (simplified for search)
-        final sessions = grouped.entries.map((entry) {
-          final sessionMessages = entry.value;
-          final firstMessage = sessionMessages.first;
-
-          return {
-            'session_id': entry.key,
-            'first_question': firstMessage['question'] ?? 'No question',
-            'last_question': firstMessage['question'] ?? 'No question',
-            'message_count': sessionMessages.length,
-            'categories': [firstMessage['category'] ?? 'General'],
-            'first_created_at': firstMessage['created_at'],
-            'last_created_at': firstMessage['created_at'],
-            'avg_confidence': firstMessage['confidence_score'],
-            'match_score': 1,
-            'has_recommendations': _messageHasRecommendations(firstMessage),
-          };
-        }).toList();
-
-        return sessions;
-      }
-    } catch (e) {
-      print('Error searching chat sessions: $e');
       return [];
     }
   }
@@ -745,7 +1240,67 @@ class DatabaseService {
     return false;
   }
 
-  // Updated getChatHistory method with robust fallbacks
+  /// FIXED: Search chat sessions with Dashboard filtering patterns
+  Future<List<Map<String, dynamic>>> searchChatSessions({
+    required String searchQuery,
+    String? category,
+    int limit = 20,
+  }) async {
+    try {
+      if (currentUserId == null) return [];
+
+      try {
+        // Try RPC function first
+        final response = await _supabase.rpc('search_chat_sessions', params: {
+          'p_user_id': currentUserId!,
+          'p_search_query': searchQuery,
+          'p_category': category == 'All' ? null : category,
+          'p_limit': limit,
+        });
+
+        final sessions = List<Map<String, dynamic>>.from(response);
+
+        // CRITICAL: Filter out placeholder sessions from search results (dashboard pattern)
+        return sessions.where((session) {
+          final title = session['first_question']?.toString() ?? '';
+          final messageCount = session['message_count'] as int? ?? 0;
+
+          return title != 'New Conversation' &&
+              title.trim().isNotEmpty &&
+              messageCount > 0;
+        }).toList();
+
+      } catch (rpcError) {
+        print('❌ RPC search_chat_sessions failed: $rpcError');
+
+        // Fallback: direct search with Dashboard Q&A filtering
+        var query = _supabase
+            .from('chat_history')
+            .select()
+            .eq('user_id', currentUserId!)
+            .not('session_id', 'is', null)
+            .not('question', 'is', null)    // ← Dashboard filtering pattern
+            .not('answer', 'is', null)      // ← Dashboard filtering pattern
+            .or('question.ilike.%$searchQuery%,answer.ilike.%$searchQuery%');
+
+        if (category != null && category != 'All') {
+          query = query.eq('category', category);
+        }
+
+        final response = await query
+            .order('created_at', ascending: false)
+            .limit(limit * 2); // Get more for grouping
+
+        // Convert individual messages to session format with filtering
+        return _convertMessagesToSessions(response);
+      }
+    } catch (e) {
+      print('Error searching chat sessions: $e');
+      return [];
+    }
+  }
+
+  /// FIXED: Get chat history with Dashboard Q&A filtering
   Future<List<Map<String, dynamic>>> getChatHistory({
     int limit = 50,
     String? category,
@@ -771,12 +1326,14 @@ class DatabaseService {
     } catch (e) {
       print('❌ Error in getChatHistory: $e');
 
-      // Final fallback: just get all messages
+      // Final fallback: get all messages with Dashboard Q&A filtering
       try {
         final response = await _supabase
             .from('chat_history')
             .select()
             .eq('user_id', currentUserId!)
+            .not('question', 'is', null)    // ← Dashboard filtering
+            .not('answer', 'is', null)      // ← Dashboard filtering
             .order('created_at', ascending: false)
             .limit(limit);
 
@@ -800,7 +1357,7 @@ class DatabaseService {
     }
   }
 
-  // Get chat history for AI conversation context
+  /// FIXED: Get chat history for AI conversation context with Q&A filtering
   Future<List<Map<String, String>>> getChatHistoryForContext({
     String? sessionId,
     int limit = 10,
@@ -811,7 +1368,9 @@ class DatabaseService {
       var queryBuilder = _supabase
           .from('chat_history')
           .select('question, answer, created_at, category')
-          .eq('user_id', currentUserId!);
+          .eq('user_id', currentUserId!)
+          .not('question', 'is', null)    // ← Dashboard filtering
+          .not('answer', 'is', null);     // ← Dashboard filtering
 
       if (sessionId != null) {
         queryBuilder = queryBuilder.eq('session_id', sessionId);
@@ -908,7 +1467,7 @@ class DatabaseService {
     }
   }
 
-  // Search method that works with both old individual messages and new sessions
+  /// FIXED: Search method with Dashboard filtering patterns
   Future<List<Map<String, dynamic>>> searchChatHistory({
     required String searchQuery,
     String? category,
@@ -929,11 +1488,13 @@ class DatabaseService {
         return sessionResults;
       }
 
-      // Fallback to old individual message search for backward compatibility
+      // Fallback to old individual message search with Q&A filtering
       var query = _supabase
           .from('chat_history')
           .select()
           .eq('user_id', currentUserId!)
+          .not('question', 'is', null)    // ← Dashboard filtering
+          .not('answer', 'is', null)      // ← Dashboard filtering
           .or('question.ilike.%$searchQuery%,answer.ilike.%$searchQuery%');
 
       if (category != null && category != 'All') {
@@ -991,30 +1552,64 @@ class DatabaseService {
     }
   }
 
-  /// Get active sessions count (for admin dashboard)
+  /// Get active sessions count (for admin dashboard) with Q&A filtering
   Future<int> getActiveSessionsCount() async {
     try {
-      final response = await _supabase
+      // Get active sessions that have actual Q&A pairs (dashboard pattern)
+      final activeSessions = await _supabase
           .from('chat_sessions')
-          .select('id')
-          .eq('status', 'active');
+          .select('session_id')
+          .eq('status', 'active')
+          .neq('title', 'New Conversation');
 
-      return response.length;
+      int count = 0;
+      for (var session in activeSessions) {
+        final messages = await _supabase
+            .from('chat_history')
+            .select('id')
+            .eq('session_id', session['session_id'])
+            .not('question', 'is', null)
+            .not('answer', 'is', null)
+            .limit(1);
+
+        if (messages.isNotEmpty) {
+          count++;
+        }
+      }
+
+      return count;
     } catch (e) {
       print('Error getting active sessions count: $e');
       return 0;
     }
   }
 
-  /// Get completed sessions count (for admin dashboard)
+  /// Get completed sessions count (for admin dashboard) with Q&A filtering
   Future<int> getCompletedSessionsCount() async {
     try {
-      final response = await _supabase
+      // Get completed sessions that have actual Q&A pairs (dashboard pattern)
+      final completedSessions = await _supabase
           .from('chat_sessions')
-          .select('id')
-          .eq('status', 'completed');
+          .select('session_id')
+          .eq('status', 'completed')
+          .neq('title', 'New Conversation');
 
-      return response.length;
+      int count = 0;
+      for (var session in completedSessions) {
+        final messages = await _supabase
+            .from('chat_history')
+            .select('id')
+            .eq('session_id', session['session_id'])
+            .not('question', 'is', null)
+            .not('answer', 'is', null)
+            .limit(1);
+
+        if (messages.isNotEmpty) {
+          count++;
+        }
+      }
+
+      return count;
     } catch (e) {
       print('Error getting completed sessions count: $e');
       return 0;
@@ -1125,7 +1720,7 @@ class DatabaseService {
         return sessionDate.isAfter(PhilippineTime.toUtc(sevenDaysAgo));
       }).length;
 
-      // Get keywords from the most recent sessions
+      // Get keywords from the most recent sessions with Q&A filtering
       final recentSessionIds = sessionsResponse.take(10).map((s) => s['session_id'].toString()).toList();
 
       final allKeywords = <String>[];
@@ -1136,6 +1731,8 @@ class DatabaseService {
               .select('metadata')
               .eq('user_id', currentUserId!)
               .contains('session_id', recentSessionIds)
+              .not('question', 'is', null)    // ← Dashboard filtering
+              .not('answer', 'is', null)      // ← Dashboard filtering
               .not('metadata', 'is', null);
 
           for (var item in keywordsResponse) {
@@ -1446,94 +2043,6 @@ class DatabaseService {
     } catch (e) {
       print('Error getting feedback: $e');
       return null;
-    }
-  }
-
-  // =============================================
-  // NOTIFICATIONS OPERATIONS
-  // =============================================
-
-  Future<List<Map<String, dynamic>>> getNotifications({bool unreadOnly = false}) async {
-    try {
-      if (currentUserId == null) return [];
-
-      var query = _supabase
-          .from('notifications')
-          .select()
-          .eq('user_id', currentUserId!);
-
-      if (unreadOnly) {
-        query = query.eq('is_read', false);
-      }
-
-      final response = await query.order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      print('Error getting notifications: $e');
-      return [];
-    }
-  }
-
-  Future<void> markNotificationAsRead(String notificationId) async {
-    try {
-      final utcNow = DateTime.now().toUtc();
-
-      await _supabase
-          .from('notifications')
-          .update({
-        'is_read': true,
-        'read_at': utcNow.toIso8601String(),
-      })
-          .eq('id', notificationId)
-          .eq('user_id', currentUserId!);
-    } catch (e) {
-      print('Error marking notification as read: $e');
-    }
-  }
-
-  Future<int> getUnreadNotificationCount() async {
-    try {
-      if (currentUserId == null) return 0;
-
-      final response = await _supabase
-          .from('notifications')
-          .select()
-          .eq('user_id', currentUserId!)
-          .eq('is_read', false);
-
-      return response.length;
-    } catch (e) {
-      print('Error getting unread notification count: $e');
-      return 0;
-    }
-  }
-
-  // Save notification
-  Future<bool> saveNotification({
-    required String title,
-    required String message,
-    required String type, // 'info', 'warning', 'success', 'legal_update', 'system'
-    String? actionUrl,
-    Map<String, dynamic>? metadata,
-  }) async {
-    try {
-      if (currentUserId == null) return false;
-
-      await _supabase.from('notifications').insert({
-        'user_id': currentUserId!,
-        'title': title,
-        'message': message,
-        'type': type,
-        'action_url': actionUrl,
-        'metadata': metadata,
-        'is_read': false,
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-      });
-
-      return true;
-    } catch (e) {
-      print('Error saving notification: $e');
-      return false;
     }
   }
 

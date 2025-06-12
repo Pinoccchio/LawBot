@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
@@ -22,15 +23,126 @@ class ProfileTab extends StatefulWidget {
 class _ProfileTabState extends State<ProfileTab> {
   bool _isUploading = false;
   bool _isDeleting = false;
+  bool _isRefreshing = false;
   List<Map<String, dynamic>> _recentCases = [];
   List<Map<String, dynamic>> _savedAdvice = [];
   bool _isLoadingData = true;
+  bool? _wasAuthenticated;
   final DatabaseService _databaseService = DatabaseService();
+
+  // Real-time subscription
+  RealtimeChannel? _profileSubscription;
+  final SupabaseClient _supabase = Supabase.instance.client;
 
   @override
   void initState() {
     super.initState();
+    // Initialize previous auth status to avoid auto-refresh on first build
+    final authProvider = context.read<AuthProvider>();
+    _wasAuthenticated = authProvider.isAuthenticated;
     _loadUserData();
+  }
+
+  @override
+  void dispose() {
+    _cleanupRealtimeSubscription();
+    super.dispose();
+  }
+
+  void _setupRealtimeSubscription() {
+    final authProvider = context.read<AuthProvider>();
+
+    if (!authProvider.isAuthenticated || authProvider.user?.uid == null) {
+      return;
+    }
+
+    try {
+      _profileSubscription = _supabase
+          .channel('profile_changes_${authProvider.user!.uid}')
+          .onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'user_profiles',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'firebase_uid',
+          value: authProvider.user!.uid,
+        ),
+        callback: (payload) {
+          print('🔄 Profile updated from external source');
+          _handleProfileUpdate(payload);
+        },
+      )
+          .subscribe();
+
+      print('✅ Real-time subscription setup for profile updates');
+    } catch (e) {
+      print('❌ Error setting up real-time subscription: $e');
+    }
+  }
+
+  void _cleanupRealtimeSubscription() {
+    if (_profileSubscription != null) {
+      _supabase.removeChannel(_profileSubscription!);
+      _profileSubscription = null;
+      print('🧹 Cleaned up real-time subscription');
+    }
+  }
+
+  void _handleProfileUpdate(PostgresChangePayload payload) {
+    if (!mounted) return;
+
+    try {
+      final newRecord = payload.newRecord;
+      print('📱 Profile update received: $newRecord');
+
+      // Update the AuthProvider with new profile data
+      final authProvider = context.read<AuthProvider>();
+      authProvider.updateUserProfileFromRealtime(newRecord);
+
+      // Show a subtle notification to the user
+      _showProfileUpdateNotification();
+
+      // Refresh other data if needed (optional)
+      _loadUserData();
+
+    } catch (e) {
+      print('❌ Error handling profile update: $e');
+    }
+  }
+
+  void _showProfileUpdateNotification() {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              Icons.sync,
+              color: Colors.white,
+              size: 16,
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Profile updated',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.blue,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        margin: const EdgeInsets.all(16),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _loadUserData() async {
@@ -38,11 +150,18 @@ class _ProfileTabState extends State<ProfileTab> {
 
     setState(() {
       _isLoadingData = true;
+      _isRefreshing = true;
     });
 
     try {
       final authProvider = context.read<AuthProvider>();
       if (authProvider.isAuthenticated) {
+        print('🔄 Loading user data - refreshing profile and other data...');
+
+        // FIXED: Refresh user profile data from database first
+        await authProvider.refreshUserProfile();
+
+        // Then load other data
         final recentCases = await _databaseService.getRecentChatHistory();
         final savedAdvice = await _databaseService.getSavedAdvice();
 
@@ -51,20 +170,43 @@ class _ProfileTabState extends State<ProfileTab> {
             _recentCases = recentCases;
             _savedAdvice = savedAdvice;
             _isLoadingData = false;
+            _isRefreshing = false;
           });
         }
+
+        print('✅ User data loaded successfully');
       } else {
         setState(() {
           _isLoadingData = false;
+          _isRefreshing = false;
         });
+
+        // Clean up subscription if user is not authenticated
+        _cleanupRealtimeSubscription();
       }
     } catch (e) {
-      print('Error loading user data: $e');
+      print('❌ Error loading user data: $e');
       if (mounted) {
         setState(() {
           _isLoadingData = false;
+          _isRefreshing = false;
         });
+        _showErrorSnackBar('Failed to refresh data. Please try again.');
       }
+    }
+  }
+
+  // Method to handle authentication state changes
+  void _handleAuthStateChange() {
+    final authProvider = context.read<AuthProvider>();
+
+    if (authProvider.isAuthenticated) {
+      // Setup subscription when user signs in
+      _setupRealtimeSubscription();
+      _loadUserData();
+    } else {
+      // Cleanup subscription when user signs out
+      _cleanupRealtimeSubscription();
     }
   }
 
@@ -124,14 +266,28 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
         automaticallyImplyLeading: false,
         actions: [
-          if (authProvider.isAuthenticated)
-            IconButton(
+          if (authProvider.isAuthenticated) ...[
+            // Refresh button with loading indicator
+            _isRefreshing
+                ? Container(
+              margin: EdgeInsets.only(right: 16),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: isDark ? Colors.white : const Color(0xFF2563EB),
+                ),
+              ),
+            )
+                : IconButton(
               onPressed: _loadUserData,
               icon: Icon(
                 Icons.refresh_rounded,
                 color: isDark ? Colors.white : const Color(0xFF2563EB),
               ),
             ),
+          ],
         ],
       ),
       body: RefreshIndicator(
@@ -253,7 +409,7 @@ class _ProfileTabState extends State<ProfileTab> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              // Removed the edit button row - now just showing the name centered
+                              // Real-time updated name display
                               Text(
                                 authProvider.isAuthenticated
                                     ? (authProvider.userProfile?['full_name'] ??
@@ -307,35 +463,40 @@ class _ProfileTabState extends State<ProfileTab> {
                         ),
                         if (authProvider.isAuthenticated) ...[
                           const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: const Color(0xFF10B981).withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.verified_user,
-                                  size: 18,
-                                  color: const Color(0xFF10B981),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Verified',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: const Color(0xFF10B981),
-                                    fontWeight: FontWeight.w600,
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: const Color(0xFF10B981).withOpacity(0.3),
+                                    width: 1,
                                   ),
                                 ),
-                              ],
-                            ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.verified_user,
+                                      size: 18,
+                                      color: const Color(0xFF10B981),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Verified',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: const Color(0xFF10B981),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ] else
                           Container(
@@ -398,6 +559,20 @@ class _ProfileTabState extends State<ProfileTab> {
                   value: authProvider.userProfile?['preferred_language'] == 'fil'
                       ? 'Filipino'
                       : 'English',
+                  isDark: isDark,
+                  isEditable: false,
+                ),
+                _buildInfoCard(
+                  icon: Icons.account_box_outlined,
+                  title: 'User Type',
+                  value: authProvider.userProfile?['user_type'] ?? 'CLIENT',
+                  isDark: isDark,
+                  isEditable: false,
+                ),
+                _buildInfoCard(
+                  icon: Icons.info_outline,
+                  title: 'Account Status',
+                  value: (authProvider.userProfile?['user_status'] ?? 'active').toString().toUpperCase(),
                   isDark: isDark,
                   isEditable: false,
                 ),
@@ -817,11 +992,24 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   Widget _buildSavedAdviceCard(Map<String, dynamic> advice, bool isDark) {
-    final categories = advice['categories'] as List<dynamic>?;
-    final avgConfidence = advice['avg_confidence'] as double?;
-    final messageCount = advice['message_count'] as int? ?? 0;
-    final firstQuestion = advice['first_question'] as String? ?? 'No question';
-    final hasRecommendations = advice['has_recommendations'] as bool? ?? false;
+    // Extract properties correctly for saved advice structure
+    final category = advice['category'] as String? ?? 'General';
+    final question = advice['question'] as String? ?? 'No question';
+    final answer = advice['answer'] as String? ?? 'No answer';
+    final metadata = advice['metadata'] as Map<String, dynamic>?;
+
+    // Check for recommendations in metadata
+    bool hasRecommendations = false;
+    if (metadata != null && metadata['recommendations'] is List) {
+      final recommendations = metadata['recommendations'] as List;
+      hasRecommendations = recommendations.isNotEmpty;
+    }
+
+    // Check for keywords in metadata
+    List<dynamic> keywords = [];
+    if (metadata != null && metadata['keywords'] is List) {
+      keywords = metadata['keywords'] as List;
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -849,60 +1037,56 @@ class _ProfileTabState extends State<ProfileTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header row with categories and metadata
+                  // Header row with category and indicators
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Category badges
+                      // Category badge
                       Flexible(
                         flex: 2,
-                        child: Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: (categories?.take(2) ?? ['General']).map((category) => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isDark
+                                  ? [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)]
+                                  : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
                             ),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: isDark
-                                    ? [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)]
-                                    : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
-                              ),
-                              borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            category,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
                             ),
-                            child: Text(
-                              category.toString(),
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          )).toList(),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
 
-                      // Message count and confidence section
+                      // Indicators section
                       Flexible(
                         flex: 3,
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            // Message count badge
+                            // Saved advice indicator
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                               decoration: BoxDecoration(
                                 color: isDark
-                                    ? Colors.blue.withOpacity(0.2)
-                                    : Colors.blue.withOpacity(0.1),
+                                    ? Colors.amber.withOpacity(0.2)
+                                    : Colors.amber.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: isDark ? Colors.blue[700]! : Colors.blue[200]!,
+                                  color: isDark ? Colors.amber[700]! : Colors.amber[600]!,
                                   width: 1,
                                 ),
                               ),
@@ -910,16 +1094,16 @@ class _ProfileTabState extends State<ProfileTab> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    Icons.forum_rounded,
+                                    Icons.bookmark,
                                     size: 10,
-                                    color: isDark ? Colors.blue[300] : Colors.blue[700],
+                                    color: isDark ? Colors.amber[300] : Colors.amber[700],
                                   ),
                                   const SizedBox(width: 2),
                                   Text(
-                                    '$messageCount',
+                                    'Saved',
                                     style: TextStyle(
                                       fontSize: 9,
-                                      color: isDark ? Colors.blue[300] : Colors.blue[700],
+                                      color: isDark ? Colors.amber[300] : Colors.amber[700],
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -927,6 +1111,43 @@ class _ProfileTabState extends State<ProfileTab> {
                               ),
                             ),
                             const SizedBox(width: 6),
+
+                            // Keywords indicator (if any)
+                            if (keywords.isNotEmpty) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.blue.withOpacity(0.2)
+                                      : Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isDark ? Colors.blue[700]! : Colors.blue[200]!,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.label_outline,
+                                      size: 10,
+                                      color: isDark ? Colors.blue[300] : Colors.blue[700],
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${keywords.length}',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: isDark ? Colors.blue[300] : Colors.blue[700],
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
 
                             // Recommendations indicator
                             if (hasRecommendations) ...[
@@ -960,56 +1181,6 @@ class _ProfileTabState extends State<ProfileTab> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                            ],
-
-                            if (avgConfidence != null) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: avgConfidence > 0.8
-                                      ? Colors.green.withOpacity(0.1)
-                                      : avgConfidence > 0.6
-                                      ? Colors.orange.withOpacity(0.1)
-                                      : Colors.grey.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: avgConfidence > 0.8
-                                        ? Colors.green
-                                        : avgConfidence > 0.6
-                                        ? Colors.orange
-                                        : Colors.grey,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.verified_rounded,
-                                      size: 10,
-                                      color: avgConfidence > 0.8
-                                          ? Colors.green
-                                          : avgConfidence > 0.6
-                                          ? Colors.orange
-                                          : Colors.grey,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      '${(avgConfidence * 100).round()}%',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: avgConfidence > 0.8
-                                            ? Colors.green
-                                            : avgConfidence > 0.6
-                                            ? Colors.orange
-                                            : Colors.grey,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             ],
                           ],
                         ),
@@ -1020,7 +1191,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
                   // Question text
                   Text(
-                    firstQuestion,
+                    question,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -1032,25 +1203,47 @@ class _ProfileTabState extends State<ProfileTab> {
                   ),
                   const SizedBox(height: 8),
 
-                  // Session summary
+                  // Answer preview and metadata
                   Row(
                     children: [
                       Expanded(
                         child: Text(
-                          messageCount == 1
-                              ? 'Single question conversation'
-                              : '$messageCount messages in this conversation',
+                          answer.length > 80
+                              ? '${answer.substring(0, 80)}...'
+                              : answer,
                           style: TextStyle(
                             fontSize: 12,
                             color: isDark ? Colors.grey[300] : Colors.grey[600],
                             height: 1.5,
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                    ],
+                  ),
+
+                  // Bottom metadata row
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.schedule,
+                        size: 12,
+                        color: isDark ? Colors.grey[400] : Colors.grey[500],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        advice['created_at'] != null
+                            ? PhilippineTime.formatChatHistoryTime(advice['created_at'])
+                            : 'Unknown date',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.grey[400] : Colors.grey[500],
+                        ),
+                      ),
                       if (hasRecommendations) ...[
-                        const SizedBox(width: 8),
+                        const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
@@ -1144,187 +1337,6 @@ class _ProfileTabState extends State<ProfileTab> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  // Added delete confirmation dialog for saved advice in profile
-  void _showDeleteAdviceConfirmation(Map<String, dynamic> advice) {
-    final isDark = context.read<ThemeProvider>().isDarkMode;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false, // Prevent accidental dismissal
-      builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.red.withOpacity(0.3),
-                  width: 1,
-                ),
-              ),
-              child: const Icon(
-                Icons.delete_forever_outlined,
-                color: Colors.red,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                'Delete Saved Advice?',
-                style: TextStyle(
-                  color: isDark ? Colors.white : Colors.black,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Are you sure you want to permanently delete this saved legal advice?',
-              style: TextStyle(
-                color: isDark ? Colors.grey[300] : Colors.grey[700],
-                height: 1.4,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF374151) : Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: isDark ? Colors.grey[600]! : Colors.grey[300]!,
-                  width: 1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Category: ${advice['category'] ?? 'General'}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.grey[400] : Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    advice['question'] ?? 'No question',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? Colors.white : Colors.black,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Colors.red.withOpacity(0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.warning_outlined,
-                    color: Colors.red,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'This action cannot be undone!',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.red,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: Text(
-              'Keep Advice',
-              style: TextStyle(
-                color: isDark ? Colors.grey[400] : Colors.grey[600],
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _removeSavedAdvice(advice['id']);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              elevation: 2,
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.delete_forever,
-                  size: 18,
-                  color: Colors.white,
-                ),
-                SizedBox(width: 6),
-                Text(
-                  'Delete Forever',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1633,7 +1645,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  // All the dialog and utility methods remain the same...
+  // Image preview and picker methods
   void _showImagePreview(String? imageUrl) {
     if (imageUrl == null || imageUrl.isEmpty) return;
 
@@ -1872,6 +1884,7 @@ class _ProfileTabState extends State<ProfileTab> {
     }
   }
 
+  // Dialog methods
   Future<void> _showEditNameDialog(BuildContext context, AuthProvider authProvider) async {
     final isDark = context.read<ThemeProvider>().isDarkMode;
     final nameController = TextEditingController(

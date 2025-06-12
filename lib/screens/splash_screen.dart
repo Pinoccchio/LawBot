@@ -42,23 +42,55 @@ class _SplashScreenState extends State<SplashScreen>
 
     _animationController.forward();
 
-    // Check authentication status after animation
+    // FIXED: Properly wait for auth initialization
     _checkAuthAndNavigate();
   }
 
+  // FIXED: Enhanced auth check with proper initialization waiting
   void _checkAuthAndNavigate() async {
-    // Wait for animation to complete
-    await Future.delayed(const Duration(seconds: 3));
+    try {
+      print('🚀 SplashScreen: Starting auth check...');
 
-    if (mounted) {
-      final authProvider = context.read<AuthProvider>();
+      // Wait for animation to complete
+      await Future.delayed(const Duration(seconds: 2));
 
-      // Check if user is already authenticated
-      if (authProvider.isAuthenticated) {
-        // User is logged in, go directly to home
-        Navigator.pushReplacementNamed(context, '/home');
-      } else {
-        // User is not logged in, show onboarding
+      if (mounted) {
+        final authProvider = context.read<AuthProvider>();
+
+        print('📱 SplashScreen: AuthProvider obtained, waiting for initialization...');
+
+        // CRITICAL: Wait for AuthProvider to be fully initialized
+        await authProvider.waitForInitialization();
+
+        print('✅ SplashScreen: AuthProvider initialized');
+        print('👤 SplashScreen: User authenticated: ${authProvider.isAuthenticated}');
+
+        if (!mounted) return;
+
+        // Check if user is already authenticated
+        if (authProvider.isAuthenticated) {
+          print('🏠 SplashScreen: User is authenticated, navigating to home');
+
+          // Additional safety check: ensure user profile is loaded
+          if (authProvider.userProfile == null) {
+            print('⚠️ SplashScreen: User authenticated but no profile, trying to load...');
+            // Give a moment for profile to load if it's in progress
+            await Future.delayed(const Duration(milliseconds: 500));
+          }
+
+          // Navigate to home
+          Navigator.pushReplacementNamed(context, '/home');
+        } else {
+          print('📝 SplashScreen: User not authenticated, navigating to onboarding');
+          // User is not logged in, show onboarding
+          Navigator.pushReplacementNamed(context, '/onboarding');
+        }
+      }
+    } catch (e) {
+      print('❌ SplashScreen: Error during auth check: $e');
+
+      // Fallback: navigate to onboarding in case of error
+      if (mounted) {
         Navigator.pushReplacementNamed(context, '/onboarding');
       }
     }
@@ -142,6 +174,26 @@ class _SplashScreenState extends State<SplashScreen>
                           isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Status text for debugging (remove in production)
+                    Consumer<AuthProvider>(
+                      builder: (context, authProvider, child) {
+                        String statusText = 'Initializing...';
+                        if (authProvider.isInitialized) {
+                          statusText = authProvider.isAuthenticated
+                              ? 'Welcome back!'
+                              : 'Setting up...';
+                        }
+
+                        return Text(
+                          statusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.grey[500] : Colors.grey[500],
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

@@ -6,8 +6,12 @@ import '../providers/theme_provider.dart';
 import '../providers/language_provider.dart';
 import 'tabs/chat_tab.dart';
 import 'tabs/history_tab.dart';
+import 'tabs/notifications_tab.dart'; // NEW: Import notifications tab
 import 'tabs/profile_tab.dart';
 import 'tabs/settings_tab.dart';
+import '../providers/auth_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgresChangeFilter, PostgresChangeEvent, PostgresChangeFilterType;
 
 class HomeScreenContainer extends StatefulWidget {
   const HomeScreenContainer({super.key});
@@ -18,12 +22,200 @@ class HomeScreenContainer extends StatefulWidget {
 
 class _HomeScreenContainerState extends State<HomeScreenContainer> {
   int _currentIndex = 0;
+  RealtimeChannel? _userProfileChannel;
+  RealtimeChannel? _notificationsChannel; // NEW: For real-time notifications
+
+  @override
+  void initState() {
+    super.initState();
+    // FIXED: Use post-frame callback to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _subscribeToUserProfile();
+      _subscribeToNotifications();
+    });
+  }
+
+  @override
+  void dispose() {
+    _userProfileChannel?.unsubscribe();
+    _notificationsChannel?.unsubscribe(); // NEW: Unsubscribe from notifications
+    super.dispose();
+  }
+
+  void _subscribeToUserProfile() async {
+    if (!mounted) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userId = authProvider.user?.uid;
+    if (userId == null) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+      _userProfileChannel = supabase.channel('public:user_profiles:user_status_$userId')
+          .onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'user_profiles',
+        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'firebase_uid', value: userId),
+        callback: (payload) async {
+          final newStatus = payload.newRecord['user_status'];
+          if (newStatus != null && newStatus != 'active') {
+            // FIXED: Use post-frame callback to avoid setState during build
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              if (mounted) {
+                await _handleSuspended();
+              }
+            });
+          }
+        },
+      )
+        ..subscribe();
+    } catch (e) {
+      print('Error subscribing to user profile changes: $e');
+    }
+  }
+
+  // NEW: Subscribe to real-time notifications
+  void _subscribeToNotifications() async {
+    if (!mounted) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final userId = authProvider.user?.uid;
+    if (userId == null) return;
+
+    try {
+      final supabase = Supabase.instance.client;
+      _notificationsChannel = supabase.channel('public:notifications:user_$userId')
+          .onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'notifications',
+        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
+        callback: (payload) async {
+          print('🔔 New notification received: ${payload.newRecord}');
+          // FIXED: Use post-frame callback to avoid setState during build
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              authProvider.refreshNotifications();
+            }
+          });
+        },
+      )
+          .onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'notifications',
+        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
+        callback: (payload) async {
+          print('🔔 Notification updated: ${payload.newRecord}');
+          // FIXED: Use post-frame callback to avoid setState during build
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              authProvider.refreshNotifications();
+            }
+          });
+        },
+      )
+        ..subscribe();
+    } catch (e) {
+      print('Error subscribing to notifications: $e');
+    }
+  }
+
+  Future<void> _handleSuspended() async {
+    if (!mounted) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF3B82F6).withOpacity(0.15) : const Color(0xFF2563EB).withOpacity(0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.block,
+                    color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Account Suspended',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Your account has been suspended. Please contact the admin for assistance.',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: isDark ? Colors.grey[300] : Colors.grey[700],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await authProvider.signOut();
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/signin');
+      }
+    } catch (e) {
+      print('Error handling suspended dialog: $e');
+    }
+  }
 
   // Method to change tab from external widgets
   void _changeTab(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
+    if (mounted) {
+      setState(() {
+        _currentIndex = index;
+      });
+    }
   }
 
   Future<bool?> _showExitConfirmationDialog(BuildContext context) async {
@@ -183,13 +375,14 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
     final languageProvider = context.watch<LanguageProvider>();
     final isDark = themeProvider.isDarkMode;
 
-    // Create tabs with navigation callback
+    // UPDATED: Create tabs with navigation callback and proper order
     final List<Widget> _tabs = [
-      ChatTab(onNavigateToTab: _changeTab),  // Pass navigation callback
-      const ResourcesTab(),
-      const HistoryTab(),
-      const ProfileTab(),
-      const SettingsTab(),
+      ChatTab(onNavigateToTab: _changeTab),  // Index 0: Chat
+      const ResourcesTab(),                   // Index 1: Resources
+      const HistoryTab(),                     // Index 2: History
+      const NotificationsTab(),               // Index 3: Notifications (NEW)
+      const ProfileTab(),                     // Index 4: Profile
+      const SettingsTab(),                    // Index 5: Settings
     ];
 
     return PopScope(
@@ -223,9 +416,11 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
           child: BottomNavigationBar(
             currentIndex: _currentIndex,
             onTap: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
+              if (mounted) {
+                setState(() {
+                  _currentIndex = index;
+                });
+              }
             },
             type: BottomNavigationBarType.fixed,
             backgroundColor: Colors.transparent,
@@ -259,6 +454,78 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
                 icon: const Icon(Icons.history_outlined),
                 activeIcon: const Icon(Icons.history),
                 label: languageProvider.translate('history') ?? 'History',
+              ),
+              // NEW: Notifications tab with badge
+              BottomNavigationBarItem(
+                icon: Consumer<AuthProvider>(
+                  builder: (context, authProvider, child) {
+                    return Stack(
+                      children: [
+                        const Icon(Icons.notifications_outlined),
+                        if (authProvider.unreadNotificationCount > 0)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              child: Text(
+                                authProvider.notificationBadgeText,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                activeIcon: Consumer<AuthProvider>(
+                  builder: (context, authProvider, child) {
+                    return Stack(
+                      children: [
+                        const Icon(Icons.notifications),
+                        if (authProvider.unreadNotificationCount > 0)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              child: Text(
+                                authProvider.notificationBadgeText,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                label: languageProvider.translate('notifications') ?? 'Notifications',
               ),
               BottomNavigationBarItem(
                 icon: const Icon(Icons.person_outline),

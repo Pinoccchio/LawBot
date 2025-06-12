@@ -1,181 +1,99 @@
-# LawBot - Legal Assistant Mobile App
+# LawBot - AI Legal Assistant for Philippine Cybercrime Law
 
 ## Overview
 
-LawBot is a comprehensive mobile application designed to provide accessible legal assistance and information about cybercrime laws in the Philippines. The app serves as a personal legal assistant, helping users understand complex legal concepts, access relevant resources, and get guidance on cybercrime-related issues.
+LawBot is a mobile application designed to be a personal legal assistant, providing accessible information and guidance on cybercrime laws in the Philippines. It leverages AI to help users understand complex legal topics, connect with resources, and get answers to their questions in a conversational manner.
 
 ## Key Features
 
-### 🤖 Legal Chat Assistant
-- AI-powered legal assistant that answers questions about cybercrime laws
-- Natural language processing for conversational interactions
-- Contextual responses based on Philippine legal framework
-
-### 📚 Legal Resources
-- Comprehensive database of Philippine cybercrime laws and regulations
-- Government agency information and contact details
-- Educational materials on digital rights and online safety
-- Searchable legal database with filtering options
-
-### 📊 Chat History
-- Complete history of all conversations with the legal assistant
-- Categorized chat logs for easy reference
-- Analytics on most discussed legal topics
-
-### 👤 User Profiles
-- Personalized user accounts with customizable profiles
-- TikTok-style profile picture management
-- Account settings and preferences
-- Complete account management (create, read, update, delete)
-
-### 🔐 Security Features
-- Secure authentication with Firebase
-- Data privacy compliance
-- End-to-end encryption for sensitive information
+-   **🤖 AI Legal Chat Assistant**: Get answers to your legal questions about Philippine cybercrime laws from an AI-powered chatbot using Google's Generative AI.
+-   **📚 Legal Resources**: Access a database of cybercrime laws, government agency contacts, and educational materials on digital safety.
+-   **📊 Chat History**: Review and search your past conversations with the legal assistant.
+-   **👤 User Profiles**: Create and manage a personal account with a customizable profile picture.
+-   **🔐 Secure Authentication**: Secure sign-up and sign-in using Firebase Authentication.
 
 ## Technologies Used
 
-- **Frontend**: Flutter/Dart
-- **Backend**:
-    - Firebase Authentication
-    - Supabase for database and storage
-- **AI Integration**: Custom NLP model for legal assistance
-- **State Management**: Provider pattern
-- **Storage**: Supabase Storage for profile pictures and assets
+-   **Framework**: Flutter/Dart
+-   **Backend & Authentication**: Firebase
+-   **Database & Storage**: Supabase
+-   **AI Chat**: Google Generative AI (`google_generative_ai`)
+-   **State Management**: Provider (`provider`)
+-   **Key Packages**:
+    -   `image_picker`: For selecting profile pictures.
+    -   `cached_network_image`: For efficient image caching.
+    -   `url_launcher`: For opening external links to legal resources.
+    -   `shared_preferences`: For local data persistence.
+    -   `share_plus`: For sharing content from the app.
 
 ## Installation
 
 ### Prerequisites
-- Flutter SDK (2.10.0 or higher)
-- Dart SDK (2.16.0 or higher)
-- Android Studio / VS Code with Flutter extensions
-- Firebase project setup
-- Supabase project setup
+
+-   Flutter SDK (3.0.0 or higher)
+-   Dart SDK (3.0.0 or higher)
+-   Android Studio / VS Code with Flutter extensions
+-   A Firebase project
+-   A Supabase project
 
 ### Setup Instructions
 
-1. **Clone the repository**
-   \`\`\`bash
-   git clone https://github.com/yourusername/lawbot.git
-   cd lawbot
-   \`\`\`
+1.  **Clone the repository**
 
-2. **Install dependencies**
-   \`\`\`bash
-   flutter pub get
-   \`\`\`
+    ```bash
+    git clone https://github.com/yourusername/lawbot.git
+    cd lawbot
+    ```
 
-3. **Configure Firebase**
-    - Create a Firebase project
-    - Add Android/iOS apps to your Firebase project
-    - Download and add the google-services.json (Android) or GoogleService-Info.plist (iOS)
-    - Enable Email/Password authentication
+2.  **Install dependencies**
 
-4. **Configure Supabase**
-    - Create a Supabase project
-    - Set up the required tables (user_profiles, chat_history, legal_resources, etc.)
-    - Update the Supabase URL and anon key in the app
+    ```bash
+    flutter pub get
+    ```
 
-5. **Run the app**
-   \`\`\`bash
-   flutter run
-   \`\`\`
+3.  **Configure Firebase**
+    -   Create a Firebase project.
+    -   Add your Android/iOS app to the project.
+    -   Download `google-services.json` (for Android) or `GoogleService-Info.plist` (for iOS) and place it in the appropriate directory.
+    -   Enable Email/Password authentication in the Firebase console.
+
+4.  **Configure Supabase**
+    -   Create a Supabase project.
+    -   Set up the necessary tables (e.g., `user_profiles`, `chat_history`).
+    -   Add your Supabase URL and anon key to the app's configuration file.
+
+5.  **Run the app**
+
+    ```bash
+    flutter run
+    ```
 
 ## Project Structure
 
-\`\`\`
+```
 lib/
-├── config/                 # Configuration files
-│   └── supabase_config.dart
-├── main.dart               # Entry point
-├── providers/              # State management
-│   ├── auth_provider.dart
-│   ├── language_provider.dart
-│   ├── notification_provider.dart
-│   └── theme_provider.dart
-├── screens/                # UI screens
-│   ├── auth/               # Authentication screens
-│   │   ├── sign_in_screen.dart
-│   │   ├── sign_up_screen.dart
-│   │   └── forgot_password_screen.dart
-│   ├── home_screen_container.dart
-│   ├── onboarding_screen.dart
-│   ├── splash_screen.dart
-│   └── tabs/               # Main app tabs
-│       ├── history_tab.dart
-│       ├── profile_tab.dart
-│       └── resources_tab.dart
-├── services/               # Business logic and API services
-│   ├── auth_service.dart
-│   └── database_service.dart
-└── widgets/                # Reusable UI components
-└── tiktok_avatar.dart
-\`\`\`
+├── assets/                 # Images and other static assets
+├── config/                 # Configuration files (e.g., Supabase)
+├── providers/              # State management (Provider)
+├── screens/                # UI screens for different app features
+├── services/               # Business logic (Firebase, Supabase, etc.)
+├── utils/                  # Utility functions and helpers
+├── widgets/                # Reusable UI components
+├── firebase_options.dart   # Firebase configuration
+└── main.dart               # App entry point
+```
 
 ## Usage
 
-### Authentication
-- Users can sign up with email and password
-- Login with existing credentials
-- Reset password functionality
-
-### Chat Interface
-- Type legal questions in the chat interface
-- Receive AI-generated responses based on Philippine cybercrime laws
-- Save important conversations for future reference
-
-### Resources
-- Browse categorized legal resources
-- Search for specific laws or topics
-- Access government agency information
-- View educational materials on cybercrime prevention
-
-### Profile Management
-- Upload and manage profile pictures
-- Edit personal information
-- View chat history and saved resources
-- Delete account and all associated data
-
-## Screenshots
-
-![Login Screen](/placeholder.svg?height=400&width=200&query=mobile%20app%20login%20screen)
-![Chat Interface](/placeholder.svg?height=400&width=200&query=AI%20chat%20interface%20mobile%20app)
-![Resources Tab](/placeholder.svg?height=400&width=200&query=resources%20list%20mobile%20app)
-![Profile Screen](/placeholder.svg?height=400&width=200&query=user%20profile%20mobile%20app)
-
-## Roadmap
-
-- **Short-term**
-    - Add haptic feedback
-    - Implement pull-to-refresh
-    - Add skeleton loading screens
-    - Create custom animations
-    - Add sound effects
-    - Implement image cropping
-
-- **Mid-term**
-    - Add profile picture zoom and animations
-    - Implement profile sharing
-    - Expand legal resources database
-    - Add offline mode support
-    - Implement multi-language support
-
-- **Long-term**
-    - Integrate with court case management systems
-    - Add document scanning and analysis
-    - Implement lawyer directory and booking
-    - Create community forums for legal discussions
+-   **Authentication**: Sign up, log in, or reset your password.
+-   **Chat**: Ask legal questions and receive AI-generated answers.
+-   **Resources**: Browse and search for laws and articles.
+-   **Profile**: Update your profile information and picture.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit a pull request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Credits
-
-- Legal content provided by legal experts specializing in Philippine cybercrime law
-- UI/UX design inspired by modern mobile applications
-- Special thanks to all contributors and testers
+This project is licensed under the MIT License. See the `LICENSE` file for details.

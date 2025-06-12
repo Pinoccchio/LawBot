@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
-import '../../providers/notification_provider.dart';
 import '../../providers/auth_provider.dart';
 
 class SettingsTab extends StatelessWidget {
@@ -13,7 +12,6 @@ class SettingsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
     final languageProvider = context.watch<LanguageProvider>();
-    final notificationProvider = context.watch<NotificationProvider>();
     final isDark = themeProvider.isDarkMode;
 
     return Scaffold(
@@ -45,29 +43,6 @@ class SettingsTab extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
                 ),
-              ),
-            ),
-
-            // Notifications Setting
-            _buildSettingCard(
-              context,
-              icon: Icons.notifications_outlined,
-              activeIcon: Icons.notifications,
-              title: languageProvider.translate('notifications'),
-              subtitle: languageProvider.translate('receive_updates'),
-              trailing: Switch.adaptive(
-                value: notificationProvider.notificationsEnabled,
-                onChanged: (value) {
-                  notificationProvider.toggleNotifications();
-                  _showSnackBar(
-                    context,
-                    value
-                        ? 'Notifications enabled'
-                        : 'Notifications disabled',
-                    isDark,
-                  );
-                },
-                activeColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
               ),
             ),
 
