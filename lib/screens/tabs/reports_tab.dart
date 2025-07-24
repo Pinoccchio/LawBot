@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/theme_provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import '../../providers/language_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../services/database_service.dart';
 import '../../utils/philippine_time.dart';
 import '../../models/complaint_model.dart';
+import '../complaint_form_screen.dart';
 import '../report_detail_screen.dart';
-import 'dart:async';
 
-class HistoryTab extends StatefulWidget {
-  const HistoryTab({super.key});
+class ReportsTab extends StatefulWidget {
+  final Function(int)? onNavigateToTab;
+
+  const ReportsTab({super.key, this.onNavigateToTab});
 
   @override
-  State<HistoryTab> createState() => _HistoryTabState();
+  State<ReportsTab> createState() => _ReportsTabState();
 }
 
-class _HistoryTabState extends State<HistoryTab> {
+class _ReportsTabState extends State<ReportsTab> {
   final DatabaseService _databaseService = DatabaseService();
-  List<Complaint> _completedReports = [];
+  
+  List<Complaint> _complaints = [];
   bool _isLoading = true;
   String _selectedFilter = 'All';
   Timer? _refreshTimer;
@@ -25,7 +30,7 @@ class _HistoryTabState extends State<HistoryTab> {
   @override
   void initState() {
     super.initState();
-    _loadCompletedReports();
+    _loadComplaints();
     _startAutoRefresh();
   }
 
@@ -38,12 +43,12 @@ class _HistoryTabState extends State<HistoryTab> {
   void _startAutoRefresh() {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (mounted) {
-        _loadCompletedReports(showLoading: false);
+        _loadComplaints(showLoading: false);
       }
     });
   }
 
-  Future<void> _loadCompletedReports({bool showLoading = true}) async {
+  Future<void> _loadComplaints({bool showLoading = true}) async {
     if (showLoading) {
       setState(() {
         _isLoading = true;
@@ -51,9 +56,20 @@ class _HistoryTabState extends State<HistoryTab> {
     }
 
     try {
-      // TODO: Load from database service
-      // For now, create sample completed cybercrime reports
-      _completedReports = _createSampleCompletedReports();
+      // Check current user
+      final currentUser = FirebaseAuth.instance.currentUser;
+      
+      if (currentUser == null) {
+        setState(() {
+          _isLoading = false;
+          _complaints = [];
+        });
+        return;
+      }
+
+      // TODO: Load complaints from database
+      // For now, create sample data
+      _complaints = _createSampleComplaints();
       
       if (mounted) {
         setState(() {
@@ -62,188 +78,202 @@ class _HistoryTabState extends State<HistoryTab> {
       }
 
     } catch (e) {
-      print('Error loading completed reports: $e');
+      print('Error loading complaints: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _completedReports = [];
+          _complaints = [];
         });
       }
     }
   }
 
   // TODO: Remove this when database service is implemented
-  List<Complaint> _createSampleCompletedReports() {
+  List<Complaint> _createSampleComplaints() {
     final now = DateTime.now();
     return [
       Complaint(
-        id: 'hist1',
+        id: '1',
         userId: 'user1',
         crimeType: CrimeType.onlineHarassment,
-        description: 'Received threatening messages on social media platforms with fake accounts spreading false information about me.',
-        fullName: 'Maria Santos',
-        email: 'maria.santos@email.com',
-        phoneNumber: '+63 917 123 4567',
-        incidentDateTime: now.subtract(const Duration(days: 31)),
-        status: ComplaintStatus.resolved,
-        createdAt: now.subtract(const Duration(days: 30)),
-        updatedAt: now.subtract(const Duration(days: 25)),
-        complaintNumber: 'CYB-2023-078',
-        statusHistory: [
-          StatusUpdate(
-            status: ComplaintStatus.pending,
-            timestamp: now.subtract(const Duration(days: 30)),
-            updatedBy: 'System',
-            remarks: 'Complaint submitted successfully',
-          ),
-          StatusUpdate(
-            status: ComplaintStatus.resolved,
-            timestamp: now.subtract(const Duration(days: 25)),
-            updatedBy: 'Officer Martinez - Cyber Crime Against Women and Children',
-            remarks: 'Case resolved - suspect identified and warned, accounts suspended',
-          ),
+        description: 'I am being harassed on social media platforms with threatening messages and fake accounts being created to spread false information about me.',
+        fullName: 'Carlos Mendoza',
+        email: 'carlos.mendoza@email.com',
+        phoneNumber: '+63 917 555 1234',
+        incidentDateTime: now.subtract(const Duration(days: 3)),
+        status: ComplaintStatus.underInvestigation,
+        createdAt: now.subtract(const Duration(days: 2)),
+        updatedAt: now.subtract(const Duration(hours: 4)),
+        complaintNumber: 'CYB-2024-001',
+        evidenceFiles: [
+          EvidenceFile(
+            id: '1',
+            fileName: 'harassment_screenshot.png',
+            filePath: '/screenshots/harassment.png',
+            fileType: 'png',
+            fileSize: 245760,
+            uploadedAt: now.subtract(const Duration(days: 2)),
+          )
         ],
-      ),
-      Complaint(
-        id: 'hist2',
-        userId: 'user1',
-        crimeType: CrimeType.onlineShoppingScams,
-        description: 'Scammed by fake online seller - never received purchased items worth ₱15,000 despite payment confirmation.',
-        fullName: 'Juan dela Cruz',
-        email: 'juan.delacruz@email.com',
-        phoneNumber: '+63 928 987 6543',
-        incidentDateTime: now.subtract(const Duration(days: 46)),
-        status: ComplaintStatus.resolved,
-        createdAt: now.subtract(const Duration(days: 45)),
-        updatedAt: now.subtract(const Duration(days: 40)),
-        complaintNumber: 'CYB-2023-052',
         statusHistory: [
           StatusUpdate(
             status: ComplaintStatus.pending,
-            timestamp: now.subtract(const Duration(days: 45)),
-            updatedBy: 'System',
-            remarks: 'Complaint submitted successfully',
-          ),
-          StatusUpdate(
-            status: ComplaintStatus.resolved,
-            timestamp: now.subtract(const Duration(days: 40)),
-            updatedBy: 'Officer Santos - Economic Offenses Wing',
-            remarks: 'Full refund processed through platform mediation and escrow release',
-          ),
-        ],
-      ),
-      Complaint(
-        id: 'hist3',
-        userId: 'user1',
-        crimeType: CrimeType.phishing,
-        description: 'Received fake bank emails requesting account information and OTP codes claiming account suspension.',
-        fullName: 'Ana Rodriguez',
-        email: 'ana.rodriguez@email.com',
-        phoneNumber: '+63 935 555 1234',
-        incidentDateTime: now.subtract(const Duration(days: 61)),
-        status: ComplaintStatus.dismissed,
-        createdAt: now.subtract(const Duration(days: 60)),
-        updatedAt: now.subtract(const Duration(days: 55)),
-        complaintNumber: 'CYB-2023-033',
-        statusHistory: [
-          StatusUpdate(
-            status: ComplaintStatus.pending,
-            timestamp: now.subtract(const Duration(days: 60)),
-            updatedBy: 'System',
-            remarks: 'Complaint submitted successfully',
-          ),
-          StatusUpdate(
-            status: ComplaintStatus.dismissed,
-            timestamp: now.subtract(const Duration(days: 55)),
-            updatedBy: 'Officer Cruz - Cyber Crime Investigation Cell',
-            remarks: 'General phishing attempt - no specific target identified, no financial loss incurred',
-          ),
-        ],
-      ),
-      Complaint(
-        id: 'hist4',
-        userId: 'user1',
-        crimeType: CrimeType.identityTheft,
-        description: 'Someone used my identity to open unauthorized bank accounts and credit cards, causing financial damage.',
-        fullName: 'Roberto Garcia',
-        email: 'roberto.garcia@email.com',
-        phoneNumber: '+63 922 777 8888',
-        incidentDateTime: now.subtract(const Duration(days: 91)),
-        status: ComplaintStatus.resolved,
-        createdAt: now.subtract(const Duration(days: 90)),
-        updatedAt: now.subtract(const Duration(days: 75)),
-        complaintNumber: 'CYB-2023-001',
-        statusHistory: [
-          StatusUpdate(
-            status: ComplaintStatus.pending,
-            timestamp: now.subtract(const Duration(days: 90)),
+            timestamp: now.subtract(const Duration(days: 2)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
           ),
           StatusUpdate(
             status: ComplaintStatus.underInvestigation,
-            timestamp: now.subtract(const Duration(days: 85)),
-            updatedBy: 'Officer Reyes - Cyber Security Division',
-            remarks: 'Investigation started - banks contacted for account verification and fraud alerts',
-          ),
-          StatusUpdate(
-            status: ComplaintStatus.resolved,
-            timestamp: now.subtract(const Duration(days: 75)),
-            updatedBy: 'Officer Reyes - Cyber Security Division',
-            remarks: 'Identity theft case resolved - fraudulent accounts closed, credit restored, suspect arrested',
+            timestamp: now.subtract(const Duration(hours: 4)),
+            updatedBy: 'Officer Santos',
+            remarks: 'Assigned to investigation team',
           ),
         ],
       ),
       Complaint(
-        id: 'hist5',
+        id: '2',
         userId: 'user1',
-        crimeType: CrimeType.cyberbullying,
-        description: 'Persistent online harassment and bullying through multiple social media platforms affecting mental health.',
-        fullName: 'Lisa Fernandez',
-        email: 'lisa.fernandez@email.com',
-        phoneNumber: '+63 918 444 2222',
-        incidentDateTime: now.subtract(const Duration(days: 121)),
-        status: ComplaintStatus.dismissed,
-        createdAt: now.subtract(const Duration(days: 120)),
-        updatedAt: now.subtract(const Duration(days: 110)),
-        complaintNumber: 'CYB-2022-089',
+        crimeType: CrimeType.onlineShoppingScams,
+        description: 'I paid for a product online but never received it. The seller has stopped responding to messages.',
+        fullName: 'Rosa Valencia',
+        email: 'rosa.valencia@email.com',
+        phoneNumber: '+63 928 777 9999',
+        incidentDateTime: now.subtract(const Duration(days: 1)),
+        status: ComplaintStatus.pending,
+        createdAt: now.subtract(const Duration(hours: 6)),
+        updatedAt: now.subtract(const Duration(hours: 6)),
+        complaintNumber: 'CYB-2024-002',
         statusHistory: [
           StatusUpdate(
             status: ComplaintStatus.pending,
-            timestamp: now.subtract(const Duration(days: 120)),
+            timestamp: now.subtract(const Duration(hours: 6)),
+            updatedBy: 'System',
+            remarks: 'Complaint submitted successfully',
+          ),
+        ],
+      ),
+      Complaint(
+        id: '3',
+        userId: 'user1',
+        crimeType: CrimeType.onlineImpersonation,
+        description: 'Someone has created fake accounts using my personal information and photos to impersonate me on various social media platforms.',
+        fullName: 'Miguel Torres',
+        email: 'miguel.torres@email.com',
+        phoneNumber: '+63 935 888 7777',
+        incidentDateTime: now.subtract(const Duration(days: 12)),
+        status: ComplaintStatus.underInvestigation,
+        createdAt: now.subtract(const Duration(days: 10)),
+        updatedAt: now.subtract(const Duration(days: 1)),
+        complaintNumber: 'CYB-2024-003',
+        statusHistory: [
+          StatusUpdate(
+            status: ComplaintStatus.pending,
+            timestamp: now.subtract(const Duration(days: 10)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
           ),
           StatusUpdate(
-            status: ComplaintStatus.dismissed,
-            timestamp: now.subtract(const Duration(days: 110)),
-            updatedBy: 'Officer Luna - Cyber Crime Against Women and Children',
-            remarks: 'Insufficient evidence to pursue criminal charges - referred to civil remedies',
+            status: ComplaintStatus.underInvestigation,
+            timestamp: now.subtract(const Duration(days: 1)),
+            updatedBy: 'Officer Cruz',
+            remarks: 'Investigation started - gathering evidence of fake accounts',
+          ),
+        ],
+      ),
+      Complaint(
+        id: '4',
+        userId: 'user1',
+        crimeType: CrimeType.phishing,
+        description: 'I received suspicious emails claiming to be from my bank asking for my account details and passwords.',
+        fullName: 'Elena Ramirez',
+        email: 'elena.ramirez@email.com',
+        phoneNumber: '+63 922 333 4444',
+        incidentDateTime: now.subtract(const Duration(hours: 18)),
+        status: ComplaintStatus.pending,
+        createdAt: now.subtract(const Duration(hours: 12)),
+        updatedAt: now.subtract(const Duration(hours: 12)),
+        complaintNumber: 'CYB-2024-004',
+        evidenceFiles: [
+          EvidenceFile(
+            id: '4',
+            fileName: 'phishing_email.pdf',
+            filePath: '/evidence/phishing_email.pdf',
+            fileType: 'pdf',
+            fileSize: 156780,
+            uploadedAt: now.subtract(const Duration(hours: 12)),
+          )
+        ],
+        statusHistory: [
+          StatusUpdate(
+            status: ComplaintStatus.pending,
+            timestamp: now.subtract(const Duration(hours: 12)),
+            updatedBy: 'System',
+            remarks: 'Complaint submitted successfully',
+          ),
+        ],
+      ),
+      Complaint(
+        id: '5',
+        userId: 'user1',
+        crimeType: CrimeType.socialEngineering,
+        description: 'I was deceived by someone I met on a dating app who asked for money after building a romantic relationship.',
+        fullName: 'Diana Lopez',
+        email: 'diana.lopez@email.com',
+        phoneNumber: '+63 918 666 5555',
+        incidentDateTime: now.subtract(const Duration(days: 7)),
+        status: ComplaintStatus.requiresMoreInfo,
+        createdAt: now.subtract(const Duration(days: 5)),
+        updatedAt: now.subtract(const Duration(days: 3)),
+        complaintNumber: 'CYB-2024-005',
+        statusHistory: [
+          StatusUpdate(
+            status: ComplaintStatus.pending,
+            timestamp: now.subtract(const Duration(days: 5)),
+            updatedBy: 'System',
+            remarks: 'Complaint submitted successfully',
+          ),
+          StatusUpdate(
+            status: ComplaintStatus.requiresMoreInfo,
+            timestamp: now.subtract(const Duration(days: 3)),
+            updatedBy: 'Officer Reyes',
+            remarks: 'Additional communication records needed for investigation',
           ),
         ],
       ),
     ];
   }
 
-  List<Complaint> get filteredReports {
+  List<Complaint> get filteredComplaints {
     if (_selectedFilter == 'All') {
-      return _completedReports;
-    } else if (_selectedFilter == 'Resolved') {
-      return _completedReports.where((report) => report.status == ComplaintStatus.resolved).toList();
-    } else if (_selectedFilter == 'Dismissed') {
-      return _completedReports.where((report) => report.status == ComplaintStatus.dismissed).toList();
+      return _complaints;
+    } else if (_selectedFilter == 'Pending') {
+      return _complaints.where((c) => c.status == ComplaintStatus.pending).toList();
+    } else if (_selectedFilter == 'Under Investigation') {
+      return _complaints.where((c) => c.status == ComplaintStatus.underInvestigation).toList();
+    } else if (_selectedFilter == 'Requires More Info') {
+      return _complaints.where((c) => c.status == ComplaintStatus.requiresMoreInfo).toList();
     }
-    return _completedReports;
+    return _complaints;
   }
 
-  List<String> get filterOptions {
-    return ['All', 'Resolved', 'Dismissed'];
+  List<String> get filterOptions => ['All', 'Pending', 'Under Investigation', 'Requires More Info'];
+
+  void _navigateToNewComplaint() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const ComplaintFormScreen(),
+      ),
+    );
+    
+    if (result == true) {
+      _loadComplaints();
+    }
   }
 
-  void _showReportDetail(Complaint report) {
+  void _navigateToComplaintDetail(Complaint complaint) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => ReportDetailScreen(complaint: report),
+        builder: (context) => ReportDetailScreen(complaint: complaint),
       ),
     );
   }
@@ -282,77 +312,117 @@ class _HistoryTabState extends State<HistoryTab> {
                 ],
               ),
               child: const Icon(
-                Icons.history_rounded,
+                Icons.report_problem_rounded,
+                size: 24,
                 color: Colors.white,
-                size: 20,
               ),
             ),
             const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                'Report History',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : const Color(0xFF1E293B),
-                ),
-                overflow: TextOverflow.ellipsis,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Active Reports',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF2563EB),
+                    ),
+                  ),
+                  Text(
+                    'Current PNP Cybercrime Cases',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
-        automaticallyImplyLeading: false,
         actions: [
+          TextButton.icon(
+            onPressed: () {
+              // Navigate to History tab (completed reports)
+              if (widget.onNavigateToTab != null) {
+                widget.onNavigateToTab!(2); // History tab index
+              }
+            },
+            icon: Icon(
+              Icons.history,
+              size: 18,
+              color: isDark ? Colors.white : const Color(0xFF2563EB),
+            ),
+            label: Text(
+              'History',
+              style: TextStyle(
+                color: isDark ? Colors.white : const Color(0xFF2563EB),
+                fontSize: 12,
+              ),
+            ),
+          ),
           IconButton(
             icon: Icon(
               Icons.refresh_rounded,
               color: isDark ? Colors.white : const Color(0xFF2563EB),
             ),
-            onPressed: () => _loadCompletedReports(),
+            onPressed: () => _loadComplaints(),
           ),
         ],
+        automaticallyImplyLeading: false,
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadCompletedReports,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
+      body: _isLoading
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading reports...'),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadComplaints,
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Overview Cards
+                  // Summary Cards
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
                         Expanded(
-                          child: _buildOverviewCard(
+                          child: _buildSummaryCard(
                             context,
-                            icon: Icons.history_outlined,
-                            title: '${_completedReports.length}',
-                            subtitle: 'Total Completed',
+                            title: '${_complaints.length}',
+                            subtitle: 'Total Reports',
+                            icon: Icons.report_outlined,
                             color: Colors.blue,
                             isDark: isDark,
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _buildOverviewCard(
+                          child: _buildSummaryCard(
                             context,
-                            icon: Icons.check_circle_outline,
-                            title: '${_completedReports.where((r) => r.status == ComplaintStatus.resolved).length}',
-                            subtitle: 'Resolved',
-                            color: Colors.green,
+                            title: '${_complaints.where((c) => c.status == ComplaintStatus.pending).length}',
+                            subtitle: 'Pending',
+                            icon: Icons.hourglass_empty,
+                            color: Colors.orange,
                             isDark: isDark,
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _buildOverviewCard(
+                          child: _buildSummaryCard(
                             context,
-                            icon: Icons.cancel_outlined,
-                            title: '${_completedReports.where((r) => r.status == ComplaintStatus.dismissed).length}',
-                            subtitle: 'Dismissed',
-                            color: Colors.orange,
+                            title: '${_complaints.where((c) => c.status == ComplaintStatus.underInvestigation).length}',
+                            subtitle: 'Investigating',
+                            icon: Icons.search,
+                            color: Colors.purple,
                             isDark: isDark,
                           ),
                         ),
@@ -360,8 +430,7 @@ class _HistoryTabState extends State<HistoryTab> {
                     ),
                   ),
 
-
-                  // Filter Chips
+                  // Filter Section
                   if (filterOptions.length > 1) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -415,26 +484,36 @@ class _HistoryTabState extends State<HistoryTab> {
                     const SizedBox(height: 16),
                   ],
 
-                  // Completed Reports List
+                  // Reports List
                   Expanded(
-                    child: filteredReports.isEmpty
+                    child: filteredComplaints.isEmpty
                         ? _buildEmptyState(isDark)
                         : ListView.builder(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            itemCount: filteredReports.length,
+                            itemCount: filteredComplaints.length,
                             itemBuilder: (context, index) {
-                              final report = filteredReports[index];
-                              return _buildComplaintCard(context, report, isDark);
+                              final complaint = filteredComplaints[index];
+                              return _buildComplaintCard(context, complaint, isDark);
                             },
                           ),
                   ),
                 ],
               ),
+            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _navigateToNewComplaint,
+        backgroundColor: const Color(0xFF2563EB),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('New Complaint'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
       ),
     );
   }
 
-  Widget _buildOverviewCard(
+  Widget _buildSummaryCard(
     BuildContext context, {
     required String title,
     required String subtitle,
@@ -520,7 +599,7 @@ class _HistoryTabState extends State<HistoryTab> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => _showReportDetail(complaint),
+          onTap: () => _navigateToComplaintDetail(complaint),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -668,15 +747,15 @@ class _HistoryTabState extends State<HistoryTab> {
               borderRadius: BorderRadius.circular(60),
             ),
             child: Icon(
-              Icons.history_outlined,
+              Icons.report_problem_outlined,
               size: 48,
               color: isDark ? Colors.grey[500] : Colors.grey[400],
             ),
           ),
           const SizedBox(height: 24),
           Text(
-            _completedReports.isEmpty
-                ? 'No completed reports yet'
+            _complaints.isEmpty
+                ? 'No reports yet'
                 : 'No reports match your filter',
             style: TextStyle(
               fontSize: 18,
@@ -687,8 +766,8 @@ class _HistoryTabState extends State<HistoryTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            _completedReports.isEmpty
-                ? 'Completed cybercrime reports will appear here once resolved or dismissed'
+            _complaints.isEmpty
+                ? 'Submit your first cybercrime report to get started'
                 : 'Try selecting a different status filter',
             style: TextStyle(
               fontSize: 14,
@@ -697,6 +776,25 @@ class _HistoryTabState extends State<HistoryTab> {
             ),
             textAlign: TextAlign.center,
           ),
+          if (_complaints.isEmpty) ...[
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: _navigateToNewComplaint,
+              icon: const Icon(Icons.add),
+              label: const Text('Submit Report'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

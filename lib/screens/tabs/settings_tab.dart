@@ -1118,23 +1118,14 @@ For urgent legal matters, please contact emergency services or seek immediate le
               // Update local language preference
               await languageProvider.setLanguage(code);
 
-              // Update user profile in Supabase if user is authenticated
-              if (authProvider.isAuthenticated) {
-                await authProvider.updateProfile(
-                  fullName: authProvider.userProfile?['full_name'] ??
-                      authProvider.user?.displayName ??
-                      'User',
-                  phoneNumber: authProvider.userProfile?['phone_number'],
-                  avatarUrl: authProvider.userProfile?['avatar_url'],
-                  preferredLanguage: code, // Update the preferred language in database
-                );
-              }
+              // Language preference is now stored locally only
+              // No need to update user profile in database
 
               if (context.mounted) {
                 Navigator.pop(context);
                 _showSuccessSnackBar(
                     context,
-                    'Language changed to $language${authProvider.isAuthenticated ? ' and synced to your profile' : ''}',
+                    'Language changed to $language',
                     isDark
                 );
               }

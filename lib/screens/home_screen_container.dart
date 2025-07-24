@@ -4,12 +4,13 @@ import 'package:lawbot/screens/tabs/resources_tabs.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/language_provider.dart';
-import 'tabs/chat_tab.dart';
+import 'tabs/reports_tab.dart';
 import 'tabs/history_tab.dart';
 import 'tabs/notifications_tab.dart'; // NEW: Import notifications tab
 import 'tabs/profile_tab.dart';
 import 'tabs/settings_tab.dart';
 import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgresChangeFilter, PostgresChangeEvent, PostgresChangeFilterType;
 
@@ -23,7 +24,7 @@ class HomeScreenContainer extends StatefulWidget {
 class _HomeScreenContainerState extends State<HomeScreenContainer> {
   int _currentIndex = 0;
   RealtimeChannel? _userProfileChannel;
-  RealtimeChannel? _notificationsChannel; // NEW: For real-time notifications
+  RealtimeChannel? _notificationsChannel; // OLD: For real-time notifications (removed for frontend-only)
 
   @override
   void initState() {
@@ -31,14 +32,14 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
     // FIXED: Use post-frame callback to avoid setState during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _subscribeToUserProfile();
-      _subscribeToNotifications();
+      // _subscribeToNotifications(); // Removed for frontend-only notifications
     });
   }
 
   @override
   void dispose() {
     _userProfileChannel?.unsubscribe();
-    _notificationsChannel?.unsubscribe(); // NEW: Unsubscribe from notifications
+    // _notificationsChannel?.unsubscribe(); // Removed for frontend-only notifications
     super.dispose();
   }
 
@@ -75,52 +76,10 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
     }
   }
 
-  // NEW: Subscribe to real-time notifications
-  void _subscribeToNotifications() async {
-    if (!mounted) return;
-
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final userId = authProvider.user?.uid;
-    if (userId == null) return;
-
-    try {
-      final supabase = Supabase.instance.client;
-      _notificationsChannel = supabase.channel('public:notifications:user_$userId')
-          .onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'notifications',
-        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
-        callback: (payload) async {
-          print('🔔 New notification received: ${payload.newRecord}');
-          // FIXED: Use post-frame callback to avoid setState during build
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              authProvider.refreshNotifications();
-            }
-          });
-        },
-      )
-          .onPostgresChanges(
-        event: PostgresChangeEvent.update,
-        schema: 'public',
-        table: 'notifications',
-        filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
-        callback: (payload) async {
-          print('🔔 Notification updated: ${payload.newRecord}');
-          // FIXED: Use post-frame callback to avoid setState during build
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              authProvider.refreshNotifications();
-            }
-          });
-        },
-      )
-        ..subscribe();
-    } catch (e) {
-      print('Error subscribing to notifications: $e');
-    }
-  }
+  // OLD: Subscribe to real-time notifications (removed for frontend-only)
+  // void _subscribeToNotifications() async {
+  //   Frontend-only notifications using sample data in NotificationProvider
+  // }
 
   Future<void> _handleSuspended() async {
     if (!mounted) return;
@@ -377,12 +336,12 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
 
     // UPDATED: Create tabs with navigation callback and proper order
     final List<Widget> _tabs = [
-      ChatTab(onNavigateToTab: _changeTab),  // Index 0: Chat
-      const ResourcesTab(),                   // Index 1: Resources
-      const HistoryTab(),                     // Index 2: History
-      const NotificationsTab(),               // Index 3: Notifications (NEW)
-      const ProfileTab(),                     // Index 4: Profile
-      const SettingsTab(),                    // Index 5: Settings
+      ReportsTab(onNavigateToTab: _changeTab),  // Index 0: Reports
+      const ResourcesTab(),                     // Index 1: Resources
+      const HistoryTab(),                       // Index 2: History
+      const NotificationsTab(),                 // Index 3: Notifications (NEW)
+      const ProfileTab(),                       // Index 4: Profile
+      const SettingsTab(),                      // Index 5: Settings
     ];
 
     return PopScope(
@@ -441,9 +400,9 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
             showUnselectedLabels: true,
             items: [
               BottomNavigationBarItem(
-                icon: const Icon(Icons.chat_outlined),
-                activeIcon: const Icon(Icons.chat),
-                label: languageProvider.translate('chat') ?? 'Chat',
+                icon: const Icon(Icons.report_problem_outlined),
+                activeIcon: const Icon(Icons.report_problem),
+                label: languageProvider.translate('reports') ?? 'Reports',
               ),
               BottomNavigationBarItem(
                 icon: const Icon(Icons.library_books_outlined),
@@ -455,76 +414,10 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
                 activeIcon: const Icon(Icons.history),
                 label: languageProvider.translate('history') ?? 'History',
               ),
-              // NEW: Notifications tab with badge
+              // Notifications tab (frontend-only, no badge)
               BottomNavigationBarItem(
-                icon: Consumer<AuthProvider>(
-                  builder: (context, authProvider, child) {
-                    return Stack(
-                      children: [
-                        const Icon(Icons.notifications_outlined),
-                        if (authProvider.unreadNotificationCount > 0)
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              constraints: const BoxConstraints(
-                                minWidth: 16,
-                                minHeight: 16,
-                              ),
-                              child: Text(
-                                authProvider.notificationBadgeText,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
-                activeIcon: Consumer<AuthProvider>(
-                  builder: (context, authProvider, child) {
-                    return Stack(
-                      children: [
-                        const Icon(Icons.notifications),
-                        if (authProvider.unreadNotificationCount > 0)
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              constraints: const BoxConstraints(
-                                minWidth: 16,
-                                minHeight: 16,
-                              ),
-                              child: Text(
-                                authProvider.notificationBadgeText,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
+                icon: const Icon(Icons.notifications_outlined),
+                activeIcon: const Icon(Icons.notifications),
                 label: languageProvider.translate('notifications') ?? 'Notifications',
               ),
               BottomNavigationBarItem(

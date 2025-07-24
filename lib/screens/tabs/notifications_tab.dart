@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -55,8 +55,8 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
     setState(() => _isLoading = true);
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      await authProvider.refreshNotifications();
+      final notificationProvider = context.read<NotificationProvider>();
+      await notificationProvider.refreshNotifications();
     } catch (e) {
       print('Error loading notifications: $e');
       if (mounted) {
@@ -78,8 +78,8 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
     if (!mounted) return;
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      await authProvider.markNotificationAsRead(notificationId);
+      final notificationProvider = context.read<NotificationProvider>();
+      await notificationProvider.markNotificationAsRead(notificationId);
     } catch (e) {
       print('Error marking notification as read: $e');
       if (mounted) {
@@ -97,8 +97,8 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
     if (!mounted) return;
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      await authProvider.markAllNotificationsAsRead();
+      final notificationProvider = context.read<NotificationProvider>();
+      await notificationProvider.markAllNotificationsAsRead();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -125,8 +125,8 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
     if (!mounted) return;
 
     try {
-      final authProvider = context.read<AuthProvider>();
-      final success = await authProvider.deleteNotification(notificationId);
+      final notificationProvider = context.read<NotificationProvider>();
+      final success = await notificationProvider.deleteNotification(notificationId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -452,11 +452,14 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
                                 color: isDark ? Colors.grey[400] : Colors.grey[600],
                               ),
                               const SizedBox(width: 4),
-                              Text(
-                                _formatCategoryName(category),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                              Flexible(
+                                child: Text(
+                                  _formatCategoryName(category),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -589,9 +592,9 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
   }
 
   Widget _buildStatsCard(bool isDark) {
-    return Consumer<AuthProvider>(
-      builder: (context, authProvider, child) {
-        final stats = authProvider.notificationStats;
+    return Consumer<NotificationProvider>(
+      builder: (context, notificationProvider, child) {
+        final stats = notificationProvider.notificationStats;
 
         return Container(
           margin: const EdgeInsets.all(16),
@@ -1058,9 +1061,9 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
           ),
         ),
         actions: [
-          Consumer<AuthProvider>(
-            builder: (context, authProvider, child) {
-              final hasUnread = authProvider.unreadNotificationCount > 0;
+          Consumer<NotificationProvider>(
+            builder: (context, notificationProvider, child) {
+              final hasUnread = notificationProvider.unreadNotificationCount > 0;
 
               return Row(
                 children: [
@@ -1099,9 +1102,9 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
           ),
         ],
       ),
-      body: Consumer<AuthProvider>(
-        builder: (context, authProvider, child) {
-          final allNotifications = authProvider.notifications;
+      body: Consumer<NotificationProvider>(
+        builder: (context, notificationProvider, child) {
+          final allNotifications = notificationProvider.notifications;
           final filteredNotifications = _filterNotifications(allNotifications);
 
           if (_isLoading && allNotifications.isEmpty) {

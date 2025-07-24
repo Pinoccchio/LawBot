@@ -14,6 +14,7 @@ class SignUpScreen extends StatefulWidget {
 class _SignUpScreenState extends State<SignUpScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
@@ -23,6 +24,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -38,6 +40,36 @@ class _SignUpScreenState extends State<SignUpScreen> {
     setState(() {
       _obscureConfirmPassword = !_obscureConfirmPassword;
     });
+  }
+
+  void _formatPhoneNumber(String value) {
+    // Remove all non-digits
+    String digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    
+    // Format based on different input patterns
+    String formatted = '';
+    
+    if (digits.startsWith('63') && digits.length >= 12) {
+      // Already starts with 63, add + prefix
+      formatted = '+$digits';
+    } else if (digits.startsWith('09') && digits.length >= 11) {
+      // Starts with 09, replace with +639
+      formatted = '+639${digits.substring(2)}';
+    } else if (digits.startsWith('9') && digits.length >= 10) {
+      // Starts with 9, add +639 prefix
+      formatted = '+639$digits';
+    } else if (digits.isNotEmpty) {
+      // Keep original input if it doesn't match patterns
+      formatted = value;
+    }
+    
+    // Update controller only if format changed and cursor is at end
+    if (formatted != value && _phoneController.selection.baseOffset == value.length) {
+      _phoneController.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
   }
 
   void _signUp() async {
@@ -61,6 +93,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
+    if (_phoneController.text.trim().isEmpty) {
+      _showErrorSnackBar('Please enter your phone number');
+      return;
+    }
+
+    // Philippine phone number validation
+    final phoneText = _phoneController.text.trim().replaceAll(RegExp(r'[\s-]'), '');
+    final phoneRegex = RegExp(r'^(\+639\d{9}|09\d{9})$');
+    if (!phoneRegex.hasMatch(phoneText)) {
+      _showErrorSnackBar('Please enter a valid Philippine phone number (e.g., +639171234567)');
+      return;
+    }
+
     if (_passwordController.text.length < 6) {
       _showErrorSnackBar('Password must be at least 6 characters');
       return;
@@ -75,6 +120,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       _emailController.text.trim(),
       _passwordController.text,
       _nameController.text.trim(),
+      _phoneController.text.trim(),
     );
 
     if (success && mounted) {
@@ -323,6 +369,48 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     ),
                     prefixIcon: Icon(
                       Icons.email_outlined,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: isDark
+                            ? const Color(0xFF3B82F6)
+                            : const Color(0xFF2563EB),
+                        width: 2,
+                      ),
+                    ),
+                    filled: true,
+                    fillColor:
+                        isDark ? const Color(0xFF1E293B) : Colors.grey[50],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Phone Number Field
+                TextField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  onChanged: _formatPhoneNumber,
+                  style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Phone Number',
+                    hintText: '+63 917 123 4567',
+                    hintStyle: TextStyle(
+                      color: isDark ? Colors.grey[500] : Colors.grey[400],
+                    ),
+                    labelStyle: TextStyle(
+                      color: isDark ? Colors.grey[400] : Colors.grey[700],
+                    ),
+                    prefixIcon: Icon(
+                      Icons.phone_outlined,
                       color: isDark ? Colors.grey[400] : Colors.grey[600],
                     ),
                     enabledBorder: OutlineInputBorder(

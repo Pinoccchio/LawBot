@@ -3,15 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/database_service.dart';
 import '../../utils/philippine_time.dart';
 import '../../widgets/tiktok_avatar.dart';
-import '../saved_advice_screen.dart';
-import '../recent_cases_screen.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -24,8 +22,6 @@ class _ProfileTabState extends State<ProfileTab> {
   bool _isUploading = false;
   bool _isDeleting = false;
   bool _isRefreshing = false;
-  List<Map<String, dynamic>> _recentCases = [];
-  List<Map<String, dynamic>> _savedAdvice = [];
   bool _isLoadingData = true;
   bool? _wasAuthenticated;
   final DatabaseService _databaseService = DatabaseService();
@@ -34,10 +30,12 @@ class _ProfileTabState extends State<ProfileTab> {
   RealtimeChannel? _profileSubscription;
   final SupabaseClient _supabase = Supabase.instance.client;
 
+  // Add a key to force TikTokAvatar rebuild
+  Key _avatarKey = UniqueKey();
+
   @override
   void initState() {
     super.initState();
-    // Initialize previous auth status to avoid auto-refresh on first build
     final authProvider = context.read<AuthProvider>();
     _wasAuthenticated = authProvider.isAuthenticated;
     _loadUserData();
@@ -51,7 +49,6 @@ class _ProfileTabState extends State<ProfileTab> {
 
   void _setupRealtimeSubscription() {
     final authProvider = context.read<AuthProvider>();
-
     if (!authProvider.isAuthenticated || authProvider.user?.uid == null) {
       return;
     }
@@ -74,7 +71,6 @@ class _ProfileTabState extends State<ProfileTab> {
         },
       )
           .subscribe();
-
       print('✅ Real-time subscription setup for profile updates');
     } catch (e) {
       print('❌ Error setting up real-time subscription: $e');
@@ -100,20 +96,41 @@ class _ProfileTabState extends State<ProfileTab> {
       final authProvider = context.read<AuthProvider>();
       authProvider.updateUserProfileFromRealtime(newRecord);
 
+      // Force avatar rebuild by generating new key
+      setState(() {
+        _avatarKey = UniqueKey();
+      });
+
       // Show a subtle notification to the user
       _showProfileUpdateNotification();
 
-      // Refresh other data if needed (optional)
-      _loadUserData();
+      // Clear image cache for the new profile picture
+      _clearProfileImageCache(newRecord['profile_picture_url']);
 
     } catch (e) {
       print('❌ Error handling profile update: $e');
     }
   }
 
+  // Enhanced cache clearing method
+  Future<void> _clearProfileImageCache(String? imageUrl) async {
+    if (imageUrl == null || imageUrl.isEmpty) return;
+
+    try {
+      // Clear from default cache manager
+      await DefaultCacheManager().removeFile(imageUrl);
+
+      // Also clear from network image cache
+      await DefaultCacheManager().emptyCache();
+
+      print('✅ Profile image cache cleared for: $imageUrl');
+    } catch (e) {
+      print('⚠️ Cache clear error: $e');
+    }
+  }
+
   void _showProfileUpdateNotification() {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -147,7 +164,6 @@ class _ProfileTabState extends State<ProfileTab> {
 
   Future<void> _loadUserData() async {
     if (!mounted) return;
-
     setState(() {
       _isLoadingData = true;
       _isRefreshing = true;
@@ -158,21 +174,23 @@ class _ProfileTabState extends State<ProfileTab> {
       if (authProvider.isAuthenticated) {
         print('🔄 Loading user data - refreshing profile and other data...');
 
-        // FIXED: Refresh user profile data from database first
+        // Clear all cached images before refreshing
+        try {
+          await DefaultCacheManager().emptyCache();
+          print('✅ All image cache cleared for refresh');
+        } catch (cacheError) {
+          print('⚠️ Cache clear error (non-critical): $cacheError');
+        }
+
+        // Refresh user profile data from database
         await authProvider.refreshUserProfile();
 
-        // Then load other data
-        final recentCases = await _databaseService.getRecentChatHistory();
-        final savedAdvice = await _databaseService.getSavedAdvice();
-
-        if (mounted) {
-          setState(() {
-            _recentCases = recentCases;
-            _savedAdvice = savedAdvice;
-            _isLoadingData = false;
-            _isRefreshing = false;
-          });
-        }
+        // Force avatar rebuild
+        setState(() {
+          _avatarKey = UniqueKey();
+          _isLoadingData = false;
+          _isRefreshing = false;
+        });
 
         print('✅ User data loaded successfully');
       } else {
@@ -180,8 +198,6 @@ class _ProfileTabState extends State<ProfileTab> {
           _isLoadingData = false;
           _isRefreshing = false;
         });
-
-        // Clean up subscription if user is not authenticated
         _cleanupRealtimeSubscription();
       }
     } catch (e) {
@@ -196,16 +212,12 @@ class _ProfileTabState extends State<ProfileTab> {
     }
   }
 
-  // Method to handle authentication state changes
   void _handleAuthStateChange() {
     final authProvider = context.read<AuthProvider>();
-
     if (authProvider.isAuthenticated) {
-      // Setup subscription when user signs in
       _setupRealtimeSubscription();
       _loadUserData();
     } else {
-      // Cleanup subscription when user signs out
       _cleanupRealtimeSubscription();
     }
   }
@@ -267,7 +279,6 @@ class _ProfileTabState extends State<ProfileTab> {
         automaticallyImplyLeading: false,
         actions: [
           if (authProvider.isAuthenticated) ...[
-            // Refresh button with loading indicator
             _isRefreshing
                 ? Container(
               margin: EdgeInsets.only(right: 16),
@@ -324,9 +335,10 @@ class _ProfileTabState extends State<ProfileTab> {
                           Stack(
                             children: [
                               GestureDetector(
-                                onTap: () => _showImagePreview(authProvider.userProfile?['avatar_url']),
+                                onTap: () => _showImagePreview(authProvider.userProfile?['profile_picture_url']),
                                 child: TikTokAvatar(
-                                  imageUrl: authProvider.userProfile?['avatar_url'] ?? '',
+                                  key: _avatarKey,
+                                  imageUrl: authProvider.userProfile?['profile_picture_url'] ?? '',
                                   size: 120,
                                   isEditable: false,
                                 ),
@@ -409,7 +421,6 @@ class _ProfileTabState extends State<ProfileTab> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              // Real-time updated name display
                               Text(
                                 authProvider.isAuthenticated
                                     ? (authProvider.userProfile?['full_name'] ??
@@ -461,44 +472,7 @@ class _ProfileTabState extends State<ProfileTab> {
                             ],
                           ),
                         ),
-                        if (authProvider.isAuthenticated) ...[
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF10B981).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: const Color(0xFF10B981).withOpacity(0.3),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.verified_user,
-                                      size: 18,
-                                      color: const Color(0xFF10B981),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Verified',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: const Color(0xFF10B981),
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ] else
+                        if (!authProvider.isAuthenticated)
                           Container(
                             width: double.infinity,
                             margin: const EdgeInsets.only(top: 20),
@@ -529,6 +503,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 ),
               ),
 
+              // Rest of your existing UI code...
               if (authProvider.isAuthenticated) ...[
                 // Account Information Section
                 _buildSectionHeader(
@@ -554,13 +529,12 @@ class _ProfileTabState extends State<ProfileTab> {
                   isEditable: false,
                 ),
                 _buildInfoCard(
-                  icon: Icons.language_outlined,
-                  title: 'Preferred Language',
-                  value: authProvider.userProfile?['preferred_language'] == 'fil'
-                      ? 'Filipino'
-                      : 'English',
+                  icon: Icons.phone_outlined,
+                  title: 'Phone Number',
+                  value: authProvider.userProfile?['phone_number'] ?? 'Not provided',
                   isDark: isDark,
-                  isEditable: false,
+                  isEditable: true,
+                  onTap: () => _showEditPhoneDialog(context, authProvider),
                 ),
                 _buildInfoCard(
                   icon: Icons.account_box_outlined,
@@ -580,7 +554,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   icon: Icons.calendar_today_outlined,
                   title: 'Member Since',
                   value: authProvider.userProfile?['created_at'] != null
-                      ? _formatDate(authProvider.userProfile!['created_at'])
+                      ? PhilippineTime.formatDatabaseTime(authProvider.userProfile!['created_at'])
                       : 'Recently joined',
                   isDark: isDark,
                   isEditable: false,
@@ -595,82 +569,23 @@ class _ProfileTabState extends State<ProfileTab> {
                   onTap: () => _showDeleteAccountDialog(context, authProvider),
                 ),
 
-                // Recent Cases Section
+                // Cybercrime reporting system features section
                 _buildSectionHeader(
-                  icon: Icons.history_outlined,
-                  title: 'Recent Cases',
+                  icon: Icons.report_outlined,
+                  title: 'Report Activity',
                   isDark: isDark,
-                  actionText: _recentCases.isNotEmpty ? 'View All' : null,
-                  onAction: _recentCases.isNotEmpty ? () => _navigateToRecentCases() : null,
                 ),
-                _isLoadingData
-                    ? _buildLoadingCard(isDark)
-                    : _recentCases.isEmpty
-                    ? _buildEmptyStateCard(
+                _buildEmptyStateCard(
                   isDark: isDark,
-                  icon: Icons.chat_bubble_outline,
-                  title: 'No legal questions yet',
-                  description: 'Start by asking your first legal question in the Chat tab',
-                )
-                    : Column(
-                  children: _recentCases.take(3).map((chat) => _buildRecentCaseCard(chat, isDark)).toList(),
-                ),
-
-                // Saved Advice Section
-                _buildSectionHeader(
-                  icon: Icons.bookmark_outline,
-                  title: 'Saved Advice',
-                  isDark: isDark,
-                  actionText: _savedAdvice.isNotEmpty ? 'View All' : null,
-                  onAction: _savedAdvice.isNotEmpty ? () => _navigateToSavedAdvice() : null,
-                ),
-                _isLoadingData
-                    ? _buildLoadingCard(isDark)
-                    : _savedAdvice.isEmpty
-                    ? _buildEmptyStateCard(
-                  isDark: isDark,
-                  icon: Icons.bookmark_border,
-                  title: 'No saved advice yet',
-                  description: 'Save important legal advice from your conversations for quick reference',
-                )
-                    : Column(
-                  children: _savedAdvice.take(3).map((advice) => _buildSavedAdviceCard(advice, isDark)).toList(),
+                  icon: Icons.report_problem_outlined,
+                  title: 'No cybercrime reports yet',
+                  description: 'Submit your first cybercrime report in the Reports tab',
                 ),
               ] else
                 _buildGuestContent(isDark),
               const SizedBox(height: 32),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  void _navigateToRecentCases() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => RecentCasesScreen(
-          recentCases: _recentCases,
-          onCaseUpdated: () {
-            _loadUserData(); // Refresh data when returning
-          },
-        ),
-      ),
-    );
-  }
-
-  void _navigateToSavedAdvice() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => SavedAdviceScreen(
-          savedAdvice: _savedAdvice,
-          onAdviceRemoved: (String adviceId) {
-            setState(() {
-              _savedAdvice.removeWhere((advice) => advice['id'] == adviceId);
-            });
-          },
         ),
       ),
     );
@@ -709,578 +624,6 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentCaseCard(Map<String, dynamic> chat, bool isDark) {
-    final categories = chat['categories'] as List<dynamic>?;
-    final avgConfidence = chat['avg_confidence'] as double?;
-    final messageCount = chat['message_count'] as int? ?? 0;
-    final firstQuestion = chat['first_question'] as String? ?? 'No question';
-    final hasRecommendations = chat['has_recommendations'] as bool? ?? false;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: isDark
-                  ? Colors.black.withOpacity(0.3)
-                  : Colors.grey.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _navigateToRecentCases(),
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header row with categories and metadata
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Category badges
-                      Flexible(
-                        flex: 2,
-                        child: Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: (categories?.take(2) ?? ['General']).map((category) => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: isDark
-                                    ? [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)]
-                                    : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              category.toString(),
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          )).toList(),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-
-                      // Message count and confidence section
-                      Flexible(
-                        flex: 3,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            // Message count badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? Colors.blue.withOpacity(0.2)
-                                    : Colors.blue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isDark ? Colors.blue[700]! : Colors.blue[200]!,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.forum_rounded,
-                                    size: 10,
-                                    color: isDark ? Colors.blue[300] : Colors.blue[700],
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    '$messageCount',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      color: isDark ? Colors.blue[300] : Colors.blue[700],
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-
-                            // Recommendations indicator
-                            if (hasRecommendations) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: Colors.orange,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.lightbulb_outline,
-                                      size: 10,
-                                      color: Colors.orange[700],
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      'Tips',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: Colors.orange[700],
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-
-                            if (avgConfidence != null) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: avgConfidence > 0.8
-                                      ? Colors.green.withOpacity(0.1)
-                                      : avgConfidence > 0.6
-                                      ? Colors.orange.withOpacity(0.1)
-                                      : Colors.grey.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: avgConfidence > 0.8
-                                        ? Colors.green
-                                        : avgConfidence > 0.6
-                                        ? Colors.orange
-                                        : Colors.grey,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.verified_rounded,
-                                      size: 10,
-                                      color: avgConfidence > 0.8
-                                          ? Colors.green
-                                          : avgConfidence > 0.6
-                                          ? Colors.orange
-                                          : Colors.grey,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      '${(avgConfidence * 100).round()}%',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: avgConfidence > 0.8
-                                            ? Colors.green
-                                            : avgConfidence > 0.6
-                                            ? Colors.orange
-                                            : Colors.grey,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Question text
-                  Text(
-                    firstQuestion,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF1E293B),
-                      height: 1.4,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Session summary
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          messageCount == 1
-                              ? 'Single question conversation'
-                              : '$messageCount messages in this conversation',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? Colors.grey[300] : Colors.grey[600],
-                            height: 1.5,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (hasRecommendations) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.orange.withOpacity(0.3),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.lightbulb_outline,
-                                size: 12,
-                                color: Colors.orange[700],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Has recommendations',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.orange[700],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSavedAdviceCard(Map<String, dynamic> advice, bool isDark) {
-    // Extract properties correctly for saved advice structure
-    final category = advice['category'] as String? ?? 'General';
-    final question = advice['question'] as String? ?? 'No question';
-    final answer = advice['answer'] as String? ?? 'No answer';
-    final metadata = advice['metadata'] as Map<String, dynamic>?;
-
-    // Check for recommendations in metadata
-    bool hasRecommendations = false;
-    if (metadata != null && metadata['recommendations'] is List) {
-      final recommendations = metadata['recommendations'] as List;
-      hasRecommendations = recommendations.isNotEmpty;
-    }
-
-    // Check for keywords in metadata
-    List<dynamic> keywords = [];
-    if (metadata != null && metadata['keywords'] is List) {
-      keywords = metadata['keywords'] as List;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: isDark ? const Color(0xFF1E293B) : Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: isDark
-                  ? Colors.black.withOpacity(0.3)
-                  : Colors.grey.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _navigateToSavedAdvice(),
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header row with category and indicators
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Category badge
-                      Flexible(
-                        flex: 2,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: isDark
-                                  ? [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)]
-                                  : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            category,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-
-                      // Indicators section
-                      Flexible(
-                        flex: 3,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            // Saved advice indicator
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? Colors.amber.withOpacity(0.2)
-                                    : Colors.amber.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isDark ? Colors.amber[700]! : Colors.amber[600]!,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.bookmark,
-                                    size: 10,
-                                    color: isDark ? Colors.amber[300] : Colors.amber[700],
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    'Saved',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      color: isDark ? Colors.amber[300] : Colors.amber[700],
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-
-                            // Keywords indicator (if any)
-                            if (keywords.isNotEmpty) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.blue.withOpacity(0.2)
-                                      : Colors.blue.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isDark ? Colors.blue[700]! : Colors.blue[200]!,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.label_outline,
-                                      size: 10,
-                                      color: isDark ? Colors.blue[300] : Colors.blue[700],
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      '${keywords.length}',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: isDark ? Colors.blue[300] : Colors.blue[700],
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-
-                            // Recommendations indicator
-                            if (hasRecommendations) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: Colors.orange,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.lightbulb_outline,
-                                      size: 10,
-                                      color: Colors.orange[700],
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      'Tips',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: Colors.orange[700],
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Question text
-                  Text(
-                    question,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF1E293B),
-                      height: 1.4,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Answer preview and metadata
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          answer.length > 80
-                              ? '${answer.substring(0, 80)}...'
-                              : answer,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? Colors.grey[300] : Colors.grey[600],
-                            height: 1.5,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Bottom metadata row
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.schedule,
-                        size: 12,
-                        color: isDark ? Colors.grey[400] : Colors.grey[500],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        advice['created_at'] != null
-                            ? PhilippineTime.formatChatHistoryTime(advice['created_at'])
-                            : 'Unknown date',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? Colors.grey[400] : Colors.grey[500],
-                        ),
-                      ),
-                      if (hasRecommendations) ...[
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.orange.withOpacity(0.3),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.lightbulb_outline,
-                                size: 12,
-                                color: Colors.orange[700],
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Has recommendations',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.orange[700],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -1341,17 +684,6 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Future<void> _removeSavedAdvice(String adviceId) async {
-    try {
-      await _databaseService.removeSavedAdvice(adviceId);
-      _showSuccessSnackBar('Saved advice removed successfully!');
-      _loadUserData(); // Refresh the data
-    } catch (e) {
-      print('Error removing saved advice: $e');
-      _showErrorSnackBar('Failed to remove saved advice. Please try again.');
-    }
-  }
-
   Widget _buildGuestContent(bool isDark) {
     return Column(
       children: [
@@ -1361,27 +693,27 @@ class _ProfileTabState extends State<ProfileTab> {
           isDark: isDark,
         ),
         _buildBenefitCard(
-          icon: Icons.history,
-          title: 'Chat History',
-          description: 'Keep track of all your legal questions and answers',
+          icon: Icons.report_outlined,
+          title: 'Cybercrime Reports',
+          description: 'Submit and track your cybercrime reports to PNP',
           isDark: isDark,
         ),
         _buildBenefitCard(
-          icon: Icons.bookmark,
-          title: 'Save Advice',
-          description: 'Bookmark important legal advice for future reference',
+          icon: Icons.history_outlined,
+          title: 'Report History',
+          description: 'View status and track progress of your reports',
           isDark: isDark,
         ),
         _buildBenefitCard(
-          icon: Icons.analytics,
-          title: 'Personal Analytics',
-          description: 'Get insights into your legal question patterns',
+          icon: Icons.security_outlined,
+          title: 'Secure Storage',
+          description: 'Safely store evidence files and sensitive information',
           isDark: isDark,
         ),
         _buildBenefitCard(
           icon: Icons.sync,
           title: 'Sync Across Devices',
-          description: 'Access your data from any device, anywhere',
+          description: 'Access your reports from any device, anywhere',
           isDark: isDark,
         ),
       ],
@@ -1400,7 +732,6 @@ class _ProfileTabState extends State<ProfileTab> {
     final cardColor = isDestructive
         ? (isDark ? Colors.red.withOpacity(0.1) : Colors.red.withOpacity(0.05))
         : (isDark ? const Color(0xFF1E293B) : Colors.white);
-
     final iconColor = isDestructive
         ? Colors.red
         : (isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB));
@@ -1648,9 +979,7 @@ class _ProfileTabState extends State<ProfileTab> {
   // Image preview and picker methods
   void _showImagePreview(String? imageUrl) {
     if (imageUrl == null || imageUrl.isEmpty) return;
-
     final isDark = context.read<ThemeProvider>().isDarkMode;
-
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -1744,7 +1073,6 @@ class _ProfileTabState extends State<ProfileTab> {
   void _showImagePickerOptions() {
     final isDark = context.read<ThemeProvider>().isDarkMode;
     final authProvider = context.read<AuthProvider>();
-
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
@@ -1826,7 +1154,6 @@ class _ProfileTabState extends State<ProfileTab> {
 
   Future<void> _pickImage(ImageSource source, AuthProvider authProvider) async {
     if (!mounted) return;
-
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
@@ -1835,7 +1162,6 @@ class _ProfileTabState extends State<ProfileTab> {
         maxHeight: 800,
         imageQuality: 85,
       );
-
       if (image != null && mounted) {
         await _uploadProfilePicture(image.path, authProvider);
       }
@@ -1847,6 +1173,7 @@ class _ProfileTabState extends State<ProfileTab> {
     }
   }
 
+  // Enhanced upload method with better cache management and UI updates
   Future<void> _uploadProfilePicture(String imagePath, AuthProvider authProvider) async {
     if (!mounted) return;
 
@@ -1857,21 +1184,50 @@ class _ProfileTabState extends State<ProfileTab> {
     final databaseService = DatabaseService();
 
     try {
+      // Step 1: Upload the image
       final imageUrl = await databaseService.uploadProfilePicture(imagePath);
+      print('✅ Image uploaded successfully: $imageUrl');
 
       if (mounted) {
-        _showSuccessSnackBar('Profile picture updated successfully!');
+        // Step 2: Clear all image caches BEFORE updating profile
+        try {
+          await DefaultCacheManager().emptyCache();
+          print('✅ All image cache cleared before profile update');
+        } catch (cacheError) {
+          print('⚠️ Cache clear error (non-critical): $cacheError');
+        }
 
-        await authProvider.updateProfile(
+        // Step 3: Update profile with new image URL
+        final success = await authProvider.updateProfile(
           fullName: authProvider.userProfile?['full_name'] ??
               authProvider.user?.displayName ??
               'User',
-          avatarUrl: imageUrl,
+          profilePictureUrl: imageUrl,
         );
+
+        if (success && mounted) {
+          // Step 4: Force UI refresh with new avatar key
+          setState(() {
+            _avatarKey = UniqueKey(); // This forces TikTokAvatar to rebuild
+          });
+
+          // Step 5: Show success message
+          _showSuccessSnackBar('Profile picture updated successfully!');
+
+          // Step 6: Additional refresh after a short delay to ensure everything is updated
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              setState(() {
+                // Additional state refresh
+              });
+            }
+          });
+
+          print('✅ Profile picture update completed');
+        }
       }
     } catch (e) {
-      print('Error uploading profile picture: $e');
-
+      print('❌ Error uploading profile picture: $e');
       if (mounted) {
         _showErrorSnackBar('Failed to upload profile picture. Please try again.');
       }
@@ -1885,6 +1241,125 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   // Dialog methods
+  Future<void> _showEditPhoneDialog(BuildContext context, AuthProvider authProvider) async {
+    final isDark = context.read<ThemeProvider>().isDarkMode;
+    final phoneController = TextEditingController(
+      text: authProvider.userProfile?['phone_number'] ?? '',
+    );
+    bool isSaving = false;
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+              title: Text(
+                'Edit Phone Number',
+                style: TextStyle(color: isDark ? Colors.white : Colors.black),
+              ),
+              content: SingleChildScrollView(
+                child: ListBody(
+                  children: <Widget>[
+                    TextFormField(
+                      controller: phoneController,
+                      keyboardType: TextInputType.phone,
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black,
+                        fontSize: 16,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Enter your phone number',
+                        hintStyle: TextStyle(
+                          color: isDark ? Colors.grey[500] : Colors.grey[400],
+                          fontSize: 16,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.phone_outlined,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          size: 20,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 0),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: isDark ? Colors.grey[700]! : Colors.grey[300]!),
+                        ),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                  ),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                  },
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                    final newPhone = phoneController.text.trim();
+
+                    // Allow empty phone number (optional field)
+                    if (newPhone.isNotEmpty && newPhone.length < 10) {
+                      _showErrorSnackBar('Phone number must be at least 10 digits');
+                      return;
+                    }
+
+                    setState(() {
+                      isSaving = true;
+                    });
+
+                    try {
+                      await authProvider.updateProfile(
+                        fullName: authProvider.userProfile?['full_name'] ??
+                            authProvider.user?.displayName ?? 'User',
+                        profilePictureUrl: authProvider.userProfile?['profile_picture_url'],
+                        phoneNumber: newPhone.isEmpty ? null : newPhone,
+                      );
+                      _showSuccessSnackBar('Phone number updated successfully!');
+                      Navigator.of(dialogContext).pop();
+                    } catch (e) {
+                      print('Error updating phone: $e');
+                      _showErrorSnackBar('Failed to update phone number. Please try again.');
+                    } finally {
+                      setState(() {
+                        isSaving = false;
+                      });
+                    }
+                  },
+                  child: isSaving
+                      ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                      : const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _showEditNameDialog(BuildContext context, AuthProvider authProvider) async {
     final isDark = context.read<ThemeProvider>().isDarkMode;
     final nameController = TextEditingController(
@@ -1947,7 +1422,6 @@ class _ProfileTabState extends State<ProfileTab> {
                       _showErrorSnackBar('Name cannot be empty');
                       return;
                     }
-
                     if (newName.length < 2) {
                       _showErrorSnackBar('Name must be at least 2 characters long');
                       return;
@@ -1960,7 +1434,7 @@ class _ProfileTabState extends State<ProfileTab> {
                     try {
                       await authProvider.updateProfile(
                         fullName: newName,
-                        avatarUrl: authProvider.userProfile?['avatar_url'],
+                        profilePictureUrl: authProvider.userProfile?['profile_picture_url'],
                       );
                       _showSuccessSnackBar('Name updated successfully!');
                       Navigator.of(dialogContext).pop();
@@ -2262,9 +1736,54 @@ class _ProfileTabState extends State<ProfileTab> {
     }
   }
 
+  String _formatDateWithTime(String dateString) {
+    try {
+      final date = DateTime.parse(dateString);
+      final months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+
+      // Format time in 12-hour format
+      final hour = date.hour;
+      final minute = date.minute.toString().padLeft(2, '0');
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+
+      return '${months[date.month - 1]} ${date.day}, ${date.year} at ${displayHour}:${minute} ${period}';
+    } catch (e) {
+      return 'Recently joined';
+    }
+  }
+
+  String _formatDateTime(String dateTimeString) {
+    try {
+      final dateTime = DateTime.parse(dateTimeString);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inMinutes < 1) {
+        return 'Just now';
+      } else if (difference.inHours < 1) {
+        return '${difference.inMinutes} minute${difference.inMinutes == 1 ? '' : 's'} ago';
+      } else if (difference.inDays < 1) {
+        return '${difference.inHours} hour${difference.inHours == 1 ? '' : 's'} ago';
+      } else if (difference.inDays < 7) {
+        return '${difference.inDays} day${difference.inDays == 1 ? '' : 's'} ago';
+      } else {
+        final months = [
+          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        ];
+        return '${months[dateTime.month - 1]} ${dateTime.day}, ${dateTime.year}';
+      }
+    } catch (e) {
+      return 'Not available';
+    }
+  }
+
   void _showSuccessSnackBar(String message) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -2280,7 +1799,6 @@ class _ProfileTabState extends State<ProfileTab> {
 
   void _showErrorSnackBar(String message) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
