@@ -4,9 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
-import '../models/complaint_model.dart';
+import '../models/database_complaint_model.dart';
+import '../services/pnp_units_service.dart';
 import '../providers/theme_provider.dart';
-import '../widgets/file_upload_widget.dart';
 import '../utils/philippine_time.dart';
 import '../services/database_service.dart';
 
@@ -24,11 +24,19 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _databaseService = DatabaseService();
+  final _pnpUnitsService = PNPUnitsService();
 
-  CrimeType? _selectedCrimeType;
+  // Dynamic crime types from database
+  List<DatabaseCrimeType> _availableCrimeTypes = [];
+  DatabaseCrimeType? _selectedCrimeType;
+  PNPOfficer? _selectedOfficer;
+  String _officerAssignmentMode = 'auto'; // 'auto' or 'manual'
+  
   final List<EvidenceFile> _evidenceFiles = [];
   bool _isSubmitting = false;
+  bool _isLoadingCrimeTypes = true;
   DateTime? _selectedIncidentDateTime;
+  String? _crimeTypesError;
 
   @override
   void initState() {
@@ -38,6 +46,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _fullNameController.addListener(() => setState(() {}));
     _emailController.addListener(() => setState(() {}));
     _phoneController.addListener(() => setState(() {}));
+    
+    // Load crime types from database
+    _loadCrimeTypes();
   }
 
   @override
@@ -47,6 +58,98 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _emailController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+
+  // Load crime types from database
+  Future<void> _loadCrimeTypes() async {
+    print('🔄 Loading crime types for complaint form...');
+    setState(() {
+      _isLoadingCrimeTypes = true;
+      _crimeTypesError = null;
+    });
+
+    try {
+      print('📡 Calling PNP Units Service...');
+      final crimeTypesWithUnits = await _pnpUnitsService.getCrimeTypesWithUnits();
+      
+      print('📊 Received ${crimeTypesWithUnits.length} crime types from service');
+      
+      if (crimeTypesWithUnits.isEmpty) {
+        print('❌ No crime types found - checking database directly...');
+        
+        // Debug: Check if there are any units in the database at all
+        final allUnits = await _pnpUnitsService.getAllUnits();
+        print('🔍 Total units in database: ${allUnits.length}');
+        
+        for (var unit in allUnits) {
+          print('  - Unit: ${unit.unitName} (${unit.status}) - Crime types: ${unit.crimeTypes.length}');
+        }
+        
+        setState(() {
+          _crimeTypesError = 'No crime types available. Found ${allUnits.length} units in database. Please contact administrator.';
+          _isLoadingCrimeTypes = false;
+        });
+        return;
+      }
+
+      final dynamicCrimeTypes = crimeTypesWithUnits
+          .map((ctw) => DatabaseCrimeType.fromCrimeTypeWithUnit(ctw))
+          .toList();
+
+      // Sort by category and then by name
+      dynamicCrimeTypes.sort((a, b) {
+        final categoryComparison = a.category.compareTo(b.category);
+        if (categoryComparison != 0) return categoryComparison;
+        return a.name.compareTo(b.name);
+      });
+
+      print('✅ Successfully loaded ${dynamicCrimeTypes.length} crime types');
+      
+      // Debug: Print first few crime types
+      for (int i = 0; i < (dynamicCrimeTypes.length > 5 ? 5 : dynamicCrimeTypes.length); i++) {
+        final ct = dynamicCrimeTypes[i];
+        print('  - ${ct.name} → ${ct.assignedUnitName} (${ct.availableOfficers.length} officers)');
+      }
+
+      setState(() {
+        _availableCrimeTypes = dynamicCrimeTypes;
+        _isLoadingCrimeTypes = false;
+      });
+    } catch (e) {
+      print('❌ Error loading crime types: $e');
+      setState(() {
+        _crimeTypesError = 'Failed to load crime types: $e';
+        _isLoadingCrimeTypes = false;
+      });
+    }
+  }
+
+  // Handle crime type selection and reset officer selection
+  void _onCrimeTypeSelected(DatabaseCrimeType? crimeType) {
+    setState(() {
+      _selectedCrimeType = crimeType;
+      _selectedOfficer = null; // Reset officer selection
+      _officerAssignmentMode = 'auto'; // Reset to auto-assignment
+    });
+  }
+
+  // Handle officer assignment mode change
+  void _onOfficerAssignmentModeChanged(String? mode) {
+    setState(() {
+      _officerAssignmentMode = mode ?? 'auto';
+      if (_officerAssignmentMode == 'auto') {
+        _selectedOfficer = _selectedCrimeType?.recommendedOfficer;
+      } else {
+        _selectedOfficer = null; // User will select manually
+      }
+    });
+  }
+
+  // Handle manual officer selection
+  void _onOfficerSelected(PNPOfficer? officer) {
+    setState(() {
+      _selectedOfficer = officer;
+    });
   }
 
   Future<void> _pickFiles() async {
@@ -79,8 +182,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           if (video != null) files = [video];
           break;
         case 'documents':
-          // For now, we'll use image picker for documents too
-          // In production, you'd use file_picker package
           files = await picker.pickMultiImage();
           break;
       }
@@ -204,33 +305,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       return;
     }
 
-    // Check for pattern alerts first
-    final description = _descriptionController.text.trim().toLowerCase();
-    
-    // Mock pattern detection - check if any patterns are found
-    bool hasPatterns = description.contains('facebook.com/john.smith.fake') || 
-                      description.contains('john.smith.fake') ||
-                      description.contains('+63 917 123 4567') || 
-                      description.contains('09171234567') ||
-                      description.contains('scammer@fake.com') || 
-                      description.contains('fake-bank@gmail.com') ||
-                      description.contains('fake-shopping.com') || 
-                      description.contains('scam-deals.net');
-    
-    if (hasPatterns) {
-      _checkForPatternAlerts();
-    } else {
-      // No patterns detected, proceed directly
-      _originalSubmitComplaint();
-    }
-  }
-
-  // Original submission logic moved here
-  Future<void> _originalSubmitComplaint() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
     if (_selectedCrimeType == null) {
       _showErrorSnackBar('Please select a crime type');
       return;
@@ -269,8 +343,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         return;
       }
 
-      // Create complaint object with required fields only
-      final complaint = Complaint.create(
+      // Create dynamic complaint object
+      final complaint = DatabaseComplaint.create(
         userId: currentUser.uid,
         crimeType: _selectedCrimeType!,
         description: _descriptionController.text.trim(),
@@ -281,11 +355,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         incidentDateTime: _selectedIncidentDateTime!,
       );
 
-      // Submit to database service
-      final complaintId = await _databaseService.submitComplaint(complaint);
+      // Submit to database service (need to create this method)
+      final complaintId = await _submitDatabaseComplaint(complaint);
       
       if (complaintId != null) {
-        // Show success dialog with complaint ID
+        // Show success dialog with complaint ID and assigned officer info
         _showSuccessDialog(complaintId);
       } else {
         _showErrorSnackBar('Failed to submit complaint. Please try again.');
@@ -297,6 +371,137 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       setState(() {
         _isSubmitting = false;
       });
+    }
+  }
+
+  // Submit dynamic complaint to database
+  Future<String?> _submitDatabaseComplaint(DatabaseComplaint complaint) async {
+    try {
+      // Generate complaint number
+      final now = PhilippineTime.now();
+      final year = now.year;
+      
+      // Get the latest complaint number for this year
+      final latestResponse = await _pnpUnitsService.supabase
+          .from('complaints')
+          .select('complaint_number')
+          .like('complaint_number', 'CYB-$year-%')
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      int sequenceNumber = 1;
+      if (latestResponse.isNotEmpty) {
+        final latestNumber = latestResponse.first['complaint_number'] as String;
+        final parts = latestNumber.split('-');
+        if (parts.length == 3) {
+          sequenceNumber = (int.tryParse(parts[2]) ?? 0) + 1;
+        }
+      }
+
+      final complaintNumber = 'CYB-$year-${sequenceNumber.toString().padLeft(3, '0')}';
+
+      // Prepare complaint data for database
+      final complaintData = {
+        'user_id': complaint.userId,
+        'complaint_number': complaintNumber,
+        'crime_type': complaint.crimeType.name,
+        'title': complaint.title,
+        'description': complaint.description,
+        'full_name': complaint.fullName,
+        'email': complaint.email,
+        'phone_number': complaint.phoneNumber,
+        'incident_date_time': complaint.incidentDateTime.toUtc().toIso8601String(),
+        'incident_location': complaint.incidentLocation,
+        'estimated_loss': complaint.estimatedFinancialLoss,
+        'status': 'Pending',
+        'priority': complaint.priority,
+        'risk_score': complaint.riskScore,
+        'assigned_unit': complaint.assignedUnit.unitName,
+        'created_at': PhilippineTime.toUtc(now).toIso8601String(),
+        'updated_at': PhilippineTime.toUtc(now).toIso8601String(),
+      };
+
+      // Insert complaint
+      final response = await _pnpUnitsService.supabase
+          .from('complaints')
+          .insert(complaintData)
+          .select('id')
+          .single();
+
+      final complaintId = response['id'] as String;
+
+      // Assign officer based on assignment mode
+      if (_officerAssignmentMode == 'auto' && _selectedCrimeType!.recommendedOfficer != null) {
+        await _pnpUnitsService.supabase.from('case_assignments').insert({
+          'complaint_id': complaintId,
+          'officer_id': _selectedCrimeType!.recommendedOfficer!.id,
+          'assigned_by': 'System',
+          'assignment_type': 'primary',
+          'status': 'active',
+          'notes': 'Auto-assigned based on crime type and officer availability',
+          'created_at': PhilippineTime.toUtc(now).toIso8601String(),
+        });
+      } else if (_officerAssignmentMode == 'manual' && _selectedOfficer != null) {
+        await _pnpUnitsService.supabase.from('case_assignments').insert({
+          'complaint_id': complaintId,
+          'officer_id': _selectedOfficer!.id,
+          'assigned_by': 'User',
+          'assignment_type': 'primary',
+          'status': 'active',
+          'notes': 'Manually selected by complainant during report submission',
+          'created_at': PhilippineTime.toUtc(now).toIso8601String(),
+        });
+      }
+
+      // Upload evidence files if any
+      if (complaint.evidenceFiles.isNotEmpty) {
+        await _uploadEvidenceFiles(complaintId, complaint.evidenceFiles);
+      }
+
+      return complaintId;
+    } catch (e) {
+      print('Error submitting dynamic complaint: $e');
+      throw 'Failed to submit complaint: $e';
+    }
+  }
+
+  // Upload evidence files
+  Future<void> _uploadEvidenceFiles(String complaintId, List<EvidenceFile> files) async {
+    try {
+      for (final evidenceFile in files) {
+        final file = File(evidenceFile.filePath);
+        final bytes = await file.readAsBytes();
+        
+        // Create unique filename
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final fileName = '${complaintId}_${timestamp}_${evidenceFile.fileName}';
+        final filePath = 'evidence/$complaintId/$fileName';
+
+        // Upload to Supabase Storage
+        await _pnpUnitsService.supabase.storage
+            .from('evidence-files')
+            .uploadBinary(filePath, bytes);
+
+        // Get public URL
+        final publicUrl = _pnpUnitsService.supabase.storage
+            .from('evidence-files')
+            .getPublicUrl(filePath);
+
+        // Save evidence file record
+        await _pnpUnitsService.supabase.from('evidence_files').insert({
+          'complaint_id': complaintId,
+          'file_name': evidenceFile.fileName,
+          'file_type': evidenceFile.fileType,
+          'file_size': evidenceFile.fileSize,
+          'file_path': filePath,
+          'download_url': publicUrl,
+          'uploaded_by': FirebaseAuth.instance.currentUser!.uid,
+          'created_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
+        });
+      }
+    } catch (e) {
+      print('Error uploading evidence files: $e');
+      throw 'Failed to upload evidence files: $e';
     }
   }
 
@@ -336,12 +541,56 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Your cybercrime complaint has been successfully submitted to PNP Anti-Cybercrime Group. You will receive updates on the investigation progress.',
+              'Your cybercrime complaint has been successfully submitted and assigned to ${_selectedCrimeType?.assignedUnitName ?? 'PNP Anti-Cybercrime Group'}.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: isDark ? Colors.grey[300] : Colors.grey[600],
               ),
             ),
+            if ((_officerAssignmentMode == 'auto' && _selectedCrimeType?.recommendedOfficer != null) || 
+                (_officerAssignmentMode == 'manual' && _selectedOfficer != null)) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      _officerAssignmentMode == 'auto' ? 'Auto-Assigned Officer' : 'Selected Officer',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[700],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _officerAssignmentMode == 'auto' 
+                          ? _selectedCrimeType!.recommendedOfficer!.displayName
+                          : _selectedOfficer!.displayName,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    ),
+                    Text(
+                      _officerAssignmentMode == 'auto' 
+                          ? _selectedCrimeType!.recommendedOfficer!.workloadDescription
+                          : _selectedOfficer!.workloadDescription,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
@@ -397,81 +646,806 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         iconTheme: IconThemeData(
           color: isDark ? Colors.white : const Color(0xFF2563EB),
         ),
+        actions: [
+          if (_isLoadingCrimeTypes)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+        ],
       ),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Report Credibility Meter
-              _buildCredibilityMeter(),
-              
-              // Complaint Details Section
+              // Crime Type Section
               _buildSectionCard(
-                title: 'Complaint Details',
+                title: 'Crime Type & Assignment',
                 icon: Icons.report_problem,
                 children: [
-                  // Crime Type Dropdown
-                  Text(
-                    'Crime Type *',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : const Color(0xFF1E293B),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<CrimeType>(
-                    value: _selectedCrimeType,
-                    hint: Text(
-                      'Select a cybercrime type',
+                  if (_isLoadingCrimeTypes)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: Column(
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('Loading crime types from database...'),
+                          ],
+                        ),
+                      ),
+                    )
+                  else if (_crimeTypesError != null)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.error, color: Colors.red),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _crimeTypesError!,
+                                  style: TextStyle(color: Colors.red[700]),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: _loadCrimeTypes,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Retry'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else ...[
+                    Text(
+                      'Crime Type *',
                       style: TextStyle(
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : const Color(0xFF1E293B),
                       ),
                     ),
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<DatabaseCrimeType>(
+                      value: _selectedCrimeType,
+                      hint: Text(
+                        'Select a cybercrime type',
+                        style: TextStyle(
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
                       ),
-                      filled: true,
-                      fillColor: isDark 
-                          ? const Color(0xFF1E293B) 
-                          : Colors.grey[50],
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                        fillColor: isDark 
+                            ? const Color(0xFF1E293B) 
+                            : Colors.grey[50],
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                      isExpanded: true,
+                      menuMaxHeight: 300,
+                      selectedItemBuilder: (BuildContext context) {
+                        // This builder creates the display for the selected item (when dropdown is closed)
+                        return _availableCrimeTypes.map((crimeType) {
+                          return Container(
+                            alignment: Alignment.centerLeft,
+                            constraints: const BoxConstraints(maxWidth: 250),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF2563EB).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      crimeType.categoryIcon,
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    crimeType.displayName,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList();
+                      },
+                      items: _availableCrimeTypes.map((crimeType) {
+                        return DropdownMenuItem(
+                          value: crimeType,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 280),
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF2563EB).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          crimeType.categoryIcon,
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Flexible(
+                                      child: Text(
+                                        crimeType.displayName,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: isDark ? Colors.white : Colors.black87,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 32),
+                                  child: Text(
+                                    '${crimeType.assignedUnitName} (${crimeType.assignedUnit.unitCode})',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: const Color(0xFF2563EB),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: _onCrimeTypeSelected,
+                      validator: (value) {
+                        if (value == null) {
+                          return 'Please select a crime type';
+                        }
+                        return null;
+                      },
                     ),
-                    dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                    style: TextStyle(
-                      color: isDark ? Colors.white : Colors.black,
-                    ),
-                    items: CrimeType.values.map((crimeType) {
-                      return DropdownMenuItem(
-                        value: crimeType,
-                        child: Text(crimeType.displayName),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedCrimeType = value;
-                      });
-                    },
-                    validator: (value) {
-                      if (value == null) {
-                        return 'Please select a crime type';
-                      }
-                      return null;
-                    },
-                  ),
-                  
-                  // Smart Evidence Guidance
-                  if (_selectedCrimeType != null) ...[
-                    const SizedBox(height: 16),
-                    _buildSmartEvidenceGuidance(),
+                    
+                    // Show assigned unit info
+                    if (_selectedCrimeType != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      _selectedCrimeType!.categoryIcon, 
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Will be assigned to:',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.blue[600],
+                                        ),
+                                      ),
+                                      Text(
+                                        _selectedCrimeType!.assignedUnitName,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: Colors.blue[700],
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
+                                      ),
+                                      Text(
+                                        'Unit Code: ${_selectedCrimeType!.assignedUnit.unitCode}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.blue[600],
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            const Divider(),
+                            Text(
+                              'Officer Assignment',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            
+                            // Officer Assignment Mode Selection
+                            Theme(
+                              data: Theme.of(context).copyWith(
+                                radioTheme: RadioThemeData(
+                                  fillColor: MaterialStateProperty.resolveWith<Color>((states) {
+                                    if (states.contains(MaterialState.selected)) {
+                                      return const Color(0xFF2563EB); // Consistent blue
+                                    }
+                                    return isDark ? Colors.grey[600]! : Colors.grey[400]!;
+                                  }),
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: _officerAssignmentMode == 'auto' 
+                                          ? const Color(0xFF2563EB).withOpacity(0.05)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: _officerAssignmentMode == 'auto' 
+                                            ? const Color(0xFF2563EB).withOpacity(0.3)
+                                            : Colors.transparent,
+                                      ),
+                                    ),
+                                    child: RadioListTile<String>(
+                                      value: 'auto',
+                                      groupValue: _officerAssignmentMode,
+                                      onChanged: _onOfficerAssignmentModeChanged,
+                                      title: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.auto_awesome,
+                                            size: 16,
+                                            color: _officerAssignmentMode == 'auto' 
+                                                ? const Color(0xFF2563EB)
+                                                : (isDark ? Colors.grey[400] : Colors.grey[600]),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Flexible(
+                                            child: Text(
+                                              'Auto-assign (Recommended)',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: _officerAssignmentMode == 'auto' 
+                                                    ? FontWeight.w600 
+                                                    : FontWeight.normal,
+                                                color: _officerAssignmentMode == 'auto' 
+                                                    ? const Color(0xFF2563EB)
+                                                    : (isDark ? Colors.white : Colors.black),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      subtitle: Padding(
+                                        padding: const EdgeInsets.only(left: 22),
+                                        child: Text(
+                                          'System assigns the best available officer based on workload and expertise',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 2,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      dense: true,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: _officerAssignmentMode == 'manual' 
+                                          ? const Color(0xFF2563EB).withOpacity(0.05)
+                                          : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: _officerAssignmentMode == 'manual' 
+                                            ? const Color(0xFF2563EB).withOpacity(0.3)
+                                            : Colors.transparent,
+                                      ),
+                                    ),
+                                    child: RadioListTile<String>(
+                                      value: 'manual',
+                                      groupValue: _officerAssignmentMode,
+                                      onChanged: _selectedCrimeType!.availableOfficers.isNotEmpty 
+                                          ? _onOfficerAssignmentModeChanged 
+                                          : null,
+                                      title: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.person_search,
+                                            size: 16,
+                                            color: _selectedCrimeType!.availableOfficers.isNotEmpty
+                                                ? (_officerAssignmentMode == 'manual' 
+                                                    ? const Color(0xFF2563EB)
+                                                    : (isDark ? Colors.grey[400] : Colors.grey[600]))
+                                                : (isDark ? Colors.grey[700] : Colors.grey[300]),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Flexible(
+                                            child: Text(
+                                              'Choose specific officer',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: _officerAssignmentMode == 'manual' 
+                                                    ? FontWeight.w600 
+                                                    : FontWeight.normal,
+                                                color: _selectedCrimeType!.availableOfficers.isNotEmpty
+                                                    ? (_officerAssignmentMode == 'manual' 
+                                                        ? const Color(0xFF2563EB)
+                                                        : (isDark ? Colors.white : Colors.black))
+                                                    : (isDark ? Colors.grey[600] : Colors.grey[400]),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      subtitle: Padding(
+                                        padding: const EdgeInsets.only(left: 22),
+                                        child: Text(
+                                          _selectedCrimeType!.availableOfficers.isNotEmpty
+                                              ? 'Select from ${_selectedCrimeType!.availableOfficers.length} available officers'
+                                              : 'No officers currently available for manual selection',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 2,
+                                        ),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      dense: true,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            
+                            // Show officer selection dropdown when manual mode is selected
+                            if (_officerAssignmentMode == 'manual' && _selectedCrimeType!.availableOfficers.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2563EB).withOpacity(0.03),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: const Color(0xFF2563EB).withOpacity(0.2),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.person_search,
+                                          size: 16,
+                                          color: const Color(0xFF2563EB),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Choose Officer',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: const Color(0xFF2563EB),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    DropdownButtonFormField<PNPOfficer>(
+                                      value: _selectedOfficer,
+                                      hint: Text(
+                                        'Select an officer from ${_selectedCrimeType!.availableOfficers.length} available',
+                                        style: TextStyle(
+                                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      decoration: InputDecoration(
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                            color: const Color(0xFF2563EB).withOpacity(0.3),
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                            color: const Color(0xFF2563EB).withOpacity(0.3),
+                                          ),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                          borderSide: const BorderSide(
+                                            color: Color(0xFF2563EB),
+                                            width: 2,
+                                          ),
+                                        ),
+                                        filled: true,
+                                        fillColor: isDark 
+                                            ? const Color(0xFF1E293B) 
+                                            : Colors.white,
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                      ),
+                                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                      style: TextStyle(
+                                        color: isDark ? Colors.white : Colors.black,
+                                        fontSize: 14,
+                                      ),
+                                      isExpanded: true,
+                                      menuMaxHeight: 250,
+                                      selectedItemBuilder: (BuildContext context) {
+                                        // This builder creates the display for the selected officer (when dropdown is closed)
+                                        return _selectedCrimeType!.availableOfficers.map((officer) {
+                                          return Container(
+                                            alignment: Alignment.centerLeft,
+                                            constraints: const BoxConstraints(maxWidth: 200),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Container(
+                                                  width: 18,
+                                                  height: 18,
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF2563EB).withOpacity(0.1),
+                                                    borderRadius: BorderRadius.circular(9),
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.person,
+                                                    color: Color(0xFF2563EB),
+                                                    size: 12,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Flexible(
+                                                  child: Text(
+                                                    officer.displayName,
+                                                    style: TextStyle(
+                                                      fontWeight: FontWeight.w600,
+                                                      fontSize: 13,
+                                                      color: isDark ? Colors.white : Colors.black87,
+                                                    ),
+                                                    overflow: TextOverflow.ellipsis,
+                                                    maxLines: 1,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList();
+                                      },
+                                      items: _selectedCrimeType!.availableOfficers.map((officer) {
+                                        Color workloadColor = Colors.green;
+                                        if ((officer.activeCases ?? 0) > 7) {
+                                          workloadColor = Colors.red;
+                                        } else if ((officer.activeCases ?? 0) > 3) {
+                                          workloadColor = Colors.orange;
+                                        }
+                                        
+                                        return DropdownMenuItem(
+                                          value: officer,
+                                          child: Container(
+                                            width: double.infinity,
+                                            constraints: const BoxConstraints(maxWidth: 280),
+                                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Container(
+                                                  width: 32,
+                                                  height: 32,
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF2563EB).withOpacity(0.1),
+                                                    borderRadius: BorderRadius.circular(16),
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.person,
+                                                    color: const Color(0xFF2563EB),
+                                                    size: 16,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Flexible(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Text(
+                                                        officer.displayName,
+                                                        style: TextStyle(
+                                                          fontWeight: FontWeight.w600,
+                                                          fontSize: 13,
+                                                          color: isDark ? Colors.white : Colors.black87,
+                                                        ),
+                                                        overflow: TextOverflow.ellipsis,
+                                                        maxLines: 1,
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Container(
+                                                            width: 6,
+                                                            height: 6,
+                                                            decoration: BoxDecoration(
+                                                              color: workloadColor,
+                                                              shape: BoxShape.circle,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 4),
+                                                          Flexible(
+                                                            child: Text(
+                                                              officer.workloadDescription,
+                                                              style: TextStyle(
+                                                                fontSize: 11,
+                                                                color: workloadColor,
+                                                                fontWeight: FontWeight.w500,
+                                                              ),
+                                                              overflow: TextOverflow.ellipsis,
+                                                              maxLines: 1,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                      onChanged: _onOfficerSelected,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            
+                            // Show current selection
+                            if (_officerAssignmentMode == 'auto' && _selectedCrimeType!.recommendedOfficer != null) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: const Icon(Icons.auto_awesome, color: Colors.green, size: 16),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                'Auto-assigned: ',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: Colors.green[600],
+                                                ),
+                                              ),
+                                              Flexible(
+                                                child: Text(
+                                                  _selectedCrimeType!.recommendedOfficer!.displayName,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.green[700],
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 1,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            _selectedCrimeType!.recommendedOfficer!.workloadDescription,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.green[600],
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ] else if (_officerAssignmentMode == 'manual' && _selectedOfficer != null) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: const Icon(Icons.person, color: Colors.blue, size: 16),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                'Selected: ',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: Colors.blue[600],
+                                                ),
+                                              ),
+                                              Flexible(
+                                                child: Text(
+                                                  _selectedOfficer!.displayName,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.blue[700],
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 1,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            _selectedOfficer!.workloadDescription,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.blue[600],
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
-                  
-                  const SizedBox(height: 20),
-                  
-                  // Description
+                ],
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // Description Section
+              _buildSectionCard(
+                title: 'Incident Details',
+                icon: Icons.description,
+                children: [
                   Text(
                     'Description of Incident *',
                     style: TextStyle(
@@ -510,16 +1484,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                       return null;
                     },
                   ),
-                ],
-              ),
-              
-              const SizedBox(height: 20),
-              
-              // Incident Details Section
-              _buildSectionCard(
-                title: 'Incident Details',
-                icon: Icons.event,
-                children: [
+                  
+                  const SizedBox(height: 20),
+                  
                   // Date and Time of Incident
                   Text(
                     'Date and Time of Incident *',
@@ -534,7 +1501,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                 ],
               ),
               
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               
               // Digital Evidence Section
               _buildSectionCard(
@@ -626,7 +1593,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                 ],
               ),
               
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               
               // Contact Information Section
               _buildSectionCard(
@@ -733,49 +1700,97 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                 ],
               ),
               
-              const SizedBox(height: 32),
+              const SizedBox(height: 40),
               
               // Submit Button
-              SizedBox(
+              Container(
                 width: double.infinity,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF2563EB),
+                      const Color(0xFF3B82F6),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF2563EB).withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
                 child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _submitComplaint,
+                  onPressed: (_isSubmitting || _isLoadingCrimeTypes) ? null : _submitComplaint,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
+                    backgroundColor: Colors.transparent,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    elevation: 2,
                   ),
                   child: _isSubmitting
-                      ? const Row(
+                      ? Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             SizedBox(
-                              width: 20,
-                              height: 20,
+                              width: 22,
+                              height: 22,
                               child: CircularProgressIndicator(
                                 color: Colors.white,
-                                strokeWidth: 2,
+                                strokeWidth: 2.5,
                               ),
                             ),
-                            SizedBox(width: 12),
-                            Text('Submitting Complaint...'),
+                            const SizedBox(width: 16),
+                            Text(
+                              'Submitting Complaint...',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ],
                         )
-                      : const Text(
-                          'Submit Complaint',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.send_rounded,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Submit Complaint',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                 ),
               ),
               
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              
+              // Privacy notice
+              Center(
+                child: Text(
+                  'Your information will be handled confidentially according to PNP data privacy policies',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -1029,672 +2044,5 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         ),
       ),
     );
-  }
-
-
-  /// Smart Evidence Guidance Feature - User Novelty 1
-  Widget _buildSmartEvidenceGuidance() {
-    final isDark = context.read<ThemeProvider>().isDarkMode;
-    final recommendations = _getEvidenceRecommendations(_selectedCrimeType!);
-    
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: (isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB)).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.lightbulb_outline,
-                  color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '💡 Smart Evidence Guidance',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-                      ),
-                    ),
-                    Text(
-                      'Recommended evidence for ${_selectedCrimeType!.displayName}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ...recommendations.map((recommendation) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  recommendation['emoji'] ?? '',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    recommendation['text'] ?? '',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDark ? Colors.grey[300] : Colors.grey[700],
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          )).toList(),
-        ],
-      ),
-    );
-  }
-
-  /// Get evidence recommendations based on crime type
-  List<Map<String, String>> _getEvidenceRecommendations(CrimeType crimeType) {
-    List<Map<String, String>> recommendations = [];
-    
-    switch (crimeType) {
-      // Financial & Economic Crimes
-      case CrimeType.onlineShoppingScams:
-      case CrimeType.onlineBankingFraud:
-      case CrimeType.paymentGatewayFraud:
-        recommendations = [
-          {'emoji': '📸', 'text': 'Screenshots of product listings and seller profiles'},
-          {'emoji': '💳', 'text': 'Payment confirmation receipts (bank transfer, credit card, e-wallet)'},
-          {'emoji': '💬', 'text': 'Chat conversations with the seller/scammer'},
-          {'emoji': '🔗', 'text': 'Links to scammer\'s social media or marketplace profiles'},
-          {'emoji': '💰', 'text': 'Bank statements showing unauthorized transactions'},
-        ];
-        break;
-      
-      // Communication & Social Media Crimes  
-      case CrimeType.phishing:
-      case CrimeType.socialEngineering:
-      case CrimeType.spamMessages:
-        recommendations = [
-          {'emoji': '📧', 'text': 'Full email headers showing sender information'},
-          {'emoji': '🖼️', 'text': 'Screenshots of suspicious emails or websites'},
-          {'emoji': '📱', 'text': 'SMS screenshots if received via text'},
-          {'emoji': '🔗', 'text': 'URLs of fake websites (do not click, just copy link)'},
-          {'emoji': '📅', 'text': 'Timestamp evidence showing when messages were received'},
-        ];
-        break;
-      
-      // Data & Privacy Crimes
-      case CrimeType.identityTheft:
-      case CrimeType.personalInformationTheft:
-      case CrimeType.accountTakeover:
-        recommendations = [
-          {'emoji': '🆔', 'text': 'Copy of your valid government-issued ID'},
-          {'emoji': '📄', 'text': 'Unauthorized account statements or credit reports'},
-          {'emoji': '📧', 'text': 'Notifications from institutions about unknown accounts'},
-          {'emoji': '📸', 'text': 'Screenshots of fake profiles using your information'},
-          {'emoji': '🏦', 'text': 'Location logs showing unauthorized access attempts'},
-        ];
-        break;
-      
-      // Harassment & Exploitation
-      case CrimeType.cyberbullying:
-      case CrimeType.onlineHarassment:
-      case CrimeType.cyberstalking:
-        recommendations = [
-          {'emoji': '💬', 'text': 'Screenshots of harassing messages or posts'},
-          {'emoji': '👤', 'text': 'Profile information of the harasser'},
-          {'emoji': '📅', 'text': 'Timeline documentation of incidents with exact dates/times'},
-          {'emoji': '📱', 'text': 'Evidence from multiple platforms if applicable'},
-          {'emoji': '📍', 'text': 'Location information if harassment occurred in specific places'},
-        ];
-        break;
-      
-      // Malware & System Attacks
-      case CrimeType.ransomware:
-      case CrimeType.virusAttacks:
-      case CrimeType.spyware:
-        recommendations = [
-          {'emoji': '💻', 'text': 'Screenshots of ransom demands or error messages'},
-          {'emoji': '📋', 'text': 'System logs or antivirus reports'},
-          {'emoji': '📧', 'text': 'Suspicious emails that may have contained malware'},
-          {'emoji': '💾', 'text': 'Backup of affected files (if safe to access)'},
-          {'emoji': '⏰', 'text': 'Exact time when attack was discovered'},
-        ];
-        break;
-      
-      // Content-Related Crimes
-      case CrimeType.copyrightInfringement:
-      case CrimeType.illegalContentDistribution:
-        recommendations = [
-          {'emoji': '📄', 'text': 'Proof of your original content ownership'},
-          {'emoji': '🔗', 'text': 'URLs where your content is being used illegally'},
-          {'emoji': '📸', 'text': 'Screenshots showing unauthorized usage'},
-          {'emoji': '⚖️', 'text': 'Copyright registration or trademark documents'},
-          {'emoji': '📅', 'text': 'Original creation date and publication timeline'},
-        ];
-        break;
-      
-      // Default recommendations for other crime types
-      default:
-        recommendations = [
-          {'emoji': '📸', 'text': 'Screenshots showing the incident or evidence'},
-          {'emoji': '📋', 'text': 'Any relevant documentation or communications'},
-          {'emoji': '🔗', 'text': 'URLs, links, or contact information of suspects'},
-          {'emoji': '📱', 'text': 'Additional evidence from social media or other platforms'},
-          {'emoji': '📅', 'text': 'Timeline of events with specific dates and times'},
-        ];
-    }
-    
-    // Add general recommendations for all crime types
-    recommendations.addAll([
-      {'emoji': '⏰', 'text': 'Provide exact date and time when incident occurred'},
-      {'emoji': '📋', 'text': 'Include detailed description of what happened'},
-    ]);
-    
-    return recommendations;
-  }
-
-  /// Report Credibility Meter - User Novelty 2
-  Widget _buildCredibilityMeter() {
-    final isDark = context.read<ThemeProvider>().isDarkMode;
-    final credibilityData = _calculateCredibilityScore();
-    final score = credibilityData['score'] as int;
-    final suggestions = credibilityData['suggestions'] as List<String>;
-    
-    Color scoreColor;
-    String scoreLabel;
-    
-    if (score >= 80) {
-      scoreColor = Colors.green;
-      scoreLabel = 'Excellent';
-    } else if (score >= 65) {
-      scoreColor = Colors.orange;
-      scoreLabel = 'Good';
-    } else if (score >= 40) {
-      scoreColor = Colors.amber;
-      scoreLabel = 'Fair';
-    } else {
-      scoreColor = Colors.red;
-      scoreLabel = 'Needs Improvement';
-    }
-    
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: scoreColor.withOpacity(0.3),
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: scoreColor.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.security,
-                color: scoreColor,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Report Credibility Score',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black,
-                      ),
-                    ),
-                    Text(
-                      '$score% Complete • $scoreLabel',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scoreColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: scoreColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '$score%',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: scoreColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Progress Bar
-          Container(
-            height: 8,
-            decoration: BoxDecoration(
-              color: isDark ? Colors.grey[700] : Colors.grey[200],
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: score / 100,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: scoreColor,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Suggestions
-          if (suggestions.isNotEmpty) ...[
-            Text(
-              'To improve your score:',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : Colors.black,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...suggestions.map((suggestion) => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '•',
-                    style: TextStyle(
-                      color: scoreColor,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      suggestion,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isDark ? Colors.grey[300] : Colors.grey[700],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )).toList(),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// Calculate credibility score based on form completion
-  Map<String, dynamic> _calculateCredibilityScore() {
-    int score = 0;
-    List<String> suggestions = [];
-    
-    // Crime Type Selection (10%)
-    if (_selectedCrimeType != null) {
-      score += 10;
-    } else {
-      suggestions.add('Select a crime type');
-    }
-    
-    // Description Quality (25%)
-    final description = _descriptionController.text.trim();
-    if (description.isNotEmpty) {
-      if (description.length >= 100) {
-        score += 25; // Full points for detailed description
-      } else if (description.length >= 50) {
-        score += 15; // Partial points
-        suggestions.add('Provide a more detailed description (at least 100 characters)');
-      } else if (description.length >= 20) {
-        score += 10; // Minimal points
-        suggestions.add('Add more details to your incident description');
-      } else {
-        suggestions.add('Provide a detailed description of the incident');
-      }
-    } else {
-      suggestions.add('Add an incident description');
-    }
-    
-    // Evidence Files (35%)
-    if (_evidenceFiles.isNotEmpty) {
-      if (_evidenceFiles.length >= 3) {
-        score += 35; // Full points for multiple evidence files
-      } else if (_evidenceFiles.length >= 2) {
-        score += 25; // Good evidence
-        suggestions.add('Consider adding more evidence files for stronger case');
-      } else {
-        score += 15; // Minimal evidence
-        suggestions.add('Add more evidence files (screenshots, documents, etc.)');
-      }
-    } else {
-      suggestions.add('Upload evidence files to support your report');
-    }
-    
-    // Required Contact Information (15%) - Now mandatory
-    final fullName = _fullNameController.text.trim();
-    final email = _emailController.text.trim();
-    final phone = _phoneController.text.trim();
-    
-    int contactScore = 0;
-    if (fullName.isNotEmpty) contactScore += 5;
-    if (email.isNotEmpty && email.contains('@')) contactScore += 5;
-    if (phone.isNotEmpty) contactScore += 5;
-    
-    score += contactScore;
-    
-    if (contactScore < 15) {
-      if (fullName.isEmpty) suggestions.add('Full name is required');
-      if (email.isEmpty) suggestions.add('Email address is required');
-      if (phone.isEmpty) suggestions.add('Phone number is required');
-    }
-    
-    // Incident Date/Time (15%) - Required
-    if (_selectedIncidentDateTime != null) {
-      score += 15;
-    } else {
-      suggestions.add('Select the date and time of incident');
-    }
-    
-    return {
-      'score': score > 100 ? 100 : score,
-      'suggestions': suggestions.take(3).toList(), // Limit to top 3 suggestions
-    };
-  }
-
-  /// Report Pattern Alerts - User Novelty 3
-  void _checkForPatternAlerts() {
-    final description = _descriptionController.text.trim().toLowerCase();
-    
-    // Mock pattern detection - in production this would check against a database
-    List<Map<String, dynamic>> detectedPatterns = [];
-    
-    // Check for known scammer patterns
-    if (description.contains('facebook.com/john.smith.fake') || 
-        description.contains('john.smith.fake')) {
-      detectedPatterns.add({
-        'type': 'social_media',
-        'priority': 'high',
-        'count': 47,
-        'timeframe': 'last 7 days',
-        'message': 'This Facebook profile was reported by 47 users in the last 7 days',
-        'icon': Icons.warning,
-        'color': Colors.red,
-      });
-    }
-    
-    if (description.contains('+63 917 123 4567') || 
-        description.contains('09171234567')) {
-      detectedPatterns.add({
-        'type': 'phone',
-        'priority': 'medium',
-        'count': 23,
-        'timeframe': 'this month',
-        'message': 'This phone number (+63 917 123 4567) has been reported 23 times this month',
-        'icon': Icons.phone,
-        'color': Colors.orange,
-      });
-    }
-    
-    if (description.contains('scammer@fake.com') || 
-        description.contains('fake-bank@gmail.com')) {
-      detectedPatterns.add({
-        'type': 'email',
-        'priority': 'high',
-        'count': 15,
-        'timeframe': 'last 2 weeks',
-        'message': 'This email address is linked to 15 other fraud reports in the last 2 weeks',
-        'icon': Icons.email,
-        'color': Colors.red,
-      });
-    }
-    
-    if (description.contains('fake-shopping.com') || 
-        description.contains('scam-deals.net')) {
-      detectedPatterns.add({
-        'type': 'website',
-        'priority': 'urgent',
-        'count': 89,
-        'timeframe': 'last 30 days',
-        'message': 'This website has been flagged in 89 phishing reports in the last 30 days',
-        'icon': Icons.language,
-        'color': Colors.red,
-      });
-    }
-    
-    // Show pattern alert dialog if patterns detected
-    if (detectedPatterns.isNotEmpty) {
-      _showPatternAlertDialog(detectedPatterns);
-    }
-  }
-
-  void _showPatternAlertDialog(List<Map<String, dynamic>> patterns) {
-    final isDark = context.read<ThemeProvider>().isDarkMode;
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: Row(
-          children: [
-            Icon(
-              Icons.security,
-              color: Colors.red,
-              size: 28,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '⚠️ Pattern Alert',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : Colors.black,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Container(
-          width: double.maxFinite,
-          constraints: const BoxConstraints(maxHeight: 400),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.withOpacity(0.3)),
-                ),
-                child: Text(
-                  'We detected that you may be reporting a known scammer or threat. This information has been reported by other users recently.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: isDark ? Colors.white : Colors.black,
-                    height: 1.4,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: patterns.length,
-                  itemBuilder: (context, index) {
-                    final pattern = patterns[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: (pattern['color'] as Color).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: (pattern['color'] as Color).withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            pattern['icon'],
-                            color: pattern['color'],
-                            size: 24,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  pattern['message'],
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? Colors.white : Colors.black,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: pattern['color'],
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    '${pattern['priority'].toString().toUpperCase()} PRIORITY',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Your report will be prioritized and may help protect others from similar threats.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.grey[300] : Colors.grey[700],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'Cancel Report',
-              style: TextStyle(
-                color: isDark ? Colors.grey[400] : Colors.grey[600],
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _proceedWithSubmission();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text('Continue Report'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _proceedWithSubmission() {
-    // Continue with the original form submission logic
-    _originalSubmitComplaint();
   }
 }

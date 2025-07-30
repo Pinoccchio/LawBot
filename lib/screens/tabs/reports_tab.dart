@@ -7,7 +7,7 @@ import '../../providers/theme_provider.dart';
 import '../../services/database_service.dart';
 import '../../utils/philippine_time.dart';
 import '../../models/complaint_model.dart';
-import '../dynamic_complaint_form_screen.dart';
+import '../complaint_form_screen.dart';
 import '../report_detail_screen.dart';
 
 class ReportsTab extends StatefulWidget {
@@ -342,7 +342,7 @@ class _ReportsTabState extends State<ReportsTab> {
   void _navigateToNewComplaint() async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => const DynamicComplaintFormScreen(),
+        builder: (context) => const ComplaintFormScreen(),
       ),
     );
     

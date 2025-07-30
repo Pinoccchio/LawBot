@@ -1,15 +1,15 @@
 import 'dart:io';
 import '../services/pnp_units_service.dart';
 
-// Dynamic crime type that comes from database
-class DynamicCrimeType {
+// Crime type that comes from database
+class DatabaseCrimeType {
   final String name;
   final String category;
   final String categoryIcon;
   final PNPUnit assignedUnit;
   final List<PNPOfficer> availableOfficers;
 
-  DynamicCrimeType({
+  DatabaseCrimeType({
     required this.name,
     required this.category,
     required this.categoryIcon,
@@ -17,8 +17,8 @@ class DynamicCrimeType {
     required this.availableOfficers,
   });
 
-  factory DynamicCrimeType.fromCrimeTypeWithUnit(CrimeTypeWithUnit crimeTypeWithUnit) {
-    return DynamicCrimeType(
+  factory DatabaseCrimeType.fromCrimeTypeWithUnit(CrimeTypeWithUnit crimeTypeWithUnit) {
+    return DatabaseCrimeType(
       name: crimeTypeWithUnit.crimeType,
       category: crimeTypeWithUnit.category,
       categoryIcon: crimeTypeWithUnit.categoryIcon,
@@ -125,10 +125,10 @@ class EvidenceFile {
   bool get isDocument => ['pdf', 'doc', 'docx', 'txt', 'rtf'].contains(fileType);
 }
 
-class DynamicComplaint {
+class DatabaseComplaint {
   final String? id;
   final String userId;
-  final DynamicCrimeType crimeType;
+  final DatabaseCrimeType crimeType;
   final String? title;
   final String description;
   final List<EvidenceFile> evidenceFiles;
@@ -149,7 +149,7 @@ class DynamicComplaint {
   final String? remarks;
   final List<StatusUpdate> statusHistory;
 
-  DynamicComplaint({
+  DatabaseComplaint({
     this.id,
     required this.userId,
     required this.crimeType,
@@ -174,9 +174,9 @@ class DynamicComplaint {
     this.statusHistory = const [],
   });
 
-  factory DynamicComplaint.create({
+  factory DatabaseComplaint.create({
     required String userId,
-    required DynamicCrimeType crimeType,
+    required DatabaseCrimeType crimeType,
     required String description,
     List<EvidenceFile> evidenceFiles = const [],
     required String fullName,
@@ -192,7 +192,7 @@ class DynamicComplaint {
     final priority = _calculatePriority(crimeType.name, estimatedFinancialLoss);
     final riskScore = _calculateRiskScore(crimeType.name, estimatedFinancialLoss);
     
-    return DynamicComplaint(
+    return DatabaseComplaint(
       userId: userId,
       crimeType: crimeType,
       title: _generateTitle(crimeType.name, description),
@@ -347,10 +347,10 @@ class DynamicComplaint {
     };
   }
 
-  DynamicComplaint copyWith({
+  DatabaseComplaint copyWith({
     String? id,
     String? userId,
-    DynamicCrimeType? crimeType,
+    DatabaseCrimeType? crimeType,
     String? title,
     String? description,
     List<EvidenceFile>? evidenceFiles,
@@ -371,7 +371,7 @@ class DynamicComplaint {
     String? remarks,
     List<StatusUpdate>? statusHistory,
   }) {
-    return DynamicComplaint(
+    return DatabaseComplaint(
       id: id ?? this.id,
       userId: userId ?? this.userId,
       crimeType: crimeType ?? this.crimeType,
