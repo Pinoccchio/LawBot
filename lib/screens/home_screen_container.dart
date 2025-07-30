@@ -260,7 +260,7 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Your chat history and saved advice will be preserved when you return.',
+                        'Your cybercrime reports and account data will be preserved when you return.',
                         style: TextStyle(
                           fontSize: 14,
                           color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
