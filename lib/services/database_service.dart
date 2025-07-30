@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import '../utils/philippine_time.dart';
+import '../models/complaint_model.dart';
 
 class DatabaseService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -399,6 +400,406 @@ class DatabaseService {
       print('✅ Profile picture deleted');
     } catch (e) {
       print('Error deleting profile picture: $e');
+    }
+  }
+
+  // =============================================
+  // COMPLAINT OPERATIONS
+  // =============================================
+
+  // Submit a new complaint
+  Future<String?> submitComplaint(Complaint complaint) async {
+    try {
+      if (currentUserId == null) {
+        throw 'User not authenticated';
+      }
+
+      // Generate complaint number
+      final now = PhilippineTime.now();
+      final year = now.year;
+      
+      // Get the latest complaint number for this year
+      final latestResponse = await _supabase
+          .from('complaints')
+          .select('complaint_number')
+          .like('complaint_number', 'CYB-$year-%')
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      int sequenceNumber = 1;
+      if (latestResponse.isNotEmpty) {
+        final latestNumber = latestResponse.first['complaint_number'] as String;
+        final parts = latestNumber.split('-');
+        if (parts.length == 3) {
+          sequenceNumber = (int.tryParse(parts[2]) ?? 0) + 1;
+        }
+      }
+
+      final complaintNumber = 'CYB-$year-${sequenceNumber.toString().padLeft(3, '0')}';
+
+      print('📝 Submitting complaint: $complaintNumber');
+
+      // Prepare complaint data for database
+      final complaintData = {
+        'user_id': currentUserId!,
+        'complaint_number': complaintNumber,
+        'crime_type': complaint.crimeType.name,
+        'title': _generateComplaintTitle(complaint.crimeType, complaint.description),
+        'description': complaint.description,
+        'full_name': complaint.fullName,
+        'email': complaint.email,
+        'phone_number': complaint.phoneNumber,
+        'incident_date_time': complaint.incidentDateTime.toUtc().toIso8601String(),
+        'incident_location': complaint.incidentLocation,
+        'estimated_loss': complaint.estimatedFinancialLoss,
+        'status': 'Pending',
+        'priority': _calculatePriority(complaint.crimeType, complaint.estimatedFinancialLoss),
+        'risk_score': _calculateRiskScore(complaint.crimeType, complaint.estimatedFinancialLoss),
+        'assigned_unit': complaint.crimeType.assignedUnit,
+        'created_at': PhilippineTime.toUtc(now).toIso8601String(),
+        'updated_at': PhilippineTime.toUtc(now).toIso8601String(),
+      };
+
+      // Insert complaint
+      final response = await _supabase
+          .from('complaints')
+          .insert(complaintData)
+          .select('id')
+          .single();
+
+      final complaintId = response['id'] as String;
+
+      // Upload evidence files if any
+      if (complaint.evidenceFiles.isNotEmpty) {
+        await _uploadEvidenceFiles(complaintId, complaint.evidenceFiles);
+      }
+
+      // Add initial status history
+      await _addStatusUpdate(
+        complaintId,
+        'Pending',
+        'System',
+        'Complaint submitted successfully',
+      );
+
+      print('✅ Complaint submitted successfully: $complaintNumber');
+      return complaintId;
+
+    } catch (e) {
+      print('❌ Error submitting complaint: $e');
+      throw 'Failed to submit complaint: $e';
+    }
+  }
+
+  // Get user's active complaints (Pending, Under Investigation, Requires More Info)
+  Future<List<Map<String, dynamic>>> getUserActiveComplaints() async {
+    try {
+      if (currentUserId == null) return [];
+
+      final response = await _supabase
+          .from('complaints')
+          .select('''
+            *,
+            evidence_files(*),
+            case_assignments(
+              pnp_officer_profiles(
+                full_name,
+                badge_number,
+                rank
+              )
+            )
+          ''')
+          .eq('user_id', currentUserId!)
+          .inFilter('status', ['Pending', 'Under Investigation', 'Requires More Information'])
+          .order('created_at', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error getting active complaints: $e');
+      return [];
+    }
+  }
+
+  // Get user's completed complaints (Resolved, Dismissed)
+  Future<List<Map<String, dynamic>>> getUserCompletedComplaints() async {
+    try {
+      if (currentUserId == null) return [];
+
+      final response = await _supabase
+          .from('complaints')
+          .select('''
+            *,
+            evidence_files(*),
+            case_assignments(
+              pnp_officer_profiles(
+                full_name,
+                badge_number,
+                rank
+              )
+            )
+          ''')
+          .eq('user_id', currentUserId!)
+          .inFilter('status', ['Resolved', 'Dismissed'])
+          .order('updated_at', ascending: false);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error getting completed complaints: $e');
+      return [];
+    }
+  }
+
+  // Get single complaint by ID
+  Future<Map<String, dynamic>?> getComplaint(String complaintId) async {
+    try {
+      if (currentUserId == null) return null;
+
+      final response = await _supabase
+          .from('complaints')
+          .select('''
+            *,
+            evidence_files(*),
+            case_assignments(
+              pnp_officer_profiles(
+                full_name,
+                badge_number,
+                rank,
+                phone_number,
+                pnp_units(
+                  unit_name,
+                  unit_code,
+                  category
+                )
+              )
+            )
+          ''')
+          .eq('id', complaintId)
+          .eq('user_id', currentUserId!)
+          .single();
+
+      return response;
+    } catch (e) {
+      print('Error getting complaint: $e');
+      return null;
+    }
+  }
+
+  // Get complaint status history
+  Future<List<Map<String, dynamic>>> getComplaintStatusHistory(String complaintId) async {
+    try {
+      final response = await _supabase
+          .from('complaint_status_history')
+          .select('*')
+          .eq('complaint_id', complaintId)
+          .order('created_at', ascending: true);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error getting complaint status history: $e');
+      return [];
+    }
+  }
+
+  // Upload evidence files for a complaint
+  Future<void> _uploadEvidenceFiles(String complaintId, List<EvidenceFile> files) async {
+    try {
+      for (final evidenceFile in files) {
+        final file = File(evidenceFile.filePath);
+        final bytes = await file.readAsBytes();
+        
+        // Create unique filename
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final fileName = '${complaintId}_${timestamp}_${evidenceFile.fileName}';
+        final filePath = 'evidence/$complaintId/$fileName';
+
+        // Upload to Supabase Storage
+        await _serviceRoleClient.storage
+            .from('evidence-files')
+            .uploadBinary(filePath, Uint8List.fromList(bytes));
+
+        // Get public URL
+        final publicUrl = _serviceRoleClient.storage
+            .from('evidence-files')
+            .getPublicUrl(filePath);
+
+        // Save evidence file record
+        await _supabase.from('evidence_files').insert({
+          'complaint_id': complaintId,
+          'file_name': evidenceFile.fileName,
+          'file_type': evidenceFile.fileType,
+          'file_size': evidenceFile.fileSize,
+          'file_path': filePath,
+          'download_url': publicUrl,
+          'uploaded_by': currentUserId!,
+          'created_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
+        });
+
+        print('✅ Evidence file uploaded: ${evidenceFile.fileName}');
+      }
+    } catch (e) {
+      print('❌ Error uploading evidence files: $e');
+      throw 'Failed to upload evidence files: $e';
+    }
+  }
+
+  // Add status update to complaint history
+  Future<void> _addStatusUpdate(
+    String complaintId,
+    String status,
+    String updatedBy,
+    String? remarks,
+  ) async {
+    try {
+      await _supabase.from('complaint_status_history').insert({
+        'complaint_id': complaintId,
+        'status': status,
+        'updated_by': updatedBy,
+        'remarks': remarks,
+        'created_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
+      });
+    } catch (e) {
+      print('Error adding status update: $e');
+    }
+  }
+
+  // Helper: Generate complaint title based on crime type and description
+  String _generateComplaintTitle(CrimeType crimeType, String description) {
+    final words = description.split(' ').take(8);
+    final title = words.join(' ');
+    return title.length > 100 ? '${title.substring(0, 97)}...' : title;
+  }
+
+  // Helper: Calculate priority based on crime type and financial loss
+  String _calculatePriority(CrimeType crimeType, double? financialLoss) {
+    // High priority crimes
+    if ([
+      CrimeType.cyberterrorism,
+      CrimeType.governmentSystemHacking,
+      CrimeType.criticalInfrastructureAttacks,
+      CrimeType.childSexualAbuseMaterial,
+      CrimeType.ransomware,
+      CrimeType.onlinePredatoryBehavior,
+    ].contains(crimeType)) {
+      return 'high';
+    }
+
+    // High priority based on financial loss
+    if (financialLoss != null && financialLoss >= 100000) {
+      return 'high';
+    }
+
+    // Medium priority crimes
+    if ([
+      CrimeType.identityTheft,
+      CrimeType.onlineBankingFraud,
+      CrimeType.creditCardFraud,
+      CrimeType.sextortion,
+      CrimeType.dataBreach,
+      CrimeType.denialOfServiceAttacks,
+    ].contains(crimeType)) {
+      return 'medium';
+    }
+
+    // Medium priority based on financial loss
+    if (financialLoss != null && financialLoss >= 10000) {
+      return 'medium';
+    }
+
+    return 'low';
+  }
+
+  // Helper: Calculate risk score based on various factors
+  int _calculateRiskScore(CrimeType crimeType, double? financialLoss) {
+    int baseScore = 30;
+
+    // Crime type multiplier
+    final highRiskCrimes = [
+      CrimeType.cyberterrorism,
+      CrimeType.governmentSystemHacking,
+      CrimeType.criticalInfrastructureAttacks,
+      CrimeType.childSexualAbuseMaterial,
+      CrimeType.ransomware,
+      CrimeType.onlinePredatoryBehavior,
+    ];
+
+    final mediumRiskCrimes = [
+      CrimeType.identityTheft,
+      CrimeType.onlineBankingFraud,
+      CrimeType.creditCardFraud,
+      CrimeType.sextortion,
+      CrimeType.dataBreach,
+      CrimeType.denialOfServiceAttacks,
+    ];
+
+    if (highRiskCrimes.contains(crimeType)) {
+      baseScore += 40;
+    } else if (mediumRiskCrimes.contains(crimeType)) {
+      baseScore += 25;
+    } else {
+      baseScore += 10;
+    }
+
+    // Financial loss impact
+    if (financialLoss != null) {
+      if (financialLoss >= 1000000) {
+        baseScore += 25;
+      } else if (financialLoss >= 100000) {
+        baseScore += 15;
+      } else if (financialLoss >= 10000) {
+        baseScore += 10;
+      } else if (financialLoss >= 1000) {
+        baseScore += 5;
+      }
+    }
+
+    // Ensure score is between 0-100
+    return baseScore.clamp(0, 100);
+  }
+
+  // Get user complaint statistics
+  Future<Map<String, dynamic>> getUserComplaintStats() async {
+    try {
+      if (currentUserId == null) return {};
+
+      final allComplaints = await _supabase
+          .from('complaints')
+          .select('status')
+          .eq('user_id', currentUserId!);
+
+      final stats = <String, int>{
+        'total': allComplaints.length,
+        'pending': 0,
+        'under_investigation': 0,
+        'requires_more_info': 0,
+        'resolved': 0,
+        'dismissed': 0,
+      };
+
+      for (final complaint in allComplaints) {
+        final status = complaint['status'] as String;
+        switch (status) {
+          case 'Pending':
+            stats['pending'] = (stats['pending'] ?? 0) + 1;
+            break;
+          case 'Under Investigation':
+            stats['under_investigation'] = (stats['under_investigation'] ?? 0) + 1;
+            break;
+          case 'Requires More Information':
+            stats['requires_more_info'] = (stats['requires_more_info'] ?? 0) + 1;
+            break;
+          case 'Resolved':
+            stats['resolved'] = (stats['resolved'] ?? 0) + 1;
+            break;
+          case 'Dismissed':
+            stats['dismissed'] = (stats['dismissed'] ?? 0) + 1;
+            break;
+        }
+      }
+
+      return stats;
+    } catch (e) {
+      print('Error getting complaint stats: $e');
+      return {};
     }
   }
 }

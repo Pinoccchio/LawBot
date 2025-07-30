@@ -7,7 +7,7 @@ import '../../providers/theme_provider.dart';
 import '../../services/database_service.dart';
 import '../../utils/philippine_time.dart';
 import '../../models/complaint_model.dart';
-import '../complaint_form_screen.dart';
+import '../dynamic_complaint_form_screen.dart';
 import '../report_detail_screen.dart';
 
 class ReportsTab extends StatefulWidget {
@@ -67,9 +67,11 @@ class _ReportsTabState extends State<ReportsTab> {
         return;
       }
 
-      // TODO: Load complaints from database
-      // For now, create sample data
-      _complaints = _createSampleComplaints();
+      // Load active complaints from database
+      final complaintData = await _databaseService.getUserActiveComplaints();
+      
+      // Convert database data to Complaint objects
+      _complaints = complaintData.map((data) => _complaintFromDatabaseMap(data)).toList();
       
       if (mounted) {
         setState(() {
@@ -82,13 +84,92 @@ class _ReportsTabState extends State<ReportsTab> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _complaints = [];
+          // Fallback to sample data for development
+          _complaints = _createSampleComplaints();
         });
       }
     }
   }
 
-  // TODO: Remove this when database service is implemented
+  // Convert database map to Complaint object
+  Complaint _complaintFromDatabaseMap(Map<String, dynamic> data) {
+    try {
+      // Parse evidence files
+      final evidenceFiles = <EvidenceFile>[];
+      if (data['evidence_files'] != null) {
+        for (final evidenceData in data['evidence_files'] as List) {
+          evidenceFiles.add(EvidenceFile(
+            id: evidenceData['id'],
+            fileName: evidenceData['file_name'],
+            filePath: evidenceData['file_path'] ?? '',
+            fileType: evidenceData['file_type'],
+            fileSize: evidenceData['file_size'],
+            uploadedAt: DateTime.parse(evidenceData['created_at']),
+            downloadUrl: evidenceData['download_url'],
+          ));
+        }
+      }
+
+      // Parse assigned officer info
+      String? assignedOfficer;
+      if (data['case_assignments'] != null && 
+          (data['case_assignments'] as List).isNotEmpty) {
+        final assignment = (data['case_assignments'] as List).first;
+        if (assignment['pnp_officer_profiles'] != null) {
+          final officer = assignment['pnp_officer_profiles'];
+          assignedOfficer = '${officer['rank']} ${officer['full_name']} (${officer['badge_number']})';
+        }
+      }
+
+      // Parse status history
+      final statusHistory = <StatusUpdate>[];
+      // Note: Status history would need to be loaded separately if needed
+
+      return Complaint(
+        id: data['id'],
+        userId: data['user_id'],
+        crimeType: CrimeType.values.firstWhere(
+          (e) => e.name == data['crime_type'],
+          orElse: () => CrimeType.phishing,
+        ),
+        description: data['description'],
+        evidenceFiles: evidenceFiles,
+        fullName: data['full_name'],
+        email: data['email'],
+        phoneNumber: data['phone_number'],
+        incidentDateTime: DateTime.parse(data['incident_date_time']),
+        incidentLocation: data['incident_location'],
+        estimatedFinancialLoss: data['estimated_loss']?.toDouble(),
+        status: ComplaintStatus.values.firstWhere(
+          (e) => e.displayName == data['status'],
+          orElse: () => ComplaintStatus.pending,
+        ),
+        createdAt: DateTime.parse(data['created_at']),
+        updatedAt: DateTime.parse(data['updated_at']),
+        complaintNumber: data['complaint_number'],
+        assignedOfficer: assignedOfficer,
+        remarks: data['remarks'],
+        statusHistory: statusHistory,
+      );
+    } catch (e) {
+      print('Error converting database data to Complaint: $e');
+      // Return a basic complaint object as fallback
+      return Complaint(
+        id: data['id'] ?? 'unknown',
+        userId: data['user_id'] ?? '',
+        crimeType: CrimeType.phishing,
+        description: data['description'] ?? 'Unable to load description',
+        fullName: data['full_name'] ?? 'Unknown',
+        email: data['email'] ?? '',
+        phoneNumber: data['phone_number'] ?? '',
+        incidentDateTime: DateTime.now(),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+    }
+  }
+
+  // Fallback sample data for development/testing
   List<Complaint> _createSampleComplaints() {
     final now = DateTime.now();
     return [
@@ -261,7 +342,7 @@ class _ReportsTabState extends State<ReportsTab> {
   void _navigateToNewComplaint() async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => const ComplaintFormScreen(),
+        builder: (context) => const DynamicComplaintFormScreen(),
       ),
     );
     

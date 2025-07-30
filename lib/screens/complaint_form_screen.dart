@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 import '../models/complaint_model.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/file_upload_widget.dart';
 import '../utils/philippine_time.dart';
+import '../services/database_service.dart';
 
 class ComplaintFormScreen extends StatefulWidget {
   const ComplaintFormScreen({super.key});
@@ -21,6 +23,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _databaseService = DatabaseService();
 
   CrimeType? _selectedCrimeType;
   final List<EvidenceFile> _evidenceFiles = [];
@@ -259,9 +262,16 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     });
 
     try {
+      // Get current user ID
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        _showErrorSnackBar('Please sign in to submit a complaint');
+        return;
+      }
+
       // Create complaint object with required fields only
       final complaint = Complaint.create(
-        userId: 'current_user_id', // TODO: Get from auth service
+        userId: currentUser.uid,
         crimeType: _selectedCrimeType!,
         description: _descriptionController.text.trim(),
         evidenceFiles: _evidenceFiles,
@@ -271,11 +281,15 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         incidentDateTime: _selectedIncidentDateTime!,
       );
 
-      // TODO: Submit to database service
-      // await _databaseService.submitComplaint(complaint);
-
-      // Show success dialog
-      _showSuccessDialog();
+      // Submit to database service
+      final complaintId = await _databaseService.submitComplaint(complaint);
+      
+      if (complaintId != null) {
+        // Show success dialog with complaint ID
+        _showSuccessDialog(complaintId);
+      } else {
+        _showErrorSnackBar('Failed to submit complaint. Please try again.');
+      }
       
     } catch (e) {
       _showErrorSnackBar('Failed to submit complaint: $e');
@@ -286,7 +300,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     }
   }
 
-  void _showSuccessDialog() {
+  void _showSuccessDialog(String complaintId) {
     final isDark = context.read<ThemeProvider>().isDarkMode;
     
     showDialog(

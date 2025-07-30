@@ -279,6 +279,7 @@ class Complaint {
   final String? id;
   final String userId;
   final CrimeType crimeType;
+  final String? title; // Added to match web app
   final String description;
   final List<EvidenceFile> evidenceFiles;
   final String fullName;
@@ -288,10 +289,14 @@ class Complaint {
   final String? incidentLocation;
   final double? estimatedFinancialLoss;
   final ComplaintStatus status;
+  final String priority; // Added to match web app (high, medium, low)
+  final int riskScore; // Added to match web app (0-100)
+  final String? assignedUnit; // Added to match web app
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? complaintNumber;
   final String? assignedOfficer;
+  final String? assignedOfficerId; // Added for proper officer tracking
   final String? remarks;
   final List<StatusUpdate> statusHistory;
 
@@ -299,6 +304,7 @@ class Complaint {
     this.id,
     required this.userId,
     required this.crimeType,
+    this.title,
     required this.description,
     this.evidenceFiles = const [],
     required this.fullName,
@@ -308,10 +314,14 @@ class Complaint {
     this.incidentLocation,
     this.estimatedFinancialLoss,
     this.status = ComplaintStatus.pending,
+    this.priority = 'low',
+    this.riskScore = 30,
+    this.assignedUnit,
     required this.createdAt,
     required this.updatedAt,
     this.complaintNumber,
     this.assignedOfficer,
+    this.assignedOfficerId,
     this.remarks,
     this.statusHistory = const [],
   });
@@ -329,9 +339,15 @@ class Complaint {
     double? estimatedFinancialLoss,
   }) {
     final now = DateTime.now();
+    
+    // Calculate priority and risk score based on crime type and financial loss
+    final priority = _calculatePriority(crimeType, estimatedFinancialLoss);
+    final riskScore = _calculateRiskScore(crimeType, estimatedFinancialLoss);
+    
     return Complaint(
       userId: userId,
       crimeType: crimeType,
+      title: _generateTitle(crimeType, description),
       description: description,
       evidenceFiles: evidenceFiles,
       fullName: fullName,
@@ -340,6 +356,9 @@ class Complaint {
       incidentDateTime: incidentDateTime,
       incidentLocation: incidentLocation,
       estimatedFinancialLoss: estimatedFinancialLoss,
+      priority: priority,
+      riskScore: riskScore,
+      assignedUnit: crimeType.assignedUnit,
       createdAt: now,
       updatedAt: now,
       statusHistory: [
@@ -353,11 +372,106 @@ class Complaint {
     );
   }
 
+  // Helper method to generate complaint title
+  static String _generateTitle(CrimeType crimeType, String description) {
+    final words = description.split(' ').take(8);
+    final title = words.join(' ');
+    return title.length > 100 ? '${title.substring(0, 97)}...' : title;
+  }
+
+  // Helper method to calculate priority
+  static String _calculatePriority(CrimeType crimeType, double? financialLoss) {
+    // High priority crimes
+    if ([
+      CrimeType.cyberterrorism,
+      CrimeType.governmentSystemHacking,
+      CrimeType.criticalInfrastructureAttacks,
+      CrimeType.childSexualAbuseMaterial,
+      CrimeType.ransomware,
+      CrimeType.onlinePredatoryBehavior,
+    ].contains(crimeType)) {
+      return 'high';
+    }
+
+    // High priority based on financial loss
+    if (financialLoss != null && financialLoss >= 100000) {
+      return 'high';
+    }
+
+    // Medium priority crimes
+    if ([
+      CrimeType.identityTheft,
+      CrimeType.onlineBankingFraud,
+      CrimeType.creditCardFraud,
+      CrimeType.sextortion,
+      CrimeType.dataBreach,
+      CrimeType.denialOfServiceAttacks,
+    ].contains(crimeType)) {
+      return 'medium';
+    }
+
+    // Medium priority based on financial loss
+    if (financialLoss != null && financialLoss >= 10000) {
+      return 'medium';
+    }
+
+    return 'low';
+  }
+
+  // Helper method to calculate risk score
+  static int _calculateRiskScore(CrimeType crimeType, double? financialLoss) {
+    int baseScore = 30;
+
+    // Crime type multiplier
+    final highRiskCrimes = [
+      CrimeType.cyberterrorism,
+      CrimeType.governmentSystemHacking,
+      CrimeType.criticalInfrastructureAttacks,
+      CrimeType.childSexualAbuseMaterial,
+      CrimeType.ransomware,
+      CrimeType.onlinePredatoryBehavior,
+    ];
+
+    final mediumRiskCrimes = [
+      CrimeType.identityTheft,
+      CrimeType.onlineBankingFraud,
+      CrimeType.creditCardFraud,
+      CrimeType.sextortion,
+      CrimeType.dataBreach,
+      CrimeType.denialOfServiceAttacks,
+    ];
+
+    if (highRiskCrimes.contains(crimeType)) {
+      baseScore += 40;
+    } else if (mediumRiskCrimes.contains(crimeType)) {
+      baseScore += 25;
+    } else {
+      baseScore += 10;
+    }
+
+    // Financial loss impact
+    if (financialLoss != null) {
+      if (financialLoss >= 1000000) {
+        baseScore += 25;
+      } else if (financialLoss >= 100000) {
+        baseScore += 15;
+      } else if (financialLoss >= 10000) {
+        baseScore += 10;
+      } else if (financialLoss >= 1000) {
+        baseScore += 5;
+      }
+    }
+
+    // Ensure score is between 0-100
+    return baseScore.clamp(0, 100);
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'userId': userId,
       'crimeType': crimeType.name,
+      'title': title,
       'description': description,
       'evidenceFiles': evidenceFiles.map((file) => file.toJson()).toList(),
       'fullName': fullName,
@@ -367,10 +481,14 @@ class Complaint {
       'incidentLocation': incidentLocation,
       'estimatedFinancialLoss': estimatedFinancialLoss,
       'status': status.name,
+      'priority': priority,
+      'riskScore': riskScore,
+      'assignedUnit': assignedUnit,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
       'complaintNumber': complaintNumber,
       'assignedOfficer': assignedOfficer,
+      'assignedOfficerId': assignedOfficerId,
       'remarks': remarks,
       'statusHistory': statusHistory.map((update) => update.toJson()).toList(),
     };
@@ -381,6 +499,7 @@ class Complaint {
       id: json['id'],
       userId: json['userId'],
       crimeType: CrimeType.values.firstWhere((e) => e.name == json['crimeType']),
+      title: json['title'],
       description: json['description'],
       evidenceFiles: (json['evidenceFiles'] as List<dynamic>?)
           ?.map((file) => EvidenceFile.fromJson(file))
@@ -392,10 +511,14 @@ class Complaint {
       incidentLocation: json['incidentLocation'],
       estimatedFinancialLoss: json['estimatedFinancialLoss']?.toDouble(),
       status: ComplaintStatus.values.firstWhere((e) => e.name == json['status']),
+      priority: json['priority'] ?? 'low',
+      riskScore: json['riskScore'] ?? 30,
+      assignedUnit: json['assignedUnit'],
       createdAt: DateTime.parse(json['createdAt']),
       updatedAt: DateTime.parse(json['updatedAt']),
       complaintNumber: json['complaintNumber'],
       assignedOfficer: json['assignedOfficer'],
+      assignedOfficerId: json['assignedOfficerId'],
       remarks: json['remarks'],
       statusHistory: (json['statusHistory'] as List<dynamic>?)
           ?.map((update) => StatusUpdate.fromJson(update))
@@ -407,6 +530,7 @@ class Complaint {
     String? id,
     String? userId,
     CrimeType? crimeType,
+    String? title,
     String? description,
     List<EvidenceFile>? evidenceFiles,
     String? fullName,
@@ -416,10 +540,14 @@ class Complaint {
     String? incidentLocation,
     double? estimatedFinancialLoss,
     ComplaintStatus? status,
+    String? priority,
+    int? riskScore,
+    String? assignedUnit,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? complaintNumber,
     String? assignedOfficer,
+    String? assignedOfficerId,
     String? remarks,
     List<StatusUpdate>? statusHistory,
   }) {
@@ -427,6 +555,7 @@ class Complaint {
       id: id ?? this.id,
       userId: userId ?? this.userId,
       crimeType: crimeType ?? this.crimeType,
+      title: title ?? this.title,
       description: description ?? this.description,
       evidenceFiles: evidenceFiles ?? this.evidenceFiles,
       fullName: fullName ?? this.fullName,
@@ -436,10 +565,14 @@ class Complaint {
       incidentLocation: incidentLocation ?? this.incidentLocation,
       estimatedFinancialLoss: estimatedFinancialLoss ?? this.estimatedFinancialLoss,
       status: status ?? this.status,
+      priority: priority ?? this.priority,
+      riskScore: riskScore ?? this.riskScore,
+      assignedUnit: assignedUnit ?? this.assignedUnit,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       complaintNumber: complaintNumber ?? this.complaintNumber,
       assignedOfficer: assignedOfficer ?? this.assignedOfficer,
+      assignedOfficerId: assignedOfficerId ?? this.assignedOfficerId,
       remarks: remarks ?? this.remarks,
       statusHistory: statusHistory ?? this.statusHistory,
     );
