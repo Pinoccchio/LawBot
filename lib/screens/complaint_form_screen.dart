@@ -30,7 +30,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   List<DatabaseCrimeType> _availableCrimeTypes = [];
   DatabaseCrimeType? _selectedCrimeType;
   PNPOfficer? _selectedOfficer;
-  String _officerAssignmentMode = 'auto'; // 'auto' or 'manual'
   
   final List<EvidenceFile> _evidenceFiles = [];
   bool _isSubmitting = false;
@@ -128,28 +127,31 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   void _onCrimeTypeSelected(DatabaseCrimeType? crimeType) {
     setState(() {
       _selectedCrimeType = crimeType;
-      _selectedOfficer = null; // Reset officer selection
-      _officerAssignmentMode = 'auto'; // Reset to auto-assignment
+      _selectedOfficer = null; // Reset officer selection when crime type changes
     });
   }
 
-  // Handle officer assignment mode change
-  void _onOfficerAssignmentModeChanged(String? mode) {
-    setState(() {
-      _officerAssignmentMode = mode ?? 'auto';
-      if (_officerAssignmentMode == 'auto') {
-        _selectedOfficer = _selectedCrimeType?.recommendedOfficer;
-      } else {
-        _selectedOfficer = null; // User will select manually
-      }
-    });
-  }
-
-  // Handle manual officer selection
+  // Handle officer selection
   void _onOfficerSelected(PNPOfficer? officer) {
     setState(() {
       _selectedOfficer = officer;
     });
+  }
+
+  // Get color based on officer availability status
+  Color _getAvailabilityStatusColor(String? availabilityStatus) {
+    switch (availabilityStatus ?? 'available') {
+      case 'available':
+        return Colors.green;
+      case 'busy':
+        return Colors.orange;
+      case 'overloaded':
+        return Colors.red;
+      case 'unavailable':
+        return Colors.grey;
+      default:
+        return Colors.grey;
+    }
   }
 
   Future<void> _pickFiles() async {
@@ -310,6 +312,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       return;
     }
 
+    if (_selectedOfficer == null) {
+      _showErrorSnackBar('Please select an investigating officer');
+      return;
+    }
+
     if (_selectedIncidentDateTime == null) {
       _showErrorSnackBar('Please select the date and time of incident');
       return;
@@ -430,28 +437,16 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
 
       final complaintId = response['id'] as String;
 
-      // Assign officer based on assignment mode
-      if (_officerAssignmentMode == 'auto' && _selectedCrimeType!.recommendedOfficer != null) {
-        await _pnpUnitsService.supabase.from('case_assignments').insert({
-          'complaint_id': complaintId,
-          'officer_id': _selectedCrimeType!.recommendedOfficer!.id,
-          'assigned_by': 'System',
-          'assignment_type': 'primary',
-          'status': 'active',
-          'notes': 'Auto-assigned based on crime type and officer availability',
-          'created_at': PhilippineTime.toUtc(now).toIso8601String(),
-        });
-      } else if (_officerAssignmentMode == 'manual' && _selectedOfficer != null) {
-        await _pnpUnitsService.supabase.from('case_assignments').insert({
-          'complaint_id': complaintId,
-          'officer_id': _selectedOfficer!.id,
-          'assigned_by': 'User',
-          'assignment_type': 'primary',
-          'status': 'active',
-          'notes': 'Manually selected by complainant during report submission',
-          'created_at': PhilippineTime.toUtc(now).toIso8601String(),
-        });
-      }
+      // Assign the selected officer (required by complainant)
+      await _pnpUnitsService.supabase.from('case_assignments').insert({
+        'complaint_id': complaintId,
+        'officer_id': _selectedOfficer!.id,
+        'assigned_by': 'Complainant',
+        'assignment_type': 'primary',
+        'status': 'active',
+        'notes': 'Officer selected by complainant during report submission',
+        'created_at': PhilippineTime.toUtc(now).toIso8601String(),
+      });
 
       // Upload evidence files if any
       if (complaint.evidenceFiles.isNotEmpty) {
@@ -541,14 +536,13 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Your cybercrime complaint has been successfully submitted and assigned to ${_selectedCrimeType?.assignedUnitName ?? 'PNP Anti-Cybercrime Group'}.',
+              'Your cybercrime complaint has been successfully submitted to ${_selectedCrimeType?.assignedUnitName ?? 'PNP Anti-Cybercrime Group'}. Your selected officer will handle the investigation.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: isDark ? Colors.grey[300] : Colors.grey[600],
               ),
             ),
-            if ((_officerAssignmentMode == 'auto' && _selectedCrimeType?.recommendedOfficer != null) || 
-                (_officerAssignmentMode == 'manual' && _selectedOfficer != null)) ...[
+            if (_selectedOfficer != null) ...[
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -560,7 +554,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                 child: Column(
                   children: [
                     Text(
-                      _officerAssignmentMode == 'auto' ? 'Auto-Assigned Officer' : 'Selected Officer',
+                      'Assigned Officer',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -569,9 +563,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _officerAssignmentMode == 'auto' 
-                          ? _selectedCrimeType!.recommendedOfficer!.displayName
-                          : _selectedOfficer!.displayName,
+                      _selectedOfficer!.displayName,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -579,9 +571,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                       ),
                     ),
                     Text(
-                      _officerAssignmentMode == 'auto' 
-                          ? _selectedCrimeType!.recommendedOfficer!.workloadDescription
-                          : _selectedOfficer!.workloadDescription,
+                      _selectedOfficer!.workloadDescription,
                       style: TextStyle(
                         fontSize: 12,
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -932,369 +922,152 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                             const SizedBox(height: 16),
                             const Divider(),
                             Text(
-                              'Officer Assignment',
+                              'Select Investigating Officer *',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 color: isDark ? Colors.white : Colors.black87,
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            
-                            // Officer Assignment Mode Selection
-                            Theme(
-                              data: Theme.of(context).copyWith(
-                                radioTheme: RadioThemeData(
-                                  fillColor: MaterialStateProperty.resolveWith<Color>((states) {
-                                    if (states.contains(MaterialState.selected)) {
-                                      return const Color(0xFF2563EB); // Consistent blue
-                                    }
-                                    return isDark ? Colors.grey[600]! : Colors.grey[400]!;
-                                  }),
-                                ),
-                              ),
-                              child: Column(
-                                children: [
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: _officerAssignmentMode == 'auto' 
-                                          ? const Color(0xFF2563EB).withOpacity(0.05)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: _officerAssignmentMode == 'auto' 
-                                            ? const Color(0xFF2563EB).withOpacity(0.3)
-                                            : Colors.transparent,
-                                      ),
-                                    ),
-                                    child: RadioListTile<String>(
-                                      value: 'auto',
-                                      groupValue: _officerAssignmentMode,
-                                      onChanged: _onOfficerAssignmentModeChanged,
-                                      title: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.auto_awesome,
-                                            size: 16,
-                                            color: _officerAssignmentMode == 'auto' 
-                                                ? const Color(0xFF2563EB)
-                                                : (isDark ? Colors.grey[400] : Colors.grey[600]),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Flexible(
-                                            child: Text(
-                                              'Auto-assign (Recommended)',
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: _officerAssignmentMode == 'auto' 
-                                                    ? FontWeight.w600 
-                                                    : FontWeight.normal,
-                                                color: _officerAssignmentMode == 'auto' 
-                                                    ? const Color(0xFF2563EB)
-                                                    : (isDark ? Colors.white : Colors.black),
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                              maxLines: 1,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      subtitle: Padding(
-                                        padding: const EdgeInsets.only(left: 22),
-                                        child: Text(
-                                          'System assigns the best available officer based on workload and expertise',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: isDark ? Colors.grey[400] : Colors.grey[600],
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 2,
-                                        ),
-                                      ),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      dense: true,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: _officerAssignmentMode == 'manual' 
-                                          ? const Color(0xFF2563EB).withOpacity(0.05)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: _officerAssignmentMode == 'manual' 
-                                            ? const Color(0xFF2563EB).withOpacity(0.3)
-                                            : Colors.transparent,
-                                      ),
-                                    ),
-                                    child: RadioListTile<String>(
-                                      value: 'manual',
-                                      groupValue: _officerAssignmentMode,
-                                      onChanged: _selectedCrimeType!.availableOfficers.isNotEmpty 
-                                          ? _onOfficerAssignmentModeChanged 
-                                          : null,
-                                      title: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.person_search,
-                                            size: 16,
-                                            color: _selectedCrimeType!.availableOfficers.isNotEmpty
-                                                ? (_officerAssignmentMode == 'manual' 
-                                                    ? const Color(0xFF2563EB)
-                                                    : (isDark ? Colors.grey[400] : Colors.grey[600]))
-                                                : (isDark ? Colors.grey[700] : Colors.grey[300]),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Flexible(
-                                            child: Text(
-                                              'Choose specific officer',
-                                              style: TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: _officerAssignmentMode == 'manual' 
-                                                    ? FontWeight.w600 
-                                                    : FontWeight.normal,
-                                                color: _selectedCrimeType!.availableOfficers.isNotEmpty
-                                                    ? (_officerAssignmentMode == 'manual' 
-                                                        ? const Color(0xFF2563EB)
-                                                        : (isDark ? Colors.white : Colors.black))
-                                                    : (isDark ? Colors.grey[600] : Colors.grey[400]),
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                              maxLines: 1,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      subtitle: Padding(
-                                        padding: const EdgeInsets.only(left: 22),
-                                        child: Text(
-                                          _selectedCrimeType!.availableOfficers.isNotEmpty
-                                              ? 'Select from ${_selectedCrimeType!.availableOfficers.length} available officers'
-                                              : 'No officers currently available for manual selection',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: isDark ? Colors.grey[400] : Colors.grey[600],
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 2,
-                                        ),
-                                      ),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      dense: true,
-                                    ),
-                                  ),
-                                ],
+                            const SizedBox(height: 8),
+                            Text(
+                              'Choose your preferred investigating officer from the assigned unit',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? Colors.grey[400] : Colors.grey[600],
                               ),
                             ),
+                            const SizedBox(height: 12),
                             
-                            // Show officer selection dropdown when manual mode is selected
-                            if (_officerAssignmentMode == 'manual' && _selectedCrimeType!.availableOfficers.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2563EB).withOpacity(0.03),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: const Color(0xFF2563EB).withOpacity(0.2),
+                            // Officer Selection Dropdown
+                            if (_selectedCrimeType!.availableOfficers.isNotEmpty) ...[
+                              DropdownButtonFormField<PNPOfficer>(
+                                value: _selectedOfficer,
+                                hint: Text(
+                                  'Choose an officer (${_selectedCrimeType!.availableOfficers.length} available)',
+                                  style: TextStyle(
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                    fontSize: 14,
                                   ),
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  filled: true,
+                                  fillColor: isDark 
+                                      ? const Color(0xFF1E293B) 
+                                      : Colors.grey[50],
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                ),
+                                dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                style: TextStyle(
+                                  color: isDark ? Colors.white : Colors.black,
+                                  fontSize: 14,
+                                ),
+                                isExpanded: true,
+                                menuMaxHeight: 250,
+                                items: _selectedCrimeType!.availableOfficers.map((officer) {
+                                  Color workloadColor = _getAvailabilityStatusColor(officer.availabilityStatus);
+                                  
+                                  return DropdownMenuItem(
+                                    value: officer,
+                                    child: Row(
                                       children: [
-                                        Icon(
-                                          Icons.person_search,
-                                          size: 16,
-                                          color: const Color(0xFF2563EB),
+                                        Container(
+                                          width: 32,
+                                          height: 32,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF2563EB).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(16),
+                                          ),
+                                          child: Icon(
+                                            Icons.person,
+                                            color: const Color(0xFF2563EB),
+                                            size: 16,
+                                          ),
                                         ),
                                         const SizedBox(width: 8),
-                                        Text(
-                                          'Choose Officer',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: const Color(0xFF2563EB),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                officer.displayName,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                  color: isDark ? Colors.white : Colors.black87,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Row(
+                                                children: [
+                                                  Container(
+                                                    width: 6,
+                                                    height: 6,
+                                                    decoration: BoxDecoration(
+                                                      color: workloadColor,
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      officer.workloadDescription,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: workloadColor,
+                                                        fontWeight: FontWeight.w500,
+                                                      ),
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 12),
-                                    DropdownButtonFormField<PNPOfficer>(
-                                      value: _selectedOfficer,
-                                      hint: Text(
-                                        'Select an officer from ${_selectedCrimeType!.availableOfficers.length} available',
+                                  );
+                                }).toList(),
+                                onChanged: _onOfficerSelected,
+                                validator: (value) {
+                                  if (value == null) {
+                                    return 'Please select an investigating officer';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ] else ...[
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error, color: Colors.red[700], size: 20),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'No officers available for this crime type. Please try again later or contact support.',
                                         style: TextStyle(
-                                          color: isDark ? Colors.grey[400] : Colors.grey[600],
-                                          fontSize: 14,
+                                          fontSize: 13,
+                                          color: Colors.red[700],
                                         ),
                                       ),
-                                      decoration: InputDecoration(
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: BorderSide(
-                                            color: const Color(0xFF2563EB).withOpacity(0.3),
-                                          ),
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: BorderSide(
-                                            color: const Color(0xFF2563EB).withOpacity(0.3),
-                                          ),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                          borderSide: const BorderSide(
-                                            color: Color(0xFF2563EB),
-                                            width: 2,
-                                          ),
-                                        ),
-                                        filled: true,
-                                        fillColor: isDark 
-                                            ? const Color(0xFF1E293B) 
-                                            : Colors.white,
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                      ),
-                                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                                      style: TextStyle(
-                                        color: isDark ? Colors.white : Colors.black,
-                                        fontSize: 14,
-                                      ),
-                                      isExpanded: true,
-                                      menuMaxHeight: 250,
-                                      selectedItemBuilder: (BuildContext context) {
-                                        // This builder creates the display for the selected officer (when dropdown is closed)
-                                        return _selectedCrimeType!.availableOfficers.map((officer) {
-                                          return Container(
-                                            alignment: Alignment.centerLeft,
-                                            constraints: const BoxConstraints(maxWidth: 200),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Container(
-                                                  width: 18,
-                                                  height: 18,
-                                                  decoration: BoxDecoration(
-                                                    color: const Color(0xFF2563EB).withOpacity(0.1),
-                                                    borderRadius: BorderRadius.circular(9),
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.person,
-                                                    color: Color(0xFF2563EB),
-                                                    size: 12,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Flexible(
-                                                  child: Text(
-                                                    officer.displayName,
-                                                    style: TextStyle(
-                                                      fontWeight: FontWeight.w600,
-                                                      fontSize: 13,
-                                                      color: isDark ? Colors.white : Colors.black87,
-                                                    ),
-                                                    overflow: TextOverflow.ellipsis,
-                                                    maxLines: 1,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        }).toList();
-                                      },
-                                      items: _selectedCrimeType!.availableOfficers.map((officer) {
-                                        Color workloadColor = Colors.green;
-                                        if ((officer.activeCases ?? 0) > 7) {
-                                          workloadColor = Colors.red;
-                                        } else if ((officer.activeCases ?? 0) > 3) {
-                                          workloadColor = Colors.orange;
-                                        }
-                                        
-                                        return DropdownMenuItem(
-                                          value: officer,
-                                          child: Container(
-                                            width: double.infinity,
-                                            constraints: const BoxConstraints(maxWidth: 280),
-                                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Container(
-                                                  width: 32,
-                                                  height: 32,
-                                                  decoration: BoxDecoration(
-                                                    color: const Color(0xFF2563EB).withOpacity(0.1),
-                                                    borderRadius: BorderRadius.circular(16),
-                                                  ),
-                                                  child: Icon(
-                                                    Icons.person,
-                                                    color: const Color(0xFF2563EB),
-                                                    size: 16,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Flexible(
-                                                  child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      Text(
-                                                        officer.displayName,
-                                                        style: TextStyle(
-                                                          fontWeight: FontWeight.w600,
-                                                          fontSize: 13,
-                                                          color: isDark ? Colors.white : Colors.black87,
-                                                        ),
-                                                        overflow: TextOverflow.ellipsis,
-                                                        maxLines: 1,
-                                                      ),
-                                                      const SizedBox(height: 2),
-                                                      Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          Container(
-                                                            width: 6,
-                                                            height: 6,
-                                                            decoration: BoxDecoration(
-                                                              color: workloadColor,
-                                                              shape: BoxShape.circle,
-                                                            ),
-                                                          ),
-                                                          const SizedBox(width: 4),
-                                                          Flexible(
-                                                            child: Text(
-                                                              officer.workloadDescription,
-                                                              style: TextStyle(
-                                                                fontSize: 11,
-                                                                color: workloadColor,
-                                                                fontWeight: FontWeight.w500,
-                                                              ),
-                                                              overflow: TextOverflow.ellipsis,
-                                                              maxLines: 1,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      }).toList(),
-                                      onChanged: _onOfficerSelected,
                                     ),
                                   ],
                                 ),
                               ),
                             ],
                             
-                            // Show current selection
-                            if (_officerAssignmentMode == 'auto' && _selectedCrimeType!.recommendedOfficer != null) ...[
+                            // Show selected officer info
+                            if (_selectedOfficer != null) ...[
                               const SizedBox(height: 12),
                               Container(
                                 padding: const EdgeInsets.all(12),
@@ -1304,7 +1077,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                                   border: Border.all(color: Colors.green.withOpacity(0.3)),
                                 ),
                                 child: Row(
-                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Container(
                                       width: 28,
@@ -1313,116 +1085,28 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                                         color: Colors.green.withOpacity(0.2),
                                         borderRadius: BorderRadius.circular(14),
                                       ),
-                                      child: const Icon(Icons.auto_awesome, color: Colors.green, size: 16),
+                                      child: const Icon(Icons.check, color: Colors.green, size: 16),
                                     ),
                                     const SizedBox(width: 8),
-                                    Flexible(
+                                    Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                'Auto-assigned: ',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: Colors.green[600],
-                                                ),
-                                              ),
-                                              Flexible(
-                                                child: Text(
-                                                  _selectedCrimeType!.recommendedOfficer!.displayName,
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.green[700],
-                                                  ),
-                                                  overflow: TextOverflow.ellipsis,
-                                                  maxLines: 1,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 2),
                                           Text(
-                                            _selectedCrimeType!.recommendedOfficer!.workloadDescription,
+                                            'Selected Officer: ${_selectedOfficer!.displayName}',
                                             style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.green[600],
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.green[700],
                                             ),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ] else if (_officerAssignmentMode == 'manual' && _selectedOfficer != null) ...[
-                              const SizedBox(height: 12),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      width: 28,
-                                      height: 28,
-                                      decoration: BoxDecoration(
-                                        color: Colors.blue.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: const Icon(Icons.person, color: Colors.blue, size: 16),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                'Selected: ',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: Colors.blue[600],
-                                                ),
-                                              ),
-                                              Flexible(
-                                                child: Text(
-                                                  _selectedOfficer!.displayName,
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.blue[700],
-                                                  ),
-                                                  overflow: TextOverflow.ellipsis,
-                                                  maxLines: 1,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 2),
                                           Text(
                                             _selectedOfficer!.workloadDescription,
                                             style: TextStyle(
                                               fontSize: 10,
-                                              color: Colors.blue[600],
+                                              color: Colors.green[600],
                                             ),
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
                                           ),
                                         ],
                                       ),

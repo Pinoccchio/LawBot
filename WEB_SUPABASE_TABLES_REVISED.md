@@ -1,10 +1,21 @@
-# Revised Web App Supabase Tables - Officer Count Fix
+# Simplified Web App Supabase Tables - Basic Availability Only
 
-This is a revised database schema that fixes the officer count issues and creates a more robust relationship structure.
+This is a simplified database schema that focuses on basic officer availability management without complex workload tracking, leave management, or specializations.
 
 **⚠️ PREREQUISITE**: Run DOCUMENTATION.md database setup first to create the `update_updated_at_column()` function.
 
 **⚠️ IMPORTANT**: This is a complete schema revision. Each table will be dropped and recreated individually.
+
+**🔄 SIMPLIFIED APPROACH**: Removed complex availability features:
+- ❌ Max concurrent cases and workload percentage tracking
+- ❌ Specializations and skill level management  
+- ❌ Leave management with dates, types, and reasons
+- ✅ Simple availability status: available/busy/overloaded/unavailable
+
+**⚠️ TROUBLESHOOTING**: If you get "Failed to fetch" errors when creating officers:
+1. Ensure the database has been updated with this simplified schema
+2. Drop and recreate the `pnp_officer_profiles` table using the schema below
+3. The API now only sends basic fields, so complex fields must be removed from database constraints
 
 ## 1. Admin Profiles Table (Unchanged)
 
@@ -119,13 +130,13 @@ CREATE INDEX idx_pnp_unit_crime_types_unit_id ON pnp_unit_crime_types(unit_id);
 CREATE INDEX idx_pnp_unit_crime_types_crime_type ON pnp_unit_crime_types(crime_type);
 ```
 
-## 4. PNP Officer Profiles Table (Revised)
+## 4. PNP Officer Profiles Table (Enhanced with Availability Tracking)
 
 ```sql
 -- Drop existing table and recreate
 DROP TABLE IF EXISTS pnp_officer_profiles CASCADE;
 
--- Create pnp_officer_profiles table with proper foreign key from start
+-- Create pnp_officer_profiles table with comprehensive availability tracking
 CREATE TABLE IF NOT EXISTS pnp_officer_profiles (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   firebase_uid TEXT UNIQUE NOT NULL,
@@ -154,12 +165,23 @@ CREATE TABLE IF NOT EXISTS pnp_officer_profiles (
     'Region IX - Zamboanga Peninsula', 'Region X - Northern Mindanao', 'Region XI - Davao Region',
     'Region XII - SOCCSKSARGEN', 'Region XIII - Caraga', 'BARMM - Bangsamoro Autonomous Region'
   )),
+  
+  -- Enhanced Status and Availability Tracking
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'on_leave', 'suspended', 'retired')),
-  -- Performance metrics
+  availability_status TEXT DEFAULT 'available' CHECK (availability_status IN ('available', 'busy', 'overloaded', 'unavailable')),
+  
+  
+  -- Performance metrics (simplified)
   total_cases INTEGER DEFAULT 0 CHECK (total_cases >= 0),
   active_cases INTEGER DEFAULT 0 CHECK (active_cases >= 0), 
   resolved_cases INTEGER DEFAULT 0 CHECK (resolved_cases >= 0),
   success_rate DECIMAL(5,2) DEFAULT 0.00 CHECK (success_rate BETWEEN 0 AND 100),
+  
+  -- Last Activity Tracking
+  last_login_at TIMESTAMP WITH TIME ZONE,
+  last_case_assignment_at TIMESTAMP WITH TIME ZONE,
+  last_status_update_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+  
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
@@ -171,6 +193,8 @@ CREATE INDEX idx_pnp_officer_profiles_badge_number ON pnp_officer_profiles(badge
 CREATE INDEX idx_pnp_officer_profiles_unit_id ON pnp_officer_profiles(unit_id);
 CREATE INDEX idx_pnp_officer_profiles_region ON pnp_officer_profiles(region);
 CREATE INDEX idx_pnp_officer_profiles_status ON pnp_officer_profiles(status);
+CREATE INDEX idx_pnp_officer_profiles_availability_status ON pnp_officer_profiles(availability_status);
+CREATE INDEX idx_pnp_officer_profiles_active_cases ON pnp_officer_profiles(active_cases);
 
 -- Apply updated_at trigger
 CREATE TRIGGER update_pnp_officer_profiles_updated_at
@@ -289,11 +313,46 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Simplified function to update officer availability status based on basic status only
+CREATE OR REPLACE FUNCTION update_officer_availability_status()
+RETURNS TRIGGER AS $$
+DECLARE
+  new_availability_status TEXT;
+BEGIN
+  -- Simple availability logic based on officer status
+  IF NEW.status != 'active' THEN
+    new_availability_status := 'unavailable';
+  ELSE
+    -- Keep the manually set availability status for active officers
+    new_availability_status := COALESCE(NEW.availability_status, 'available');
+  END IF;
+  
+  -- Update availability status if it changed and officer status changed
+  IF TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status THEN
+    NEW.availability_status := new_availability_status;
+    NEW.last_status_update_at := TIMEZONE('utc', NOW());
+    
+    RAISE NOTICE 'Officer % availability status updated to % due to status change', NEW.full_name, new_availability_status;
+  ELSIF TG_OP = 'INSERT' THEN
+    NEW.availability_status := COALESCE(NEW.availability_status, 'available');
+    NEW.last_status_update_at := TIMEZONE('utc', NOW());
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Create trigger to keep unit officer counts updated
 CREATE TRIGGER update_unit_officer_count_trigger
   AFTER INSERT OR UPDATE OR DELETE ON pnp_officer_profiles
   FOR EACH ROW
   EXECUTE FUNCTION update_unit_officer_count();
+
+-- Create trigger to automatically update officer availability status
+CREATE TRIGGER update_officer_availability_status_trigger
+  BEFORE INSERT OR UPDATE ON pnp_officer_profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION update_officer_availability_status();
 ```
 
 ## 7. Default Unit Data (For Testing)
@@ -386,21 +445,39 @@ ORDER BY u.unit_name;
 1. **Removed Dual Unit Fields**: Eliminated confusing `unit` text field, now only using `unit_id` foreign key
 2. **Made Unit Assignment Required**: `unit_id` is now `NOT NULL` ensuring every officer must be assigned
 3. **Enhanced Constraints**: Added proper check constraints and unique constraints
-4. **Better Indexing**: Optimized indexes for common queries
+4. **Better Indexing**: Optimized indexes for common queries including availability status
 
-### 🛠️ **Trigger Improvements**
-1. **Enhanced Logging**: Triggers now use `RAISE NOTICE` for debugging
-2. **Active Officer Filtering**: Only counts officers with `status = 'active'`
+### 🚦 **Simplified Officer Availability Tracking**
+1. **Dual Status System**: Separate `status` (active/on_leave/suspended/retired) and `availability_status` (available/busy/overloaded/unavailable)
+2. **Manual Availability Control**: Officers can manually set their availability status
+3. **Simple Status Logic**: Automatic status updates only when officer status changes (non-active = unavailable)
+4. **Activity Monitoring**: Last status update timestamps for tracking changes
+
+### 🛠️ **Simplified Trigger System**
+1. **Officer Count Triggers**: Enhanced with detailed logging and active officer filtering
+2. **Availability Status Triggers**: Simple status updates based on officer status changes only
 3. **Comprehensive Coverage**: Handles INSERT, UPDATE, DELETE operations properly
-4. **Error Prevention**: Better null checking and edge case handling
+4. **Manual Control**: Officers maintain full control over their availability status
 
-### 📊 **Data Integrity**
+### 📊 **Advanced Data Integrity**
 1. **Default Test Data**: Pre-populated units and crime types for immediate testing
 2. **Unique Constraints**: Prevents duplicate units and crime type assignments
 3. **Proper References**: All foreign keys are properly defined with cascading rules
-4. **Validation**: Enhanced check constraints for data quality
+4. **Enhanced Validation**: Check constraints for availability status, leave types, workload limits
+5. **GIN Indexes**: Optimized searching for specializations array field
 
-### 🎯 **API Simplification**
-With this schema, the officer creation API becomes much simpler - just look up `unit_id` and insert the officer. The triggers will automatically handle the counting!
+### 🎯 **Simple Officer Assignment**
+With this simplified schema:
+- **Flutter App**: Can query available officers based on availability status
+- **Web Admin**: Can view and manage basic officer availability
+- **Manual Control**: Officers can set their own availability status as needed
+- **Simple Logic**: Clear separation between officer status and availability status
+- **Direct Updates**: Availability status updates only when manually changed or status changes
 
-This revised schema should completely solve the officer count issue and provide a much more robust foundation for the application.
+### 🔧 **API Enhancement Benefits**
+1. **Simple Filtering**: Apps can filter by `availability_status = 'available'` for available officers
+2. **Manual Control**: Officers have full control over their availability status
+3. **Performance Tracking**: Basic metrics for officer performance and case assignment
+4. **Easy Integration**: Simplified data structure for easier app development
+
+This simplified revision provides a clean foundation for basic officer availability management across both the Flutter mobile app and Next.js web application.

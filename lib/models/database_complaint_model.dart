@@ -31,9 +31,12 @@ class DatabaseCrimeType {
   String get assignedUnitName => assignedUnit.unitName;
   String get assignedUnitCode => assignedUnit.unitCode;
   
+  // Officers are available for user selection
+  int get availableOfficerCount => availableOfficers.length;
+  
   PNPOfficer? get recommendedOfficer {
     if (availableOfficers.isEmpty) return null;
-    // Return officer with least active cases
+    // Return officer with least active cases for recommendation
     availableOfficers.sort((a, b) => (a.activeCases ?? 0).compareTo(b.activeCases ?? 0));
     return availableOfficers.first;
   }
@@ -207,7 +210,7 @@ class DatabaseComplaint {
       priority: priority,
       riskScore: riskScore,
       assignedUnit: crimeType.assignedUnit,
-      assignedOfficer: crimeType.recommendedOfficer,
+      assignedOfficer: null, // Officer assignment handled by admin
       createdAt: now,
       updatedAt: now,
       statusHistory: [

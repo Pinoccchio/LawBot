@@ -55,9 +55,9 @@ class PNPUnitsService {
         final unit = PNPUnit.fromJson(unitData);
         print('📋 Processing unit: ${unit.unitName} with ${unit.crimeTypes.length} crime types');
         
-        // Get officers for this unit
-        final officers = await getUnitOfficers(unit.id);
-        print('👮 Found ${officers.length} active officers for ${unit.unitName}');
+        // Get AVAILABLE officers for this unit (not just active ones)
+        final officers = await getAvailableUnitOfficers(unit.id);
+        print('👮 Found ${officers.length} available officers for ${unit.unitName}');
         
         // Create a CrimeTypeWithUnit for each crime type in this unit
         for (String crimeType in unit.crimeTypes) {
@@ -95,7 +95,28 @@ class PNPUnitsService {
     }
   }
 
-  // Get available officers for case assignment
+  // Get AVAILABLE officers for a specific unit (simplified)
+  Future<List<PNPOfficer>> getAvailableUnitOfficers(String unitId) async {
+    try {
+      final response = await _supabase
+          .from('pnp_officer_profiles')
+          .select('*')
+          .eq('unit_id', unitId)
+          .eq('status', 'active') // Must be active status
+          .order('full_name'); // Simple alphabetical order
+
+      final officers = (response as List).map((officer) => PNPOfficer.fromJson(officer)).toList();
+      
+      print('👮‍♂️ Unit $unitId: ${officers.length} officers available for assignment');
+      
+      return officers;
+    } catch (e) {
+      print('Error fetching available unit officers: $e');
+      return [];
+    }
+  }
+
+  // Get available officers for case assignment (simplified)
   Future<List<PNPOfficer>> getAvailableOfficersForCrimeType(String crimeType) async {
     try {
       final response = await _supabase
@@ -104,12 +125,22 @@ class PNPUnitsService {
             pnp_units!inner(
               pnp_officer_profiles(
                 id,
+                firebase_uid,
+                email,
                 full_name,
+                phone_number,
                 badge_number,
                 rank,
+                unit_id,
+                region,
                 status,
+                availability_status,
+                total_cases,
                 active_cases,
-                total_cases
+                resolved_cases,
+                success_rate,
+                created_at,
+                updated_at
               )
             )
           ''')
@@ -128,8 +159,10 @@ class PNPUnitsService {
         officers.addAll(unitOfficers);
       }
 
-      // Sort by workload (officers with fewer active cases first)
-      officers.sort((a, b) => (a.activeCases ?? 0).compareTo(b.activeCases ?? 0));
+      // Simple sort by name (alphabetical)
+      officers.sort((a, b) => a.fullName.compareTo(b.fullName));
+      
+      print('🔍 Found ${officers.length} available officers for $crimeType crime type');
       
       return officers;
     } catch (e) {
@@ -256,6 +289,7 @@ class PNPOfficer {
   final String unitId;
   final String region;
   final String status;
+  final String? availabilityStatus;
   final int? totalCases;
   final int? activeCases;
   final int? resolvedCases;
@@ -274,6 +308,7 @@ class PNPOfficer {
     required this.unitId,
     required this.region,
     required this.status,
+    this.availabilityStatus,
     this.totalCases,
     this.activeCases,
     this.resolvedCases,
@@ -294,6 +329,7 @@ class PNPOfficer {
       unitId: json['unit_id'],
       region: json['region'],
       status: json['status'] ?? 'active',
+      availabilityStatus: json['availability_status'] ?? 'available',
       totalCases: json['total_cases'],
       activeCases: json['active_cases'],
       resolvedCases: json['resolved_cases'],
@@ -307,11 +343,48 @@ class PNPOfficer {
   
   String get workloadDescription {
     final active = activeCases ?? 0;
-    final total = totalCases ?? 0;
+    
+    // Use availability status if available
+    if (availabilityStatus != null) {
+      switch (availabilityStatus!) {
+        case 'available':
+          return 'Available ($active active cases)';
+        case 'busy':
+          return 'Busy ($active active cases)';
+        case 'overloaded':
+          return 'Overloaded ($active active cases)';
+        case 'unavailable':
+          return 'Unavailable';
+        default:
+          break;
+      }
+    }
+    
+    // Fallback to simple logic if availability status not available
     if (active == 0) return 'Available';
     if (active <= 3) return 'Light workload ($active active cases)';
     if (active <= 7) return 'Moderate workload ($active active cases)';
     return 'Heavy workload ($active active cases)';
+  }
+  
+  bool get isAvailableForAssignment {
+    return status == 'active' && 
+           (availabilityStatus == 'available' || availabilityStatus == 'busy');
+  }
+  
+  String get availabilityStatusDisplay {
+    switch (availabilityStatus ?? 'available') {
+      case 'available':
+        return '🟢 Available';
+      case 'busy':
+        return '🟡 Busy';
+      case 'overloaded':
+        return '🔴 Overloaded';
+      case 'unavailable':
+        return '⚫ Unavailable';
+      default:
+        return '❓ Unknown';
+    }
   }
 }
 
