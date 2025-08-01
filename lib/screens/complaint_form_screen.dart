@@ -9,6 +9,8 @@ import '../services/pnp_units_service.dart';
 import '../providers/theme_provider.dart';
 import '../utils/philippine_time.dart';
 import '../services/database_service.dart';
+import '../models/dynamic_field_config.dart';
+import '../services/dynamic_field_service.dart';
 
 class ComplaintFormScreen extends StatefulWidget {
   const ComplaintFormScreen({super.key});
@@ -19,16 +21,34 @@ class ComplaintFormScreen extends StatefulWidget {
 
 class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _descriptionController = TextEditingController();
+  final _descriptionController = TextEditingController(); 
   final _fullNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _incidentLocationController = TextEditingController();
+  final _platformWebsiteController = TextEditingController();
+  final _accountReferenceController = TextEditingController();
+  final _financialLossController = TextEditingController();
+  final _suspectNameController = TextEditingController();
+  final _suspectContactController = TextEditingController();
+  final _suspectDetailsController = TextEditingController();
+  
+  // Additional dynamic field controllers
+  final _systemDetailsController = TextEditingController();
+  final _technicalInfoController = TextEditingController();
+  final _vulnerabilityDetailsController = TextEditingController();
+  final _securityLevelController = TextEditingController();
+  final _targetInfoController = TextEditingController();
+  final _attackVectorController = TextEditingController();
+  final _contentDescriptionController = TextEditingController();
+  final _impactAssessmentController = TextEditingController();
   final _databaseService = DatabaseService();
   final _pnpUnitsService = PNPUnitsService();
 
   // Dynamic crime types from database
   List<DatabaseCrimeType> _availableCrimeTypes = [];
   DatabaseCrimeType? _selectedCrimeType;
+  DatabaseCrimeType? _previousCrimeType;
   PNPOfficer? _selectedOfficer;
   
   final List<EvidenceFile> _evidenceFiles = [];
@@ -36,6 +56,19 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   bool _isLoadingCrimeTypes = true;
   DateTime? _selectedIncidentDateTime;
   String? _crimeTypesError;
+  String _selectedSuspectRelationship = 'Unknown';
+  
+  // Suspect relationship options
+  final List<String> _suspectRelationshipOptions = [
+    'Unknown',
+    'Acquaintance',
+    'Friend/Ex-friend',
+    'Family Member',
+    'Ex-partner/Romantic',
+    'Colleague/Classmate',
+    'Online Contact Only',
+    'Complete Stranger',
+  ];
 
   @override
   void initState() {
@@ -46,7 +79,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _emailController.addListener(() => setState(() {}));
     _phoneController.addListener(() => setState(() {}));
     
-    // Load crime types from database
+    // Load user profile data and crime types
+    _loadUserProfile();
     _loadCrimeTypes();
   }
 
@@ -56,6 +90,21 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _fullNameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _incidentLocationController.dispose();
+    _platformWebsiteController.dispose();
+    _accountReferenceController.dispose();
+    _financialLossController.dispose();
+    _suspectNameController.dispose();
+    _suspectContactController.dispose();
+    _suspectDetailsController.dispose();
+    _systemDetailsController.dispose();
+    _technicalInfoController.dispose();
+    _vulnerabilityDetailsController.dispose();
+    _securityLevelController.dispose();
+    _targetInfoController.dispose();
+    _attackVectorController.dispose();
+    _contentDescriptionController.dispose();
+    _impactAssessmentController.dispose();
     super.dispose();
   }
 
@@ -123,12 +172,106 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     }
   }
 
-  // Handle crime type selection and reset officer selection
+  // Load user profile data and pre-fill form
+  Future<void> _loadUserProfile() async {
+    print('👤 Loading user profile for complaint form...');
+    try {
+      final userProfile = await _databaseService.getUserProfile();
+      
+      if (userProfile != null) {
+        print('✅ User profile loaded successfully');
+        
+        // Pre-fill form fields with user data
+        setState(() {
+          _fullNameController.text = userProfile['full_name'] ?? '';
+          _emailController.text = userProfile['email'] ?? '';
+          _phoneController.text = userProfile['phone_number'] ?? '';
+        });
+        
+        print('📝 Form pre-filled with user data: ${userProfile['full_name']}, ${userProfile['email']}, ${userProfile['phone_number']}');
+      } else {
+        print('⚠️ No user profile found');
+      }
+    } catch (e) {
+      print('❌ Error loading user profile: $e');
+      // Don't show error to user, just continue with empty form
+    }
+  }
+
+  // Handle crime type selection and manage dynamic fields
   void _onCrimeTypeSelected(DatabaseCrimeType? crimeType) {
+    // Check if we need to update form state due to field changes
+    final needsUpdate = DynamicFieldService.requiresFormUpdate(_previousCrimeType, crimeType);
+    
+    if (needsUpdate) {
+      // Clear fields that are no longer visible
+      final fieldsToClear = DynamicFieldService.getFieldsToClear(_previousCrimeType, crimeType);
+      _clearFieldControllers(fieldsToClear);
+    }
+    
     setState(() {
+      _previousCrimeType = _selectedCrimeType;
       _selectedCrimeType = crimeType;
       _selectedOfficer = null; // Reset officer selection when crime type changes
     });
+  }
+  
+  // Clear controllers for fields that are no longer visible
+  void _clearFieldControllers(List<ComplaintField> fieldsToClear) {
+    for (final field in fieldsToClear) {
+      switch (field) {
+        case ComplaintField.incidentLocation:
+          _incidentLocationController.clear();
+          break;
+        case ComplaintField.platformWebsite:
+          _platformWebsiteController.clear();
+          break;
+        case ComplaintField.accountReference:
+          _accountReferenceController.clear();
+          break;
+        case ComplaintField.financialLoss:
+          _financialLossController.clear();
+          break;
+        case ComplaintField.suspectName:
+          _suspectNameController.clear();
+          break;
+        case ComplaintField.suspectRelationship:
+          _selectedSuspectRelationship = 'Unknown';
+          break;
+        case ComplaintField.suspectContact:
+          _suspectContactController.clear();
+          break;
+        case ComplaintField.suspectDetails:
+          _suspectDetailsController.clear();
+          break;
+        case ComplaintField.systemDetails:
+          _systemDetailsController.clear();
+          break;
+        case ComplaintField.technicalInfo:
+          _technicalInfoController.clear();
+          break;
+        case ComplaintField.vulnerabilityDetails:
+          _vulnerabilityDetailsController.clear();
+          break;
+        case ComplaintField.securityLevel:
+          _securityLevelController.clear();
+          break;
+        case ComplaintField.targetInfo:
+          _targetInfoController.clear();
+          break;
+        case ComplaintField.attackVector:
+          _attackVectorController.clear();
+          break;
+        case ComplaintField.contentDescription:
+          _contentDescriptionController.clear();
+          break;
+        case ComplaintField.impactAssessment:
+          _impactAssessmentController.clear();
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   // Handle officer selection
@@ -350,6 +493,12 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         return;
       }
 
+      // Parse optional financial loss for priority calculation
+      double? financialLoss;
+      if (_financialLossController.text.trim().isNotEmpty) {
+        financialLoss = double.tryParse(_financialLossController.text.trim());
+      }
+
       // Create dynamic complaint object
       final complaint = DatabaseComplaint.create(
         userId: currentUser.uid,
@@ -360,6 +509,10 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         email: _emailController.text.trim(),
         phoneNumber: _phoneController.text.trim(),
         incidentDateTime: _selectedIncidentDateTime!,
+        incidentLocation: _incidentLocationController.text.trim().isNotEmpty 
+            ? _incidentLocationController.text.trim() 
+            : null,
+        estimatedFinancialLoss: financialLoss,
       );
 
       // Submit to database service (need to create this method)
@@ -420,10 +573,63 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         'incident_date_time': complaint.incidentDateTime.toUtc().toIso8601String(),
         'incident_location': complaint.incidentLocation,
         'estimated_loss': complaint.estimatedFinancialLoss,
+        
+        // Dynamic fields
+        'platform_website': _platformWebsiteController.text.trim().isNotEmpty 
+            ? _platformWebsiteController.text.trim() 
+            : null,
+        'account_reference': _accountReferenceController.text.trim().isNotEmpty 
+            ? _accountReferenceController.text.trim() 
+            : null,
+        'suspect_name': _suspectNameController.text.trim().isNotEmpty 
+            ? _suspectNameController.text.trim() 
+            : null,
+        'suspect_relationship': _selectedSuspectRelationship != 'Unknown' 
+            ? _selectedSuspectRelationship 
+            : null,
+        'suspect_contact': _suspectContactController.text.trim().isNotEmpty 
+            ? _suspectContactController.text.trim() 
+            : null,
+        'suspect_details': _suspectDetailsController.text.trim().isNotEmpty 
+            ? _suspectDetailsController.text.trim() 
+            : null,
+        'system_details': _systemDetailsController.text.trim().isNotEmpty 
+            ? _systemDetailsController.text.trim() 
+            : null,
+        'technical_info': _technicalInfoController.text.trim().isNotEmpty 
+            ? _technicalInfoController.text.trim() 
+            : null,
+        'vulnerability_details': _vulnerabilityDetailsController.text.trim().isNotEmpty 
+            ? _vulnerabilityDetailsController.text.trim() 
+            : null,
+        'attack_vector': _attackVectorController.text.trim().isNotEmpty 
+            ? _attackVectorController.text.trim() 
+            : null,
+        'security_level': _securityLevelController.text.trim().isNotEmpty 
+            ? _securityLevelController.text.trim() 
+            : null,
+        'target_info': _targetInfoController.text.trim().isNotEmpty 
+            ? _targetInfoController.text.trim() 
+            : null,
+        'impact_assessment': _impactAssessmentController.text.trim().isNotEmpty 
+            ? _impactAssessmentController.text.trim() 
+            : null,
+        'content_description': _contentDescriptionController.text.trim().isNotEmpty 
+            ? _contentDescriptionController.text.trim() 
+            : null,
+        
+        // Status and priority
         'status': 'Pending',
         'priority': complaint.priority,
         'risk_score': complaint.riskScore,
+        
+        // Officer and unit assignment (FIXED: Now includes all required fields)
         'assigned_unit': complaint.assignedUnit.unitName,
+        'unit_id': complaint.assignedUnit.id,
+        'assigned_officer': _selectedOfficer?.fullName,
+        'assigned_officer_id': _selectedOfficer?.id,
+        
+        // Timestamps
         'created_at': PhilippineTime.toUtc(now).toIso8601String(),
         'updated_at': PhilippineTime.toUtc(now).toIso8601String(),
       };
@@ -1187,6 +1393,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
               
               const SizedBox(height: 24),
               
+              // Dynamic Fields Section - fields change based on selected crime type
+              ..._buildDynamicSections(isDark),
+              
+              const SizedBox(height: 24),
+              
               // Digital Evidence Section
               _buildSectionCard(
                 title: 'Digital Evidence',
@@ -1480,6 +1691,547 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         ),
       ),
     );
+  }
+
+  // Build dynamic field widget based on field type and configuration
+  Widget? _buildDynamicField(ComplaintField field, bool isDark) {
+    // Check if field should be visible for current crime type
+    if (!DynamicFieldService.isFieldVisible(field, _selectedCrimeType)) {
+      return null;
+    }
+
+    final config = DynamicFieldService.getFieldConfig(field);
+    final label = DynamicFieldService.getFieldLabel(field);
+    final hint = DynamicFieldService.getFieldHint(field);
+    final description = DynamicFieldService.getFieldDescription(field);
+
+    // Return appropriate widget based on field type
+    switch (field) {
+      case ComplaintField.incidentLocation:
+        return _buildTextFormField(
+          controller: _incidentLocationController,
+          label: label,
+          hint: hint ?? 'Where did this occur? (e.g., Manila, Online platform, etc.)',
+          icon: Icons.location_on_outlined,
+          isDark: isDark,
+          description: description,
+        );
+      case ComplaintField.platformWebsite:
+        return _buildTextFormField(
+          controller: _platformWebsiteController,
+          label: label,
+          hint: hint ?? 'Platform or website involved (e.g., Facebook, GCash, etc.)',
+          icon: Icons.language_outlined,
+          isDark: isDark,
+          description: description,
+        );
+      case ComplaintField.accountReference:
+        return _buildTextFormField(
+          controller: _accountReferenceController,
+          label: label,
+          hint: hint ?? 'Account, transaction, or reference number (if any)',
+          icon: Icons.numbers_outlined,
+          isDark: isDark,
+          description: description,
+        );
+      case ComplaintField.financialLoss:
+        return _buildFinancialLossField(isDark, description);
+      case ComplaintField.suspectName:
+        return _buildTextFormField(
+          controller: _suspectNameController,
+          label: label,
+          hint: hint ?? 'Real name, nickname, or username',
+          icon: Icons.person_outline,
+          isDark: isDark,
+          description: description,
+        );
+      case ComplaintField.suspectRelationship:
+        return _buildSuspectRelationshipField(isDark, description);
+      case ComplaintField.suspectContact:
+        return _buildTextFormField(
+          controller: _suspectContactController,
+          label: label,
+          hint: hint ?? 'Phone, email, social media handle',
+          icon: Icons.contact_phone_outlined,
+          isDark: isDark,
+          description: description,
+        );
+      case ComplaintField.suspectDetails:
+        return _buildTextAreaField(
+          controller: _suspectDetailsController,
+          label: label,
+          hint: hint ?? 'Physical description, location, other details',
+          icon: Icons.description_outlined,
+          isDark: isDark,
+          description: description,
+          maxLines: 3,
+        );
+      case ComplaintField.systemDetails:
+        return _buildTextAreaField(
+          controller: _systemDetailsController,
+          label: label,
+          hint: hint ?? 'Operating system, device type, software affected',
+          icon: Icons.computer_outlined,
+          isDark: isDark,
+          description: description,
+          maxLines: 3,
+        );
+      case ComplaintField.technicalInfo:
+        return _buildTextAreaField(
+          controller: _technicalInfoController,
+          label: label,
+          hint: hint ?? 'Error messages, file names, network details',
+          icon: Icons.code_outlined,
+          isDark: isDark,
+          description: description,
+          maxLines: 4,
+        );
+      case ComplaintField.vulnerabilityDetails:
+        return _buildTextAreaField(
+          controller: _vulnerabilityDetailsController,
+          label: label,
+          hint: hint ?? 'How the system was compromised',
+          icon: Icons.shield_outlined,
+          isDark: isDark,
+          description: description,
+          maxLines: 3,
+        );
+      case ComplaintField.securityLevel:
+        return _buildTextFormField(
+          controller: _securityLevelController,
+          label: label,
+          hint: hint ?? 'Public, Confidential, Restricted, etc.',
+          icon: Icons.security_outlined,
+          isDark: isDark,
+          description: description,
+        );
+      case ComplaintField.targetInfo:
+        return _buildTextAreaField(
+          controller: _targetInfoController,
+          label: label,
+          hint: hint ?? 'Who or what was targeted',
+          icon: Icons.gps_fixed_outlined,
+          isDark: isDark,
+          description: description,
+          maxLines: 3,
+        );
+      case ComplaintField.attackVector:
+        return _buildTextAreaField(
+          controller: _attackVectorController,
+          label: label,
+          hint: hint ?? 'How the attack was executed',
+          icon: Icons.track_changes_outlined,
+          isDark: isDark,
+          description: description,
+          maxLines: 3,
+        );
+      case ComplaintField.contentDescription:
+        return _buildTextAreaField(
+          controller: _contentDescriptionController,
+          label: label,
+          hint: hint ?? 'Description of illegal content (no explicit details)',
+          icon: Icons.report_outlined,
+          isDark: isDark,
+          description: description,
+          maxLines: 3,
+        );
+      case ComplaintField.impactAssessment:
+        return _buildTextAreaField(
+          controller: _impactAssessmentController,
+          label: label,
+          hint: hint ?? 'How has this affected you or your organization?',
+          icon: Icons.assessment_outlined,
+          isDark: isDark,
+          description: description,
+          maxLines: 4,
+        );
+      default:
+        return null;
+    }
+  }
+
+  // Build standard text form field
+  Widget _buildTextFormField({
+    required TextEditingController controller,
+    required String label,
+    String? hint,
+    IconData? icon,
+    required bool isDark,
+    String? description,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (description != null) ...[
+          Text(
+            description,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        TextFormField(
+          controller: controller,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black,
+          ),
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            hintStyle: TextStyle(
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            filled: true,
+            fillColor: isDark 
+                ? const Color(0xFF1E293B) 
+                : Colors.grey[50],
+            prefixIcon: icon != null ? Icon(
+              icon,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ) : null,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build text area field (multiline)
+  Widget _buildTextAreaField({
+    required TextEditingController controller,
+    required String label,
+    String? hint,
+    IconData? icon,
+    required bool isDark,
+    String? description,
+    int maxLines = 3,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (description != null) ...[
+          Text(
+            description,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        TextFormField(
+          controller: controller,
+          maxLines: maxLines,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black,
+          ),
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            hintStyle: TextStyle(
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            filled: true,
+            fillColor: isDark 
+                ? const Color(0xFF1E293B) 
+                : Colors.grey[50],
+            prefixIcon: icon != null ? Icon(
+              icon,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ) : null,
+            alignLabelWithHint: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build financial loss field with currency formatting
+  Widget _buildFinancialLossField(bool isDark, String? description) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (description != null) ...[
+          Text(
+            description,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        TextFormField(
+          controller: _financialLossController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+          ],
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black,
+          ),
+          decoration: InputDecoration(
+            labelText: 'Financial Loss Amount (₱)',
+            hintText: '0.00',
+            hintStyle: TextStyle(
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            filled: true,
+            fillColor: isDark 
+                ? const Color(0xFF1E293B) 
+                : Colors.grey[50],
+            prefixIcon: Icon(
+              Icons.attach_money_outlined,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ),
+            prefixText: '₱ ',
+            prefixStyle: TextStyle(
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Build suspect relationship dropdown field
+  Widget _buildSuspectRelationshipField(bool isDark, String? description) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (description != null) ...[
+          Text(
+            description,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        DropdownButtonFormField<String>(
+          value: _selectedSuspectRelationship,
+          decoration: InputDecoration(
+            labelText: 'Relationship to Suspect',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            filled: true,
+            fillColor: isDark 
+                ? const Color(0xFF1E293B) 
+                : Colors.grey[50],
+          ),
+          dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+          style: TextStyle(
+            color: isDark ? Colors.white : Colors.black,
+          ),
+          items: _suspectRelationshipOptions.map((relationship) {
+            return DropdownMenuItem<String>(
+              value: relationship,
+              child: Text(relationship),
+            );
+          }).toList(),
+          onChanged: (String? newValue) {
+            if (newValue != null) {
+              setState(() {
+                _selectedSuspectRelationship = newValue;
+              });
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  // Build dynamic sections based on selected crime type
+  List<Widget> _buildDynamicSections(bool isDark) {
+    if (_selectedCrimeType == null) {
+      // Show instruction when no crime type is selected
+      return [
+        _buildSectionCard(
+          title: 'Select Crime Type First',
+          icon: Icons.info_outline,
+          children: [
+            Text(
+              'Please select a crime type above to see relevant fields for your report.',
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ];
+    }
+
+    // Get visible fields for selected crime type
+    final visibleFields = DynamicFieldService.getVisibleFields(_selectedCrimeType);
+    final dynamicFields = visibleFields.where((field) => !_isCoreField(field)).toList();
+    
+    if (dynamicFields.isEmpty) {
+      return [];
+    }
+
+    // Group fields by category for better organization
+    final Map<String, List<ComplaintField>> fieldGroups = _groupFieldsByCategory(dynamicFields);
+    final List<Widget> sections = [];
+
+    for (final entry in fieldGroups.entries) {
+      final groupName = entry.key;
+      final groupFields = entry.value;
+      
+      final List<Widget> fieldWidgets = [];
+      
+      for (int i = 0; i < groupFields.length; i++) {
+        final field = groupFields[i];
+        final fieldWidget = _buildDynamicField(field, isDark);
+        
+        if (fieldWidget != null) {
+          fieldWidgets.add(fieldWidget);
+          if (i < groupFields.length - 1) {
+            fieldWidgets.add(const SizedBox(height: 16));
+          }
+        }
+      }
+
+      if (fieldWidgets.isNotEmpty) {
+        sections.add(
+          _buildSectionCard(
+            title: groupName,
+            icon: _getGroupIcon(groupName),
+            children: [
+              if (groupName != 'General Information') ...[
+                Text(
+                  _getGroupDescription(groupName, _selectedCrimeType!.categoryForFields),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              ...fieldWidgets,
+            ],
+          ),
+        );
+      }
+    }
+
+    return sections;
+  }
+
+  // Check if a field is a core field (always visible)
+  bool _isCoreField(ComplaintField field) {
+    switch (field) {
+      case ComplaintField.crimeType:
+      case ComplaintField.officer:
+      case ComplaintField.description:
+      case ComplaintField.incidentDateTime:
+      case ComplaintField.fullName:
+      case ComplaintField.email:
+      case ComplaintField.phone:
+      case ComplaintField.evidenceFiles:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Group fields by logical categories for UI organization
+  Map<String, List<ComplaintField>> _groupFieldsByCategory(List<ComplaintField> fields) {
+    final Map<String, List<ComplaintField>> groups = {};
+
+    for (final field in fields) {
+      String groupName;
+      
+      switch (field) {
+        case ComplaintField.incidentLocation:
+        case ComplaintField.platformWebsite:
+        case ComplaintField.accountReference:
+        case ComplaintField.financialLoss:
+          groupName = 'General Information';
+          break;
+        case ComplaintField.suspectName:
+        case ComplaintField.suspectRelationship:
+        case ComplaintField.suspectContact:
+        case ComplaintField.suspectDetails:
+          groupName = 'Suspect Information';
+          break;
+        case ComplaintField.systemDetails:
+        case ComplaintField.technicalInfo:
+        case ComplaintField.vulnerabilityDetails:
+        case ComplaintField.attackVector:
+          groupName = 'Technical Details';
+          break;
+        case ComplaintField.securityLevel:
+        case ComplaintField.targetInfo:
+        case ComplaintField.impactAssessment:
+          groupName = 'Security & Impact Assessment';
+          break;
+        case ComplaintField.contentDescription:
+          groupName = 'Content Information';
+          break;
+        default:
+          groupName = 'Additional Details';
+          break;
+      }
+
+      groups.putIfAbsent(groupName, () => []);
+      groups[groupName]!.add(field);
+    }
+
+    return groups;
+  }
+
+  // Get icon for field group
+  IconData _getGroupIcon(String groupName) {
+    switch (groupName) {
+      case 'General Information':
+        return Icons.info_outline;
+      case 'Suspect Information':
+        return Icons.person_search_outlined;
+      case 'Technical Details':
+        return Icons.computer_outlined;
+      case 'Security & Impact Assessment':
+        return Icons.security_outlined;
+      case 'Content Information':
+        return Icons.report_outlined;
+      default:
+        return Icons.more_horiz_outlined;
+    }
+  }
+
+  // Get description for field group
+  String _getGroupDescription(String groupName, String crimeCategory) {
+    switch (groupName) {
+      case 'Suspect Information':
+        return 'Information about the person or entity responsible for this crime';
+      case 'Technical Details':
+        return 'Technical information that will help investigators understand how the attack was carried out';
+      case 'Security & Impact Assessment':
+        return 'Security classification and impact details for proper case prioritization';
+      case 'Content Information':
+        return 'Description of illegal content (provide general details only, no explicit descriptions)';
+      default:
+        return 'Additional details specific to ${crimeCategory.toLowerCase()} to help with the investigation';
+    }
   }
 
   Widget _buildSectionCard({

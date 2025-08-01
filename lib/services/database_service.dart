@@ -1,5 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'dart:io';
 import 'dart:typed_data';
 import '../utils/philippine_time.dart';
@@ -7,16 +7,20 @@ import '../models/complaint_model.dart';
 
 class DatabaseService {
   final SupabaseClient _supabase = Supabase.instance.client;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  // Service role client for storage operations (bypasses RLS)
-  late final SupabaseClient _serviceRoleClient;
+  final firebase_auth.FirebaseAuth _auth = firebase_auth.FirebaseAuth.instance;
 
   DatabaseService() {
-    _serviceRoleClient = SupabaseClient(
-      'https://knoahdsfthalbdqockmw.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtub2FoZHNmdGhhbGJkcW9ja213Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0ODg2MTMzNCwiZXhwIjoyMDY0NDM3MzM0fQ.RIJDn6ZiyZYv-M9MtKyV9zo4AwZaGdxDGDWc8yK2s9Y',
-    );
+    // Set up Firebase auth listener
+    _auth.authStateChanges().listen(_onAuthStateChanged);
+  }
+  
+  // Update Supabase session when Firebase auth state changes
+  Future<void> _onAuthStateChanged(firebase_auth.User? user) async {
+    if (user != null) {
+      print('✅ Firebase user authenticated: ${user.uid}');
+    } else {
+      print('ℹ️ Firebase user signed out');
+    }
   }
 
   // Get current user ID from Firebase
@@ -90,12 +94,12 @@ class DatabaseService {
 
       // Delete existing profile pictures for this user
       try {
-        final existingFiles = await _serviceRoleClient.storage
+        final existingFiles = await _supabase.storage
             .from('profile-pictures')
             .list(path: currentUserId!);
 
         for (final existingFile in existingFiles) {
-          await _serviceRoleClient.storage
+          await _supabase.storage
               .from('profile-pictures')
               .remove(['$currentUserId/${existingFile.name}']);
           print('🗑️ Deleted old profile picture: ${existingFile.name}');
@@ -104,13 +108,13 @@ class DatabaseService {
         print('⚠️ No existing profile picture to delete or error deleting: $e');
       }
 
-      // Upload new profile picture
-      await _serviceRoleClient.storage
+      // Upload new profile picture using regular client with public bucket
+      await _supabase.storage
           .from('profile-pictures')
           .uploadBinary(fileName, Uint8List.fromList(bytes));
 
       // Get public URL
-      final publicUrl = _serviceRoleClient.storage
+      final publicUrl = _supabase.storage
           .from('profile-pictures')
           .getPublicUrl(fileName);
 
@@ -393,8 +397,8 @@ class DatabaseService {
       final pathSegments = uri.pathSegments;
       final fileName = '${pathSegments[pathSegments.length - 2]}/${pathSegments.last}';
 
-      // Use service role client to bypass RLS for storage operations
-      await _serviceRoleClient.storage
+      // Use regular client for profile picture deletion with public bucket
+      await _supabase.storage
           .from('profile-pictures')
           .remove([fileName]);
       print('✅ Profile picture deleted');
@@ -612,13 +616,13 @@ class DatabaseService {
         final fileName = '${complaintId}_${timestamp}_${evidenceFile.fileName}';
         final filePath = 'evidence/$complaintId/$fileName';
 
-        // Upload to Supabase Storage
-        await _serviceRoleClient.storage
+        // Upload to Supabase Storage using regular client with public bucket
+        await _supabase.storage
             .from('evidence-files')
             .uploadBinary(filePath, Uint8List.fromList(bytes));
 
         // Get public URL
-        final publicUrl = _serviceRoleClient.storage
+        final publicUrl = _supabase.storage
             .from('evidence-files')
             .getPublicUrl(filePath);
 
@@ -707,6 +711,7 @@ class DatabaseService {
 
     return 'low';
   }
+
 
   // Helper: Calculate risk score based on various factors
   int _calculateRiskScore(CrimeType crimeType, double? financialLoss) {

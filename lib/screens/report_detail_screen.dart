@@ -411,7 +411,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           IconButton(
             onPressed: () {
-              // TODO: Implement file preview/download
               _showFilePreview(file);
             },
             icon: Icon(

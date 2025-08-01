@@ -17,7 +17,107 @@ This is a simplified database schema that focuses on basic officer availability 
 2. Drop and recreate the `pnp_officer_profiles` table using the schema below
 3. The API now only sends basic fields, so complex fields must be removed from database constraints
 
-## 1. Admin Profiles Table (Unchanged)
+## 0. Prerequisites - Run First
+
+```sql
+-- Function to update timestamps (REQUIRED for all tables)
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = TIMEZONE('utc', NOW());
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+## 1. User Profiles Table (Mobile App Citizens)
+
+```sql
+-- Drop existing table
+DROP TABLE IF EXISTS user_profiles CASCADE;
+
+-- Create user_profiles table for mobile app citizens
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  firebase_uid TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone_number TEXT NOT NULL,
+  user_type TEXT DEFAULT 'CLIENT' CHECK (user_type IN ('CLIENT', 'ADMIN')),
+  user_status TEXT DEFAULT 'active' CHECK (user_status IN ('active', 'suspended', 'deleted')),
+  profile_picture_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+  last_active TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_user_profiles_firebase_uid ON user_profiles(firebase_uid);
+CREATE INDEX idx_user_profiles_email ON user_profiles(email);
+CREATE INDEX idx_user_profiles_user_status ON user_profiles(user_status);
+CREATE INDEX idx_user_profiles_user_type ON user_profiles(user_type);
+
+-- Apply updated_at trigger
+CREATE TRIGGER update_user_profiles_updated_at
+  BEFORE UPDATE ON user_profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- RLS disabled for debugging purposes (can be enabled later)
+-- ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+
+## Storage Bucket Configuration (evidence-files)
+
+**✅ SIMPLE SOLUTION**: Set evidence-files bucket to PUBLIC to avoid RLS complications:
+
+### Instructions:
+1. **Go to Supabase Dashboard → Storage → evidence-files bucket**
+2. **Click Settings (gear icon)**  
+3. **Turn "Public bucket" to ON**
+4. **Click Save**
+
+### Result:
+- ✅ No more `StorageException: new row violates row-level security policy` errors
+- ✅ All authenticated users can upload evidence files
+- ✅ File URLs are public but hard to guess
+- ✅ Simple and reliable approach
+
+### Security Notes:
+- Users still need Firebase Auth to access the app
+- Evidence files are publicly accessible via direct URL
+- For production, consider implementing server-side access control if needed
+```
+
+## 2. Notifications Table (Mobile App)
+
+```sql
+-- Drop existing table
+DROP TABLE IF EXISTS notifications CASCADE;
+
+-- Create notifications table for mobile app users
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL, -- Firebase UID from user_profiles
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  type TEXT DEFAULT 'info' CHECK (type IN ('info', 'warning', 'error', 'success')),
+  priority TEXT DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+  notification_category TEXT DEFAULT 'system' CHECK (notification_category IN ('system', 'complaint', 'security', 'update')),
+  action_url TEXT,
+  is_read BOOLEAN DEFAULT FALSE,
+  read_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_is_read ON notifications(is_read);
+CREATE INDEX idx_notifications_priority ON notifications(priority);
+CREATE INDEX idx_notifications_category ON notifications(notification_category);
+CREATE INDEX idx_notifications_created_at ON notifications(created_at);
+```
+
+## 3. Admin Profiles Table (Web App)
 
 ```sql
 -- Drop existing table and recreate
@@ -48,7 +148,7 @@ CREATE TRIGGER update_admin_profiles_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 ```
 
-## 2. PNP Units Table (Enhanced)
+## 4. PNP Units Table (Enhanced)
 
 ```sql
 -- Drop existing table and recreate
@@ -110,7 +210,7 @@ CREATE TRIGGER update_pnp_units_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 ```
 
-## 3. PNP Unit Crime Types Table
+## 5. PNP Unit Crime Types Table
 
 ```sql
 -- Drop existing table and recreate
@@ -130,7 +230,7 @@ CREATE INDEX idx_pnp_unit_crime_types_unit_id ON pnp_unit_crime_types(unit_id);
 CREATE INDEX idx_pnp_unit_crime_types_crime_type ON pnp_unit_crime_types(crime_type);
 ```
 
-## 4. PNP Officer Profiles Table (Enhanced with Availability Tracking)
+## 6. PNP Officer Profiles Table (Enhanced with Availability Tracking)
 
 ```sql
 -- Drop existing table and recreate
@@ -203,7 +303,7 @@ CREATE TRIGGER update_pnp_officer_profiles_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 ```
 
-## 5. Case Assignments Table
+## 7. Case Assignments Table
 
 ```sql
 -- Drop existing table and recreate
@@ -236,7 +336,242 @@ CREATE TRIGGER update_case_assignments_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 ```
 
-## 6. Enhanced Trigger Functions
+## 8. Complaints Table (Unified Flutter/Web Schema)
+
+**⚡ CRITICAL FIX**: This table resolves the `PostgrestException: Could not find the 'assigned_unit' column` error by including ALL fields required by both Flutter app and Web app.
+
+```sql
+-- Drop existing table and recreate with unified schema
+DROP TABLE IF EXISTS complaints CASCADE;
+
+-- Create unified complaints table compatible with Flutter app and Web app
+CREATE TABLE IF NOT EXISTS complaints (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  
+  -- 👤 USER & IDENTIFICATION
+  user_id TEXT NOT NULL, -- Firebase UID of complainant (Flutter: user_id)
+  complaint_number TEXT UNIQUE NOT NULL, -- Format: CYB-YYYY-XXX (Flutter: complaint_number, Web: complaintNumber)
+  
+  -- 📝 COMPLAINT CONTENT  
+  title TEXT, -- Auto-generated from description (Flutter: title, Web: title)
+  crime_type TEXT NOT NULL, -- Crime type enum name (Flutter: crimeType.name, Web: crimeType)
+  description TEXT NOT NULL, -- Detailed incident description (Flutter: description, Web: description)
+  
+  -- 📞 CONTACT INFORMATION
+  full_name TEXT NOT NULL, -- Complainant name (Flutter: fullName, Web: fullName/complainant)
+  email TEXT NOT NULL, -- Contact email (Flutter: email, Web: email)
+  phone_number TEXT NOT NULL, -- Contact phone (Flutter: phoneNumber, Web: phoneNumber)
+  
+  -- 📅 INCIDENT DETAILS
+  incident_date_time TIMESTAMP WITH TIME ZONE NOT NULL, -- When incident occurred (Flutter: incidentDateTime, Web: incidentDateTime)
+  incident_location TEXT, -- Where incident occurred (Flutter: incidentLocation, Web: incidentLocation)
+  estimated_loss DECIMAL(12,2), -- Financial loss (Flutter: estimatedFinancialLoss→estimated_loss, Web: estimatedLoss)
+  
+  -- 🔄 DYNAMIC FIELDS (Category-specific fields that change based on crime type)
+  platform_website TEXT, -- Digital platform involved (Facebook, GCash, etc.) - shown for social media and financial crimes
+  account_reference TEXT, -- Account numbers, transaction IDs, reference codes - shown for financial and data crimes
+  
+  -- 👤 SUSPECT INFORMATION (Dynamic based on crime category)
+  suspect_name TEXT, -- Suspect name or alias - shown for crimes with personal suspects
+  suspect_relationship TEXT CHECK (suspect_relationship IN ('Unknown', 'Acquaintance', 'Friend/Ex-friend', 'Family Member', 'Ex-partner/Romantic', 'Colleague/Classmate', 'Online Contact Only', 'Complete Stranger')), -- Relationship to suspect
+  suspect_contact TEXT, -- Suspect contact info (phone, email, social media) - shown for crimes with known suspects
+  suspect_details TEXT, -- Additional suspect information - shown for crimes with personal suspects
+  
+  -- 💻 TECHNICAL DETAILS (For technical and system-related crimes)
+  system_details TEXT, -- Technical system information - shown for malware and technical crimes
+  technical_info TEXT, -- Technical details and error messages - shown for technical crimes
+  vulnerability_details TEXT, -- Security vulnerability information - shown for exploitation crimes
+  attack_vector TEXT, -- How the attack was executed - shown for targeted and technical crimes
+  
+  -- 🔒 SECURITY & ASSESSMENT (For high-level and government crimes)
+  security_level TEXT, -- Security classification of affected systems - shown for government and security crimes
+  target_info TEXT, -- Information about attack targets - shown for targeted attacks and terrorism
+  impact_assessment TEXT, -- Assessment of incident impact - shown for high-level security crimes
+  
+  -- 🚫 CONTENT INFORMATION (For content-related crimes)
+  content_description TEXT, -- Description of illegal content - shown for content-related crimes
+  
+  -- 🎯 CASE MANAGEMENT
+  status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Under Investigation', 'Requires More Information', 'Resolved', 'Dismissed')),
+  priority TEXT DEFAULT 'low' CHECK (priority IN ('low', 'medium', 'high')), -- AI-calculated priority (Flutter: priority, Web: priority)
+  risk_score INTEGER DEFAULT 30 CHECK (risk_score BETWEEN 0 AND 100), -- AI risk assessment (Flutter: riskScore, Web: riskScore)
+  
+  -- 👮 ASSIGNMENT INFORMATION
+  assigned_unit TEXT, -- Unit name like 'Cyber Crime Investigation Cell' (Flutter: assignedUnit, Web: unit)
+  unit_id UUID REFERENCES pnp_units(id) ON DELETE SET NULL, -- Foreign key to pnp_units table (Web: unitId)
+  assigned_officer TEXT, -- Officer name (Flutter: assignedOfficer, Web: officer)
+  assigned_officer_id UUID REFERENCES pnp_officer_profiles(id) ON DELETE SET NULL, -- FK to officer (Web: officerId)
+  
+  -- 📋 METADATA
+  remarks TEXT, -- Additional notes (Flutter: remarks, Web: remarks)
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Create comprehensive indexes for both Flutter and Web app queries
+CREATE INDEX idx_complaints_user_id ON complaints(user_id); -- Flutter: getUserActiveComplaints()
+CREATE INDEX idx_complaints_complaint_number ON complaints(complaint_number); -- Both: unique lookup
+CREATE INDEX idx_complaints_crime_type ON complaints(crime_type); -- Web: crime type filtering
+CREATE INDEX idx_complaints_status ON complaints(status); -- Both: active vs completed filtering
+CREATE INDEX idx_complaints_priority ON complaints(priority); -- Web: priority-based sorting
+CREATE INDEX idx_complaints_risk_score ON complaints(risk_score); -- Web: risk-based sorting
+CREATE INDEX idx_complaints_assigned_unit ON complaints(assigned_unit); -- Web: unit-based filtering
+CREATE INDEX idx_complaints_unit_id ON complaints(unit_id); -- Web: JOIN with pnp_units
+CREATE INDEX idx_complaints_assigned_officer_id ON complaints(assigned_officer_id); -- Web: officer assignment
+CREATE INDEX idx_complaints_created_at ON complaints(created_at); -- Both: chronological sorting
+CREATE INDEX idx_complaints_updated_at ON complaints(updated_at); -- Both: recent activity
+CREATE INDEX idx_complaints_title ON complaints(title); -- Web: search functionality
+
+-- Indexes for dynamic fields (performance optimization)
+CREATE INDEX idx_complaints_platform_website ON complaints(platform_website); -- Web: platform-based filtering
+CREATE INDEX idx_complaints_suspect_name ON complaints(suspect_name); -- Web: suspect name searches
+CREATE INDEX idx_complaints_suspect_relationship ON complaints(suspect_relationship); -- Web: relationship-based queries
+CREATE INDEX idx_complaints_security_level ON complaints(security_level); -- Web: security classification filtering
+
+-- Apply updated_at trigger
+CREATE TRIGGER update_complaints_updated_at
+  BEFORE UPDATE ON complaints
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- Auto-assign unit based on crime type (handles both manual and automatic assignment)
+CREATE OR REPLACE FUNCTION auto_assign_unit()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Handle manual officer assignment (from Flutter app)
+  IF NEW.assigned_officer_id IS NOT NULL THEN
+    -- If officer is manually selected, get unit info from officer's profile
+    SELECT 
+      u.id,
+      u.unit_name,
+      o.full_name
+    INTO 
+      NEW.unit_id,
+      NEW.assigned_unit,
+      NEW.assigned_officer
+    FROM pnp_officer_profiles o
+    JOIN pnp_units u ON o.unit_id = u.id
+    WHERE o.id = NEW.assigned_officer_id;
+    
+    -- Log manual assignment
+    RAISE NOTICE 'Manual officer assignment: % to unit %', NEW.assigned_officer, NEW.assigned_unit;
+    
+  -- Handle automatic assignment (no officer specified)
+  ELSIF NEW.assigned_unit IS NULL OR NEW.unit_id IS NULL THEN
+    -- Auto-assign based on crime type
+    NEW.assigned_unit := CASE 
+      WHEN NEW.crime_type IN ('phishing', 'socialEngineering', 'spamMessages', 'fakeSocialMediaProfiles', 'onlineImpersonation', 'businessEmailCompromise', 'smsFraud') 
+        THEN 'Cyber Crime Investigation Cell'
+      WHEN NEW.crime_type IN ('onlineBankingFraud', 'creditCardFraud', 'investmentScams', 'cryptocurrencyFraud', 'onlineShoppingScams', 'paymentGatewayFraud', 'insuranceFraud', 'taxFraud', 'moneyLaundering') 
+        THEN 'Economic Offenses Wing'
+      WHEN NEW.crime_type IN ('identityTheft', 'dataBreach', 'unauthorizedSystemAccess', 'corporateEspionage', 'governmentDataTheft', 'medicalRecordsTheft', 'personalInformationTheft', 'accountTakeover') 
+        THEN 'Cyber Security Division'
+      WHEN NEW.crime_type IN ('ransomware', 'virusAttacks', 'trojanHorses', 'spyware', 'adware', 'worms', 'keyloggers', 'rootkits', 'cryptojacking', 'botnetAttacks') 
+        THEN 'Cyber Crime Technical Unit'
+      WHEN NEW.crime_type IN ('cyberstalking', 'onlineHarassment', 'cyberbullying', 'revengePorn', 'sextortion', 'onlinePredatoryBehavior', 'doxxing', 'hateSpeech') 
+        THEN 'Cyber Crime Against Women and Children'
+      WHEN NEW.crime_type IN ('childSexualAbuseMaterial', 'illegalContentDistribution', 'copyrightInfringement', 'softwarePiracy', 'illegalOnlineGambling', 'onlineDrugTrafficking', 'illegalWeaponsSales', 'humanTrafficking') 
+        THEN 'Special Investigation Team'
+      WHEN NEW.crime_type IN ('denialOfServiceAttacks', 'websiteDefacement', 'systemSabotage', 'networkIntrusion', 'sqlInjection', 'crossSiteScripting', 'manInTheMiddleAttacks') 
+        THEN 'Critical Infrastructure Protection Unit'
+      WHEN NEW.crime_type IN ('cyberterrorism', 'cyberWarfare', 'governmentSystemHacking', 'electionInterference', 'criticalInfrastructureAttacks', 'propagandaDistribution', 'stateSponsoredAttacks') 
+        THEN 'National Security Cyber Division'
+      WHEN NEW.crime_type IN ('zeroDayExploits', 'vulnerabilityExploitation', 'backdoorCreation', 'privilegeEscalation', 'codeInjection', 'bufferOverflowAttacks') 
+        THEN 'Advanced Cyber Forensics Unit'
+      WHEN NEW.crime_type IN ('advancedPersistentThreats', 'spearPhishing', 'ceoFraud', 'supplyChainAttacks', 'insiderThreats') 
+        THEN 'Special Cyber Operations Unit'
+      ELSE 'Cyber Crime Investigation Cell'
+    END;
+    
+    -- Set unit_id based on assigned_unit
+    SELECT id INTO NEW.unit_id FROM pnp_units WHERE unit_name = NEW.assigned_unit LIMIT 1;
+    
+    -- Log automatic assignment
+    RAISE NOTICE 'Automatic unit assignment: % for crime type %', NEW.assigned_unit, NEW.crime_type;
+  END IF;
+  
+  -- Ensure unit_id is set (fallback to default if lookup failed)
+  IF NEW.unit_id IS NULL AND NEW.assigned_unit IS NOT NULL THEN
+    SELECT id INTO NEW.unit_id FROM pnp_units WHERE unit_name = NEW.assigned_unit LIMIT 1;
+    IF NEW.unit_id IS NULL THEN
+      -- Fallback to first available unit
+      SELECT id, unit_name INTO NEW.unit_id, NEW.assigned_unit FROM pnp_units ORDER BY id LIMIT 1;
+      RAISE WARNING 'Unit lookup failed, using fallback unit: %', NEW.assigned_unit;
+    END IF;
+  END IF;
+  
+  -- Auto-generate title if not provided
+  IF NEW.title IS NULL THEN
+    NEW.title := CASE 
+      WHEN LENGTH(NEW.description) > 100 THEN LEFT(NEW.description, 97) || '...'
+      ELSE NEW.description
+    END;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Apply auto-assign trigger
+CREATE TRIGGER auto_assign_unit_trigger
+  BEFORE INSERT OR UPDATE ON complaints
+  FOR EACH ROW
+  EXECUTE FUNCTION auto_assign_unit();
+```
+
+## 9. Evidence Files Table (Supporting Complaints)
+
+```sql
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS evidence_files CASCADE;
+
+-- Create evidence_files table for complaint attachments
+CREATE TABLE IF NOT EXISTS evidence_files (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  complaint_id UUID REFERENCES complaints(id) ON DELETE CASCADE NOT NULL,
+  file_name TEXT NOT NULL,
+  file_type TEXT NOT NULL, -- MIME type
+  file_size INTEGER NOT NULL, -- File size in bytes
+  file_path TEXT NOT NULL, -- Storage path in Supabase bucket
+  download_url TEXT, -- Public URL for file access
+  uploaded_by TEXT NOT NULL, -- Firebase UID of uploader
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_evidence_files_complaint_id ON evidence_files(complaint_id);
+CREATE INDEX idx_evidence_files_file_type ON evidence_files(file_type);
+CREATE INDEX idx_evidence_files_uploaded_by ON evidence_files(uploaded_by);
+CREATE INDEX idx_evidence_files_created_at ON evidence_files(created_at);
+
+-- RLS disabled for simple public bucket approach
+-- ALTER TABLE evidence_files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE evidence_files DISABLE ROW LEVEL SECURITY;
+```
+
+## 10. Complaint Status History Table
+
+```sql
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS complaint_status_history CASCADE;
+
+-- Create complaint_status_history table for audit trail
+CREATE TABLE IF NOT EXISTS complaint_status_history (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  complaint_id UUID REFERENCES complaints(id) ON DELETE CASCADE NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('Pending', 'Under Investigation', 'Requires More Information', 'Resolved', 'Dismissed')),
+  updated_by TEXT NOT NULL, -- Name or Firebase UID of person making the change
+  remarks TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_complaint_status_history_complaint_id ON complaint_status_history(complaint_id);
+CREATE INDEX idx_complaint_status_history_status ON complaint_status_history(status);
+CREATE INDEX idx_complaint_status_history_created_at ON complaint_status_history(created_at);
+```
+
+## 11. Enhanced Trigger Functions
 
 ```sql
 -- Drop existing functions and triggers
@@ -355,7 +690,7 @@ CREATE TRIGGER update_officer_availability_status_trigger
   EXECUTE FUNCTION update_officer_availability_status();
 ```
 
-## 7. Default Unit Data (For Testing)
+## 12. Default Unit Data (For Testing)
 
 ```sql
 -- Insert default units for testing
@@ -397,7 +732,7 @@ UNNEST(ARRAY['Cyberstalking', 'Online Harassment', 'Cyberbullying', 'Revenge Por
 WHERE unit_name = 'Cyber Crime Against Women and Children';
 ```
 
-## 8. Verification Queries
+## 13. Verification Queries
 
 ```sql
 -- Verify all tables and relationships
@@ -481,3 +816,142 @@ With this simplified schema:
 4. **Easy Integration**: Simplified data structure for easier app development
 
 This simplified revision provides a clean foundation for basic officer availability management across both the Flutter mobile app and Next.js web application.
+
+## 📱💻 Flutter/Web App Compatibility Guide
+
+### 🔧 **Complaints Table Field Mappings**
+
+The unified complaints table supports both platforms with the following field mappings:
+
+| Database Field | Flutter App | Web App | Notes |
+|---|---|---|---|
+| `user_id` | `user_id` | `userId` | Firebase UID |
+| `complaint_number` | `complaint_number` | `complaintNumber` | Format: CYB-YYYY-XXX |
+| `title` | `title` | `title` | Auto-generated from description |
+| `crime_type` | `crimeType.name` | `crimeType` | Enum name (snake_case) |
+| `full_name` | `fullName` | `fullName`/`complainant` | Complainant name |
+| `estimated_loss` | `estimatedFinancialLoss` | `estimatedLoss` | Decimal amount |
+| `risk_score` | `riskScore` | `riskScore` | AI-calculated 0-100 |
+| `assigned_unit` | `assignedUnit` | `unit` | Unit display name |
+| `assigned_officer` | `assignedOfficer` | `officer` | Officer display name |
+| `created_at` | `createdAt` | `createdAt` | ISO timestamp |
+
+### 🎯 **Platform-Specific Usage Patterns**
+
+#### Flutter App (Mobile)
+- **Primary Use**: Complaint submission and tracking
+- **Key Operations**: 
+  - `submitComplaint()` - Creates new complaint with auto-assignment
+  - `getUserActiveComplaints()` - Filters by status IN ('Pending', 'Under Investigation', 'Requires More Information')
+  - `getUserCompletedComplaints()` - Filters by status IN ('Resolved', 'Dismissed')
+- **Auto-Assignment**: Uses `auto_assign_unit()` trigger to assign unit based on crime type
+- **Evidence Upload**: Links to `evidence_files` table via `complaint_id`
+
+#### Web App (Next.js)
+- **Primary Use**: Case management and investigation
+- **Key Operations**:
+  - Admin dashboard displays all complaints with priority sorting
+  - PNP officer dashboard shows assigned cases via `case_assignments` table
+  - Evidence viewer accesses files through `evidence_files` table
+  - Status updates logged in `complaint_status_history` table
+- **Officer Assignment**: Links complaints to officers via `assigned_officer_id` FK
+- **Unit Management**: Uses `unit_id` FK to `pnp_units` table for proper relationships
+
+### 🔄 **Data Flow Integration**
+
+```
+1. Flutter App Submission:
+   complaint.submitComplaint() 
+   → complaints table (with auto_assign_unit trigger)
+   → evidence_files table (if files attached)
+   → complaint_status_history table (initial "Pending" status)
+
+2. Web App Processing:
+   Admin assigns officer 
+   → case_assignments table (links complaint to officer)
+   → complaints.assigned_officer_id updated
+   → complaint_status_history table (status change logged)
+
+3. Cross-Platform Sync:
+   Flutter app queries by user_id
+   → Shows updated status and assigned officer
+   → Real-time updates via Supabase subscriptions
+```
+
+### ⚠️ **Critical Compatibility Notes**
+
+1. **Column Names**: Database uses `snake_case`, apps handle conversion:
+   - Flutter: Direct mapping (already uses snake_case)
+   - Web: Convert `camelCase` ↔ `snake_case` in service layer
+
+2. **Status Values**: Must use exact strings:
+   - ✅ 'Pending', 'Under Investigation', 'Requires More Information', 'Resolved', 'Dismissed'
+   - ❌ 'pending', 'under_investigation', etc.
+
+3. **Crime Types**: Use enum names from Flutter's `CrimeType`:
+   - ✅ 'phishing', 'onlineBankingFraud', 'identityTheft'
+   - ❌ 'Phishing', 'Online Banking Fraud', 'Identity Theft'
+
+4. **Unit Assignment**: Automatic via trigger, but manual override supported:
+   - Flutter: Relies on `auto_assign_unit()` trigger
+   - Web: Can manually reassign via `unit_id` FK
+
+### 🚀 **Migration Instructions**
+
+To apply this unified schema:
+
+1. **Run the complete table creation scripts** in Supabase SQL Editor
+2. **Update existing data** using the data transformation queries
+3. **Test Flutter app complaint submission** - should work without errors
+4. **Verify Web app case display** - should show all fields correctly
+5. **Check evidence file uploads** - should link properly to complaints
+
+### 🔍 **Troubleshooting Common Issues**
+
+| Error | Cause | Solution |
+|---|---|---|
+| `Could not find the 'assigned_unit' column` | Old schema missing fields | Run unified complaints table creation |
+| `estimated_financial_loss doesn't exist` | Column name mismatch | Use `estimated_loss` (updated schema) |
+| `status constraint violation` | Wrong status values | Use exact case-sensitive status strings |
+| `crime_type not recognized` | Display name vs enum name | Use enum names (snake_case) not display names |
+
+This unified approach ensures seamless operation across both Flutter mobile app and Next.js web application with a single source of truth for complaint data.
+
+## 🔄 Dynamic Fields Implementation
+
+### Field-to-Category Mapping
+
+The dynamic fields in the complaints table change visibility based on the selected crime type:
+
+#### 📱 Communication & Social Media Crimes
+- `incident_location`, `platform_website`, `account_reference`, `estimated_loss`, `suspect_name`, `suspect_relationship`, `suspect_contact`, `suspect_details`
+
+#### 💰 Financial & Economic Crimes  
+- `incident_location`, `platform_website`, `account_reference`, `estimated_loss`, `suspect_name`, `suspect_contact`
+
+#### 🔒 Data & Privacy Crimes
+- `incident_location`, `account_reference`, `technical_info`, `vulnerability_details`, `security_level`, `impact_assessment`
+
+#### 💻 Malware & System Attacks
+- `system_details`, `technical_info`, `attack_vector`
+
+#### 👥 Harassment & Exploitation
+- `incident_location`, `platform_website`, `suspect_name`, `suspect_relationship`, `suspect_contact`, `suspect_details`, `content_description`
+
+#### 🚫 Content-Related Crimes
+- `incident_location`, `platform_website`, `estimated_loss`, `suspect_name`, `suspect_contact`, `content_description`
+
+#### ⚡ System Disruption & Sabotage
+- `system_details`, `technical_info`, `vulnerability_details`, `attack_vector`, `impact_assessment`
+
+#### 🏛️ Government & Terrorism
+- `incident_location`, `security_level`, `target_info`, `impact_assessment`
+
+#### 🔍 Technical Exploitation
+- `system_details`, `technical_info`, `vulnerability_details`, `target_info`, `attack_vector`, `impact_assessment`
+
+#### 🎯 Targeted Attacks
+- `target_info`, `attack_vector`, `system_details`, `technical_info`, `impact_assessment`
+
+### Flutter App Dynamic Implementation
+The Flutter app uses `DynamicFieldService` to determine which fields to show based on the selected crime type, providing a tailored user experience for each category of cybercrime.

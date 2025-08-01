@@ -10,18 +10,54 @@ class PNPUnitsService {
   // Get all active PNP units with their crime types
   Future<List<PNPUnit>> getAllUnits() async {
     try {
+      // First, get units without crime types join (safer approach)
       final response = await _supabase
           .from('pnp_units')
-          .select('''
-            *,
-            pnp_unit_crime_types(crime_type)
-          ''')
+          .select('*')
           .eq('status', 'active')
           .order('unit_name');
 
-      return (response as List).map((unit) => PNPUnit.fromJson(unit)).toList();
+      if (response == null || (response as List).isEmpty) {
+        print('❌ No active PNP units found in database');
+        return [];
+      }
+
+      print('✅ Found ${(response as List).length} active PNP units in Flutter app');
+
+      // Get crime types separately for each unit (same pattern as web app)
+      List<PNPUnit> unitsWithCrimeTypes = [];
+      
+      for (var unitData in response as List) {
+        try {
+          // Get crime types for this unit
+          final crimeTypesResponse = await _supabase
+              .from('pnp_unit_crime_types')
+              .select('crime_type')
+              .eq('unit_id', unitData['id']);
+
+          // Extract crime types or use empty list if none found
+          List<String> crimeTypes = [];
+          if (crimeTypesResponse != null) {
+            crimeTypes = (crimeTypesResponse as List)
+                .map((ct) => ct['crime_type'] as String)
+                .toList();
+          }
+
+          // Add crime types to unit data for PNPUnit.fromJson
+          unitData['pnp_unit_crime_types'] = crimeTypes.map((ct) => {'crime_type': ct}).toList();
+          
+          unitsWithCrimeTypes.add(PNPUnit.fromJson(unitData));
+        } catch (e) {
+          print('⚠️ Error getting crime types for unit ${unitData['unit_name']}: $e');
+          // Add unit without crime types
+          unitData['pnp_unit_crime_types'] = [];
+          unitsWithCrimeTypes.add(PNPUnit.fromJson(unitData));
+        }
+      }
+
+      return unitsWithCrimeTypes;
     } catch (e) {
-      print('Error fetching PNP units: $e');
+      print('❌ Error fetching PNP units: $e');
       return [];
     }
   }
@@ -31,28 +67,20 @@ class PNPUnitsService {
     try {
       print('🔍 Fetching crime types with units...');
       
-      // First, get all active units with their crime types (same as web app)
-      final response = await _supabase
-          .from('pnp_units')
-          .select('''
-            *,
-            pnp_unit_crime_types(crime_type)
-          ''')
-          .eq('status', 'active')
-          .order('unit_name');
+      // Use the safer getAllUnits() method which handles the JOIN properly
+      final units = await getAllUnits();
 
-      if (response == null || (response as List).isEmpty) {
+      if (units.isEmpty) {
         print('❌ No active PNP units found in database');
         return [];
       }
 
-      print('✅ Found ${(response as List).length} active PNP units');
+      print('✅ Found ${units.length} active PNP units');
 
       List<CrimeTypeWithUnit> crimeTypes = [];
       
       // Process each unit and extract its crime types
-      for (var unitData in response as List) {
-        final unit = PNPUnit.fromJson(unitData);
+      for (PNPUnit unit in units) {
         print('📋 Processing unit: ${unit.unitName} with ${unit.crimeTypes.length} crime types');
         
         // Get AVAILABLE officers for this unit (not just active ones)

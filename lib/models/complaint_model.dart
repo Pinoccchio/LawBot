@@ -174,6 +174,11 @@ enum CrimeType {
         return 'Targeted Attacks';
     }
   }
+  
+  // Integration with dynamic field system
+  List<String> get applicableFieldCategories {
+    return [categoryName];
+  }
 }
 
 enum CrimeCategory {

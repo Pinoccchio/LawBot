@@ -25,7 +25,7 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Initialize Supabase (Database only)
+  // Initialize Supabase (Database only) - Simple configuration
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,
     anonKey: SupabaseConfig.supabaseAnonKey,

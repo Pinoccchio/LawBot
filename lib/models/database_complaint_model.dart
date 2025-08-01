@@ -34,6 +34,9 @@ class DatabaseCrimeType {
   // Officers are available for user selection
   int get availableOfficerCount => availableOfficers.length;
   
+  // Integration with dynamic field system
+  String get categoryForFields => category;
+  
   PNPOfficer? get recommendedOfficer {
     if (availableOfficers.isEmpty) return null;
     // Return officer with least active cases for recommendation
