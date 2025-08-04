@@ -79,6 +79,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   String _lastAssessmentInput = '';
   bool _showAIInsights = false;
   
+  // Debounce timers for heavy AI operations
+  Timer? _credibilityDebounceTimer;
+  Timer? _evidenceGuidanceDebounceTimer;
+  Timer? _patternDetectionDebounceTimer;
+  
   // AI Loading states
   bool _isLoadingCredibilityScore = false;
   bool _isLoadingEvidenceGuidance = false;
@@ -109,7 +114,16 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _phoneController.addListener(_updateCredibilityScore);
     _platformWebsiteController.addListener(_updateCredibilityScore);
     _financialLossController.addListener(_updateCredibilityScore);
+    
+    // Add missing controller listeners for comprehensive AI updates
+    _incidentLocationController.addListener(_updateCredibilityScore);
+    _accountReferenceController.addListener(_updateCredibilityScore);
+    _suspectNameController.addListener(_updateCredibilityScore);
+    _suspectDetailsController.addListener(_updateCredibilityScore);
+    
+    // Pattern detection listeners
     _suspectContactController.addListener(_checkForPatterns);
+    _suspectNameController.addListener(_checkForPatterns);
     
     // Add listeners for real-time AI assessment
     _descriptionController.addListener(_triggerAIAssessment);
@@ -122,8 +136,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
 
   @override
   void dispose() {
-    // Cancel AI assessment timer
+    // Cancel all AI timers
     _aiAssessmentTimer?.cancel();
+    _credibilityDebounceTimer?.cancel();
+    _evidenceGuidanceDebounceTimer?.cancel();
+    _patternDetectionDebounceTimer?.cancel();
     
     _descriptionController.dispose();
     _fullNameController.dispose();
@@ -269,8 +286,18 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     }
   }
 
-  // Update credibility score based on current form data using AI
-  void _updateCredibilityScore() async {
+  // Update credibility score based on current form data using AI (debounced)
+  void _updateCredibilityScore() {
+    // Cancel previous timer
+    _credibilityDebounceTimer?.cancel();
+    
+    // Set up debounced timer (1.5 seconds for credibility score)
+    _credibilityDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
+      _performCredibilityScoreUpdate();
+    });
+  }
+
+  void _performCredibilityScoreUpdate() async {
     if (_selectedCrimeType != null && mounted) {
       setState(() {
         _isLoadingCredibilityScore = true;
@@ -374,6 +401,27 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // =============================================
   // AI ASSESSMENT METHODS
   // =============================================
+
+  /// Trigger comprehensive AI updates for all assessments
+  void _triggerAllAIUpdates() {
+    if (_selectedCrimeType == null || !mounted) return;
+    
+    print('🔄 Triggering comprehensive AI updates for all assessments');
+    
+    // Update all AI assessments
+    _updateCredibilityScore();
+    _triggerAIAssessment();
+    _checkForPatterns();
+    
+    // Update evidence guidance if crime type is selected
+    if (_selectedCrimeType != null) {
+      final mappedCrimeType = ComplaintModels.CrimeType.values.firstWhere(
+        (ct) => ct.displayName == _selectedCrimeType!.name,
+        orElse: () => ComplaintModels.CrimeType.phishing,
+      );
+      _updateEvidenceGuidance(mappedCrimeType);
+    }
+  }
 
   /// Trigger AI assessment with debouncing
   void _triggerAIAssessment() {
@@ -657,6 +705,10 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             }
           }
         });
+        
+        // Trigger AI updates when evidence files are added
+        print('📎 Evidence files added, triggering AI updates');
+        _triggerAllAIUpdates();
       }
     } catch (e) {
       _showErrorSnackBar('Error selecting files: $e');
@@ -760,6 +812,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     setState(() {
       _evidenceFiles.removeAt(index);
     });
+    // Trigger AI updates when evidence files are removed
+    print('🗑️ Evidence file removed, triggering AI updates');
+    _triggerAllAIUpdates();
   }
 
   Future<void> _submitComplaint() async {
@@ -2451,6 +2506,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
               setState(() {
                 _selectedSuspectRelationship = newValue;
               });
+              // Trigger AI updates when suspect relationship changes
+              print('👥 Suspect relationship updated, triggering AI updates');
+              _triggerAllAIUpdates();  
             }
           },
         ),
@@ -2829,6 +2887,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                 pickedTime.minute,
               );
             });
+            // Trigger AI updates when date/time is selected
+            print('📅 Incident date/time updated, triggering AI updates');
+            _triggerAllAIUpdates();
           }
         }
       },
