@@ -1,4 +1,5 @@
 class SupabaseConfig {
+  // ✅ VERIFIED: Updated with correct Supabase credentials
   static const String supabaseUrl = 'https://knoahdsfthalbdqockmw.supabase.co';
   static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtub2FoZHNmdGhhbGJkcW9ja213Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg4NjEzMzQsImV4cCI6MjA2NDQzNzMzNH0.xiT1DLOJ_l2UQNwpBt7SAsXaAmc8uXVY0-3Mg_UGoOI';
 

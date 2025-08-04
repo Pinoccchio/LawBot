@@ -1,15 +1,16 @@
-# Simplified Web App Supabase Tables - Basic Availability Only
+# Enhanced Web App Supabase Tables - AI-Powered with Smart Features
 
-This is a simplified database schema that focuses on basic officer availability management without complex workload tracking, leave management, or specializations.
+This is an enhanced database schema that includes AI-powered risk assessment, pattern detection, and credibility scoring capabilities alongside basic officer availability management.
 
 **⚠️ PREREQUISITE**: Run DOCUMENTATION.md database setup first to create the `update_updated_at_column()` function.
 
 **⚠️ IMPORTANT**: This is a complete schema revision. Each table will be dropped and recreated individually.
 
-**🔄 SIMPLIFIED APPROACH**: Removed complex availability features:
-- ❌ Max concurrent cases and workload percentage tracking
-- ❌ Specializations and skill level management  
-- ❌ Leave management with dates, types, and reasons
+**🤖 AI-ENHANCED APPROACH**: Added intelligent features:
+- ✅ AI-powered priority and risk assessment using Gemini 2.0 Flash
+- ✅ Smart pattern detection for scammer identification
+- ✅ Report credibility scoring and quality assessment
+- ✅ Evidence guidance with contextual suggestions
 - ✅ Simple availability status: available/busy/overloaded/unavailable
 
 **⚠️ TROUBLESHOOTING**: If you get "Failed to fetch" errors when creating officers:
@@ -17,9 +18,35 @@ This is a simplified database schema that focuses on basic officer availability 
 2. Drop and recreate the `pnp_officer_profiles` table using the schema below
 3. The API now only sends basic fields, so complex fields must be removed from database constraints
 
+## 🎯 Quick Deployment Guide
+
+### ✅ **MUST RUN (High Priority)**
+- **8. Complaints Table** - Enhanced with AI fields, fixed field names
+- **9. Evidence Files Table** - Enhanced validation capabilities  
+- **10. Status History Table** - Renamed and enhanced structure
+- **14. Priority Change Log Table** - NEW: AI audit trail
+- **AI Database Functions** - NEW: Required for AI features
+
+### 🔧 **NEW TABLES (Create if Not Exists)**
+- **14. Priority Change Log Table** - AI audit functionality
+- **15. AI Assessment Cache Table** - Performance optimization
+- **16. Evidence Suggestions Table** - Smart evidence guidance
+
+### ❓ **CONDITIONAL (Check First)**
+- **0. Prerequisites** - Only if function doesn't exist
+- **1-7. Base Tables** - Only if table doesn't exist or structure changed
+- **11-13. AI Tables** - Only if tables don't exist
+
+### 📊 **OPTIONAL (Nice to Have)**
+- **Data Views** - AI analytics and monitoring
+
 ## 0. Prerequisites - Run First
 
 ```sql
+-- ❓ CONDITIONAL: Only run if function doesn't exist
+-- Check first: SELECT routine_name FROM information_schema.routines WHERE routine_name = 'update_updated_at_column';
+-- Skip if function already exists
+
 -- Function to update timestamps (REQUIRED for all tables)
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -33,6 +60,10 @@ $$ LANGUAGE plpgsql;
 ## 1. User Profiles Table (Mobile App Citizens)
 
 ```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist or needs structure changes
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'user_profiles';
+-- Skip if table exists and structure is correct
+
 -- Drop existing table
 DROP TABLE IF EXISTS user_profiles CASCADE;
 
@@ -91,6 +122,10 @@ CREATE TRIGGER update_user_profiles_updated_at
 ## 2. Notifications Table (Mobile App)
 
 ```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist or needs structure changes
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'notifications';
+-- Skip if table exists and structure is correct
+
 -- Drop existing table
 DROP TABLE IF EXISTS notifications CASCADE;
 
@@ -120,6 +155,10 @@ CREATE INDEX idx_notifications_created_at ON notifications(created_at);
 ## 3. Admin Profiles Table (Web App)
 
 ```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist or needs structure changes
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'admin_profiles';
+-- Skip if table exists and structure is correct
+
 -- Drop existing table and recreate
 DROP TABLE IF EXISTS admin_profiles CASCADE;
 
@@ -151,6 +190,10 @@ CREATE TRIGGER update_admin_profiles_updated_at
 ## 4. PNP Units Table (Enhanced)
 
 ```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist or needs structure changes
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'pnp_units';
+-- Skip if table exists and structure is correct
+
 -- Drop existing table and recreate
 DROP TABLE IF EXISTS pnp_units CASCADE;
 
@@ -213,6 +256,10 @@ CREATE TRIGGER update_pnp_units_updated_at
 ## 5. PNP Unit Crime Types Table
 
 ```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist or needs structure changes
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'pnp_unit_crime_types';
+-- Skip if table exists and structure is correct
+
 -- Drop existing table and recreate
 DROP TABLE IF EXISTS pnp_unit_crime_types CASCADE;
 
@@ -233,6 +280,10 @@ CREATE INDEX idx_pnp_unit_crime_types_crime_type ON pnp_unit_crime_types(crime_t
 ## 6. PNP Officer Profiles Table (Enhanced with Availability Tracking)
 
 ```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist or needs structure changes
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'pnp_officer_profiles';
+-- Skip if table exists and structure is correct
+
 -- Drop existing table and recreate
 DROP TABLE IF EXISTS pnp_officer_profiles CASCADE;
 
@@ -306,6 +357,10 @@ CREATE TRIGGER update_pnp_officer_profiles_updated_at
 ## 7. Case Assignments Table
 
 ```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist or needs structure changes
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'case_assignments';
+-- Skip if table exists and structure is correct
+
 -- Drop existing table and recreate
 DROP TABLE IF EXISTS case_assignments CASCADE;
 
@@ -336,11 +391,19 @@ CREATE TRIGGER update_case_assignments_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 ```
 
-## 8. Complaints Table (Unified Flutter/Web Schema)
+## 8. Complaints Table (Unified Flutter/Web Schema with AI Enhancement)
 
 **⚡ CRITICAL FIX**: This table resolves the `PostgrestException: Could not find the 'assigned_unit' column` error by including ALL fields required by both Flutter app and Web app.
 
+**🤖 AI ENHANCED**: Now includes AI risk assessment fields, credibility scoring, and pattern detection capabilities for intelligent case prioritization.
+
 ```sql
+-- ✅ UPDATE REQUIRED: This table has been enhanced with AI capabilities
+-- 🔧 CHANGES: Added AI fields (ai_priority, ai_risk_score, ai_confidence_score, risk_factors, urgency_indicators, ai_reasoning)
+-- 🔧 CHANGES: Added novelty fields (credibility_score, pattern_alert_shown)
+-- 🔧 CHANGES: Fixed field name: estimated_loss (was estimated_financial_loss)
+-- 🚨 PRIORITY: HIGH - Required for Flutter app compatibility and AI features
+
 -- Drop existing table and recreate with unified schema
 DROP TABLE IF EXISTS complaints CASCADE;
 
@@ -402,6 +465,20 @@ CREATE TABLE IF NOT EXISTS complaints (
   assigned_officer TEXT, -- Officer name (Flutter: assignedOfficer, Web: officer)
   assigned_officer_id UUID REFERENCES pnp_officer_profiles(id) ON DELETE SET NULL, -- FK to officer (Web: officerId)
   
+  -- 🤖 AI ASSESSMENT FIELDS (Enhanced Intelligence)
+  ai_priority TEXT DEFAULT NULL CHECK (ai_priority IS NULL OR ai_priority IN ('critical', 'high', 'medium', 'low')), -- AI-recommended priority
+  ai_risk_score INTEGER DEFAULT NULL CHECK (ai_risk_score IS NULL OR (ai_risk_score >= 0 AND ai_risk_score <= 100)), -- AI-calculated risk score
+  ai_confidence_score INTEGER DEFAULT NULL CHECK (ai_confidence_score IS NULL OR (ai_confidence_score >= 0 AND ai_confidence_score <= 100)), -- AI confidence percentage
+  risk_factors JSONB DEFAULT '[]'::jsonb, -- AI-identified risk factors array
+  urgency_indicators JSONB DEFAULT '[]'::jsonb, -- AI-detected urgency signals array
+  last_ai_assessment TIMESTAMP WITH TIME ZONE DEFAULT NULL, -- Timestamp of last AI evaluation
+  ai_reasoning TEXT DEFAULT NULL, -- AI explanation/reasoning text
+  ai_assessment_version TEXT DEFAULT '1.0', -- AI model version tracking
+  
+  -- 🔍 NOVELTY FEATURES (Smart Enhancements)
+  credibility_score INTEGER DEFAULT NULL CHECK (credibility_score IS NULL OR (credibility_score >= 0 AND credibility_score <= 100)), -- Report credibility scoring
+  pattern_alert_shown BOOLEAN DEFAULT false, -- Pattern detection alert status
+  
   -- 📋 METADATA
   remarks TEXT, -- Additional notes (Flutter: remarks, Web: remarks)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
@@ -427,6 +504,15 @@ CREATE INDEX idx_complaints_platform_website ON complaints(platform_website); --
 CREATE INDEX idx_complaints_suspect_name ON complaints(suspect_name); -- Web: suspect name searches
 CREATE INDEX idx_complaints_suspect_relationship ON complaints(suspect_relationship); -- Web: relationship-based queries
 CREATE INDEX idx_complaints_security_level ON complaints(security_level); -- Web: security classification filtering
+
+-- AI Enhancement indexes (performance optimization)
+CREATE INDEX idx_complaints_ai_priority ON complaints(ai_priority); -- AI priority filtering
+CREATE INDEX idx_complaints_ai_risk_score ON complaints(ai_risk_score); -- AI risk score sorting
+CREATE INDEX idx_complaints_last_ai_assessment ON complaints(last_ai_assessment); -- AI assessment tracking
+CREATE INDEX idx_complaints_risk_factors ON complaints USING GIN(risk_factors); -- JSONB risk factors search
+CREATE INDEX idx_complaints_urgency_indicators ON complaints USING GIN(urgency_indicators); -- JSONB urgency search
+CREATE INDEX idx_complaints_credibility_score ON complaints(credibility_score); -- Credibility scoring
+CREATE INDEX idx_complaints_pattern_alert_shown ON complaints(pattern_alert_shown); -- Pattern alert status
 
 -- Apply updated_at trigger
 CREATE TRIGGER update_complaints_updated_at
@@ -522,56 +608,354 @@ CREATE TRIGGER auto_assign_unit_trigger
 ## 9. Evidence Files Table (Supporting Complaints)
 
 ```sql
+-- ✅ UPDATE REQUIRED: Enhanced with file validation capabilities
+-- 🔧 CHANGES: Added is_valid and validation_notes fields
+-- 🔧 CHANGES: Improved field constraints (VARCHAR with size limits)
+-- 😨 PRIORITY: MEDIUM - Enhanced file validation for better evidence management
+
 -- Drop existing table and recreate
 DROP TABLE IF EXISTS evidence_files CASCADE;
 
--- Create evidence_files table for complaint attachments
+-- Store evidence files associated with complaints
 CREATE TABLE IF NOT EXISTS evidence_files (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  complaint_id UUID REFERENCES complaints(id) ON DELETE CASCADE NOT NULL,
-  file_name TEXT NOT NULL,
-  file_type TEXT NOT NULL, -- MIME type
-  file_size INTEGER NOT NULL, -- File size in bytes
-  file_path TEXT NOT NULL, -- Storage path in Supabase bucket
-  download_url TEXT, -- Public URL for file access
-  uploaded_by TEXT NOT NULL, -- Firebase UID of uploader
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    complaint_id UUID NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+    
+    -- File Information
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(1000) NOT NULL,
+    file_type VARCHAR(50) NOT NULL,
+    file_size INTEGER NOT NULL,
+    download_url TEXT,
+    
+    -- Metadata
+    uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+    uploaded_by UUID REFERENCES auth.users(id),
+    
+    -- File Validation
+    is_valid BOOLEAN DEFAULT true,
+    validation_notes TEXT
 );
 
--- Create indexes for performance
+-- Create indexes
 CREATE INDEX idx_evidence_files_complaint_id ON evidence_files(complaint_id);
 CREATE INDEX idx_evidence_files_file_type ON evidence_files(file_type);
-CREATE INDEX idx_evidence_files_uploaded_by ON evidence_files(uploaded_by);
-CREATE INDEX idx_evidence_files_created_at ON evidence_files(created_at);
+CREATE INDEX idx_evidence_files_uploaded_at ON evidence_files(uploaded_at);
 
 -- RLS disabled for simple public bucket approach
 -- ALTER TABLE evidence_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE evidence_files DISABLE ROW LEVEL SECURITY;
 ```
 
-## 10. Complaint Status History Table
+## 10. Status History Table
 
 ```sql
--- Drop existing table and recreate
-DROP TABLE IF EXISTS complaint_status_history CASCADE;
+-- ✅ UPDATE REQUIRED: Table renamed and structure enhanced
+-- 🔧 CHANGES: Renamed from 'complaint_status_history' to 'status_history'
+-- 🔧 CHANGES: Added updated_by_user_id field for better user tracking
+-- 🔧 CHANGES: Changed created_at to timestamp for consistency
+-- 😨 PRIORITY: MEDIUM - Required for proper status tracking
 
--- Create complaint_status_history table for audit trail
-CREATE TABLE IF NOT EXISTS complaint_status_history (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  complaint_id UUID REFERENCES complaints(id) ON DELETE CASCADE NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('Pending', 'Under Investigation', 'Requires More Information', 'Resolved', 'Dismissed')),
-  updated_by TEXT NOT NULL, -- Name or Firebase UID of person making the change
-  remarks TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS status_history CASCADE;
+
+-- Track all status changes for complaints
+CREATE TABLE IF NOT EXISTS status_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    complaint_id UUID NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+    
+    -- Status Change Details
+    status VARCHAR NOT NULL CHECK (status IN ('Pending', 'Under Investigation', 'Requires More Information', 'Resolved', 'Dismissed')),
+    updated_by VARCHAR NOT NULL,
+    updated_by_user_id UUID REFERENCES auth.users(id),
+    remarks TEXT,
+    
+    -- Timestamp
+    timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX idx_status_history_complaint_id ON status_history(complaint_id);
+CREATE INDEX idx_status_history_timestamp ON status_history(timestamp);
+CREATE INDEX idx_status_history_status ON status_history(status);
+```
+
+## 11. AI Risk Assessments Table
+
+```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'ai_risk_assessments';
+-- Skip if table already exists and structure is correct
+
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS ai_risk_assessments CASCADE;
+
+-- Store detailed AI assessment results with full context
+CREATE TABLE IF NOT EXISTS ai_risk_assessments (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    complaint_id UUID REFERENCES complaints(id) ON DELETE CASCADE NOT NULL,
+    
+    -- Assessment Results
+    ai_risk_score INTEGER NOT NULL CHECK (ai_risk_score >= 0 AND ai_risk_score <= 100),
+    ai_priority TEXT NOT NULL CHECK (ai_priority IN ('critical', 'high', 'medium', 'low')),
+    confidence_score INTEGER NOT NULL CHECK (confidence_score >= 0 AND confidence_score <= 100),
+    
+    -- Analysis Details
+    risk_factors JSONB NOT NULL DEFAULT '[]'::jsonb,
+    urgency_indicators JSONB NOT NULL DEFAULT '[]'::jsonb,
+    reasoning TEXT NOT NULL,
+    
+    -- Context Information
+    assessment_type TEXT NOT NULL DEFAULT 'full' CHECK (assessment_type IN ('full', 'quick', 'update')),
+    model_version TEXT NOT NULL DEFAULT 'gemini-2.0-flash',
+    input_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    
+    -- Metadata
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    processing_time_ms INTEGER,
+    
+    -- Audit Fields
+    created_by UUID REFERENCES auth.users(id),
+    
+    CONSTRAINT unique_complaint_assessment_per_timestamp 
+        UNIQUE(complaint_id, created_at)
 );
 
 -- Create indexes for performance
-CREATE INDEX idx_complaint_status_history_complaint_id ON complaint_status_history(complaint_id);
-CREATE INDEX idx_complaint_status_history_status ON complaint_status_history(status);
-CREATE INDEX idx_complaint_status_history_created_at ON complaint_status_history(created_at);
+CREATE INDEX idx_ai_assessments_complaint_id ON ai_risk_assessments(complaint_id);
+CREATE INDEX idx_ai_assessments_created_at ON ai_risk_assessments(created_at);
+CREATE INDEX idx_ai_assessments_ai_priority ON ai_risk_assessments(ai_priority);
+CREATE INDEX idx_ai_assessments_ai_risk_score ON ai_risk_assessments(ai_risk_score);
+CREATE INDEX idx_ai_assessments_model_version ON ai_risk_assessments(model_version);
+CREATE INDEX idx_ai_assessments_risk_factors ON ai_risk_assessments USING GIN(risk_factors);
+CREATE INDEX idx_ai_assessments_assessment_type ON ai_risk_assessments(assessment_type);
 ```
 
-## 11. Enhanced Trigger Functions
+## 12. Scammer Patterns Table
+
+```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'scammer_patterns';
+-- Skip if table already exists and structure is correct
+
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS scammer_patterns CASCADE;
+
+-- Store scammer identifiers and patterns across reports
+CREATE TABLE IF NOT EXISTS scammer_patterns (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    complaint_id UUID REFERENCES complaints(id) ON DELETE CASCADE NOT NULL,
+    
+    -- Pattern Identifiers
+    identifiers JSONB NOT NULL, -- Store email, phone, platform, etc.
+    crime_type TEXT NOT NULL,
+    
+    -- Timestamps
+    reported_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Create indexes for pattern matching queries
+CREATE INDEX idx_scammer_patterns_identifiers ON scammer_patterns USING GIN(identifiers);
+CREATE INDEX idx_scammer_patterns_crime_type ON scammer_patterns(crime_type);
+CREATE INDEX idx_scammer_patterns_reported_at ON scammer_patterns(reported_at);
+CREATE INDEX idx_scammer_patterns_complaint_id ON scammer_patterns(complaint_id);
+
+-- Apply updated_at trigger
+CREATE TRIGGER update_scammer_patterns_updated_at
+  BEFORE UPDATE ON scammer_patterns
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+```
+
+## 13. Report Credibility Scores Table
+
+```sql
+-- ❓ CONDITIONAL: Only run if table doesn't exist
+-- Check first: SELECT table_name FROM information_schema.tables WHERE table_name = 'report_credibility_scores';
+-- Skip if table already exists and structure is correct
+
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS report_credibility_scores CASCADE;
+
+-- Store credibility scores and analysis for reports
+CREATE TABLE IF NOT EXISTS report_credibility_scores (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    complaint_id UUID REFERENCES complaints(id) ON DELETE CASCADE NOT NULL,
+    
+    -- Credibility Assessment
+    overall_score INTEGER NOT NULL CHECK (overall_score >= 0 AND overall_score <= 100),
+    strength_level TEXT NOT NULL CHECK (strength_level IN ('weak', 'moderate', 'strong', 'very_strong')),
+    factors JSONB NOT NULL DEFAULT '{}'::jsonb, -- Store individual factor scores
+    suggestions JSONB NOT NULL DEFAULT '[]'::jsonb, -- Store improvement suggestions
+    
+    -- Metadata
+    calculated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+-- Create indexes
+CREATE INDEX idx_credibility_scores_complaint ON report_credibility_scores(complaint_id);
+CREATE INDEX idx_credibility_scores_overall ON report_credibility_scores(overall_score);
+CREATE INDEX idx_credibility_scores_strength ON report_credibility_scores(strength_level);
+CREATE INDEX idx_credibility_scores_calculated ON report_credibility_scores(calculated_at);
+
+-- Apply updated_at trigger
+CREATE TRIGGER update_credibility_scores_updated_at
+  BEFORE UPDATE ON report_credibility_scores
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+```
+
+## 14. Priority Change Log Table (Audit Trail)
+
+```sql
+-- ⚠️ NEW TABLE: Must be created for AI audit trail functionality
+-- 🆕 PURPOSE: Comprehensive audit trail for all priority-related changes
+-- 😨 PRIORITY: HIGH - Required for AI learning and officer feedback
+
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS priority_change_log CASCADE;
+
+-- Comprehensive audit trail for all priority-related changes
+CREATE TABLE IF NOT EXISTS priority_change_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    complaint_id UUID NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+    
+    -- Change Details
+    change_type VARCHAR NOT NULL CHECK (change_type IN ('priority_change', 'risk_score_change', 'manual_override', 'ai_update')),
+    old_value JSONB,
+    new_value JSONB,
+    
+    -- Change Source
+    changed_by_type VARCHAR NOT NULL CHECK (changed_by_type IN ('system', 'ai', 'user', 'officer', 'admin')),
+    changed_by_user UUID REFERENCES auth.users(id),
+    
+    -- Officer Feedback (for learning)
+    officer_approved BOOLEAN DEFAULT NULL,
+    officer_feedback TEXT,
+    feedback_recorded_at TIMESTAMPTZ,
+    feedback_officer_id UUID,
+    
+    -- Context
+    reason TEXT NOT NULL,
+    confidence_before INTEGER,
+    confidence_after INTEGER,
+    
+    -- Metadata
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    session_id VARCHAR,
+    
+    -- Additional Data
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_priority_log_complaint_id ON priority_change_log(complaint_id);
+CREATE INDEX idx_priority_log_created_at ON priority_change_log(created_at);
+CREATE INDEX idx_priority_log_change_type ON priority_change_log(change_type);
+CREATE INDEX idx_priority_log_changed_by_type ON priority_change_log(changed_by_type);
+CREATE INDEX idx_priority_log_officer_approved ON priority_change_log(officer_approved);
+CREATE INDEX idx_priority_log_session_id ON priority_change_log(session_id);
+```
+
+## 15. AI Assessment Cache Table (Performance)
+
+```sql
+-- ⚠️ NEW TABLE: Must be created for AI performance optimization
+-- 🆕 PURPOSE: Cache frequent AI assessments for better performance
+-- 😨 PRIORITY: MEDIUM - Performance optimization for AI features
+
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS ai_assessment_cache CASCADE;
+
+-- Cache frequent AI assessments for performance
+CREATE TABLE IF NOT EXISTS ai_assessment_cache (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Cache Key Components
+    input_hash VARCHAR(64) NOT NULL UNIQUE,
+    crime_type VARCHAR NOT NULL,
+    description_hash VARCHAR(64) NOT NULL,
+    
+    -- Cached Results
+    ai_risk_score INTEGER NOT NULL CHECK (ai_risk_score >= 0 AND ai_risk_score <= 100),
+    ai_priority VARCHAR NOT NULL CHECK (ai_priority IN ('critical', 'high', 'medium', 'low')),
+    confidence_score INTEGER NOT NULL CHECK (confidence_score >= 0 AND confidence_score <= 100),
+    risk_factors JSONB NOT NULL DEFAULT '[]'::jsonb,
+    urgency_indicators JSONB NOT NULL DEFAULT '[]'::jsonb,
+    reasoning TEXT NOT NULL,
+    
+    -- Cache Metadata
+    cache_hits INTEGER DEFAULT 0,
+    last_used_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    
+    -- Model Information
+    model_version VARCHAR NOT NULL DEFAULT 'gemini-2.0-flash',
+    assessment_type VARCHAR NOT NULL DEFAULT 'full'
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_ai_cache_input_hash ON ai_assessment_cache(input_hash);
+CREATE INDEX idx_ai_cache_crime_type ON ai_assessment_cache(crime_type);
+CREATE INDEX idx_ai_cache_expires_at ON ai_assessment_cache(expires_at);
+CREATE INDEX idx_ai_cache_last_used_at ON ai_assessment_cache(last_used_at);
+CREATE INDEX idx_ai_cache_description_hash ON ai_assessment_cache(description_hash);
+```
+
+## 16. Evidence Suggestions Table
+
+```sql
+-- ⚠️ NEW TABLE: Must be created for smart evidence guidance
+-- 🆕 PURPOSE: Store AI-generated evidence suggestions for different crime types
+-- 😨 PRIORITY: MEDIUM - Enhanced user experience with evidence guidance
+
+-- Drop existing table and recreate
+DROP TABLE IF EXISTS evidence_suggestions CASCADE;
+
+-- Store AI-generated evidence suggestions for different crime types
+CREATE TABLE IF NOT EXISTS evidence_suggestions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Crime Type Mapping
+    crime_type VARCHAR NOT NULL,
+    category VARCHAR NOT NULL, -- Crime category
+    suggestion_type VARCHAR NOT NULL CHECK (suggestion_type IN ('evidence_guidance', 'contextual_tip', 'collection_method')),
+    
+    -- Suggestion Content
+    title VARCHAR(200) NOT NULL,
+    description TEXT NOT NULL,
+    priority VARCHAR NOT NULL CHECK (priority IN ('critical', 'high', 'medium', 'low')),
+    icon VARCHAR(50),
+    examples JSONB DEFAULT '[]'::jsonb, -- Array of example strings
+    
+    -- Status
+    is_active BOOLEAN DEFAULT true,
+    
+    -- Timestamps
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX idx_evidence_suggestions_crime_type ON evidence_suggestions(crime_type);
+CREATE INDEX idx_evidence_suggestions_category ON evidence_suggestions(category);
+CREATE INDEX idx_evidence_suggestions_suggestion_type ON evidence_suggestions(suggestion_type);
+CREATE INDEX idx_evidence_suggestions_priority ON evidence_suggestions(priority);
+CREATE INDEX idx_evidence_suggestions_active ON evidence_suggestions(is_active);
+
+-- Apply updated_at trigger
+CREATE TRIGGER update_evidence_suggestions_updated_at
+  BEFORE UPDATE ON evidence_suggestions
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+```
+
+## 17. Enhanced Trigger Functions
 
 ```sql
 -- Drop existing functions and triggers
@@ -955,3 +1339,261 @@ The dynamic fields in the complaints table change visibility based on the select
 
 ### Flutter App Dynamic Implementation
 The Flutter app uses `DynamicFieldService` to determine which fields to show based on the selected crime type, providing a tailored user experience for each category of cybercrime.
+
+## AI Database Functions
+
+```sql
+-- 🔧 NEW FUNCTIONS: Must be created for AI functionality
+-- 🎯 PURPOSE: Essential functions for AI assessment, caching, and pattern detection
+-- 🚨 PRIORITY: HIGH - Required for AI features to work properly
+
+-- Function to update complaint AI assessment
+CREATE OR REPLACE FUNCTION update_complaint_ai_assessment(
+    p_complaint_id UUID,
+    p_ai_risk_score INTEGER,
+    p_ai_priority VARCHAR,
+    p_confidence_score INTEGER,
+    p_risk_factors JSONB,
+    p_urgency_indicators JSONB,
+    p_reasoning TEXT,
+    p_assessment_type VARCHAR DEFAULT 'full'
+) RETURNS VOID AS $$
+BEGIN
+    -- Update complaints table
+    UPDATE complaints SET
+        ai_priority = p_ai_priority,
+        ai_risk_score = p_ai_risk_score,
+        ai_confidence_score = p_confidence_score,
+        risk_factors = p_risk_factors,
+        urgency_indicators = p_urgency_indicators,
+        last_ai_assessment = NOW(),
+        ai_reasoning = p_reasoning,
+        updated_at = NOW()
+    WHERE id = p_complaint_id;
+    
+    -- Insert detailed assessment record
+    INSERT INTO ai_risk_assessments (
+        complaint_id,
+        ai_risk_score,
+        ai_priority,
+        confidence_score,
+        risk_factors,
+        urgency_indicators,
+        reasoning,
+        assessment_type,
+        input_data
+    ) VALUES (
+        p_complaint_id,
+        p_ai_risk_score,
+        p_ai_priority,
+        p_confidence_score,
+        p_risk_factors,
+        p_urgency_indicators,
+        p_reasoning,
+        p_assessment_type,
+        '{}'::jsonb
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get AI assessment history
+CREATE OR REPLACE FUNCTION get_ai_assessment_history(p_complaint_id UUID)
+RETURNS TABLE (
+    assessment_id UUID,
+    ai_risk_score INTEGER,
+    ai_priority VARCHAR,
+    confidence_score INTEGER,
+    reasoning TEXT,
+    created_at TIMESTAMPTZ,
+    assessment_type VARCHAR
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        a.id,
+        a.ai_risk_score,
+        a.ai_priority,
+        a.confidence_score,
+        a.reasoning,
+        a.created_at,
+        a.assessment_type
+    FROM ai_risk_assessments a
+    WHERE a.complaint_id = p_complaint_id
+    ORDER BY a.created_at DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to cleanup expired cache
+CREATE OR REPLACE FUNCTION cleanup_expired_ai_cache()
+RETURNS INTEGER AS $$
+DECLARE
+    deleted_count INTEGER;
+BEGIN
+    DELETE FROM ai_assessment_cache 
+    WHERE expires_at < NOW();
+    
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to check for similar email patterns
+CREATE OR REPLACE FUNCTION check_email_patterns(email_input TEXT, days_back INTEGER DEFAULT 30)
+RETURNS TABLE (
+    complaint_id UUID,
+    suspect_contact TEXT,
+    crime_type TEXT,
+    created_at TIMESTAMPTZ,
+    match_count BIGINT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id,
+        c.suspect_contact,
+        c.crime_type,
+        c.created_at,
+        COUNT(*) OVER () as match_count
+    FROM complaints c
+    WHERE (c.suspect_contact ILIKE '%' || email_input || '%' 
+           OR c.description ILIKE '%' || email_input || '%')
+    AND c.created_at >= (CURRENT_TIMESTAMP - (days_back || ' days')::INTERVAL)
+    ORDER BY c.created_at DESC
+    LIMIT 10;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to check for similar phone patterns
+CREATE OR REPLACE FUNCTION check_phone_patterns(phone_input TEXT, days_back INTEGER DEFAULT 30)
+RETURNS TABLE (
+    complaint_id UUID,
+    suspect_contact TEXT,
+    phone_number TEXT,
+    crime_type TEXT,
+    created_at TIMESTAMPTZ,
+    match_count BIGINT
+) AS $$
+DECLARE
+    clean_phone TEXT;
+BEGIN
+    -- Clean phone number (remove non-digits except +)
+    clean_phone := regexp_replace(phone_input, '[^0-9+]', '', 'g');
+    
+    RETURN QUERY
+    SELECT 
+        c.id,
+        c.suspect_contact,
+        c.phone_number,
+        c.crime_type,
+        c.created_at,
+        COUNT(*) OVER () as match_count
+    FROM complaints c
+    WHERE (c.suspect_contact ILIKE '%' || clean_phone || '%' 
+           OR c.phone_number ILIKE '%' || clean_phone || '%'
+           OR c.description ILIKE '%' || clean_phone || '%')
+    AND c.created_at >= (CURRENT_TIMESTAMP - (days_back || ' days')::INTERVAL)
+    ORDER BY c.created_at DESC
+    LIMIT 10;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Auto-create scammer pattern entries
+CREATE OR REPLACE FUNCTION auto_create_scammer_pattern()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Only create pattern entry if we have suspect identifiers
+    IF NEW.suspect_contact IS NOT NULL OR NEW.phone_number IS NOT NULL THEN
+        INSERT INTO scammer_patterns (
+            complaint_id,
+            identifiers,
+            crime_type,
+            reported_at
+        ) VALUES (
+            NEW.id,
+            jsonb_build_object(
+                'suspect_contact', NEW.suspect_contact,
+                'phone_number', NEW.phone_number,
+                'platform_website', NEW.platform_website,
+                'suspect_name', NEW.suspect_name
+            ),
+            NEW.crime_type,
+            NEW.created_at
+        );
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create trigger for auto-creating scammer patterns
+DROP TRIGGER IF EXISTS auto_create_scammer_pattern_trigger ON complaints;
+CREATE TRIGGER auto_create_scammer_pattern_trigger
+    AFTER INSERT ON complaints
+    FOR EACH ROW
+    EXECUTE FUNCTION auto_create_scammer_pattern();
+```
+
+## Data Views for Analytics
+
+```sql
+-- 📊 NEW VIEWS: Must be created for AI analytics and monitoring
+-- 🎯 PURPOSE: Monitor AI performance and compare with rule-based assessments
+-- 🚨 PRIORITY: MEDIUM - Useful for AI performance monitoring
+
+-- View to see AI vs Rule-based comparison
+CREATE OR REPLACE VIEW complaint_priority_comparison AS
+SELECT 
+    c.id,
+    c.complaint_number,
+    c.crime_type,
+    c.priority as rule_based_priority,
+    c.risk_score as rule_based_risk_score,
+    c.ai_priority,
+    c.ai_risk_score,
+    c.ai_confidence_score,
+    c.last_ai_assessment,
+    CASE 
+        WHEN c.ai_priority IS NOT NULL THEN 'AI'
+        ELSE 'Rule-based'
+    END as effective_source,
+    COALESCE(c.ai_priority, c.priority) as effective_priority,
+    COALESCE(c.ai_risk_score, c.risk_score) as effective_risk_score,
+    c.created_at
+FROM complaints c
+WHERE c.status IN ('Pending', 'Under Investigation', 'Requires More Information')
+ORDER BY c.created_at DESC;
+
+-- View for AI performance monitoring
+CREATE OR REPLACE VIEW ai_assessment_performance AS
+SELECT 
+    ai_priority,
+    COUNT(*) as assessment_count,
+    AVG(ai_risk_score) as avg_risk_score,
+    AVG(confidence_score) as avg_confidence,
+    MIN(confidence_score) as min_confidence,
+    MAX(confidence_score) as max_confidence,
+    COUNT(CASE WHEN confidence_score >= 90 THEN 1 END) as high_confidence_count,
+    COUNT(CASE WHEN confidence_score < 70 THEN 1 END) as low_confidence_count
+FROM complaints 
+WHERE ai_priority IS NOT NULL
+GROUP BY ai_priority
+ORDER BY 
+    CASE ai_priority 
+        WHEN 'critical' THEN 1 
+        WHEN 'high' THEN 2 
+        WHEN 'medium' THEN 3 
+        WHEN 'low' THEN 4 
+    END;
+```
+
+## ✅ Merge Complete!
+
+**WEB_SUPABASE_TABLES_REVISED.md is now the single source of truth with:**
+- ✅ All 16 tables properly numbered and organized
+- ✅ Complete AI enhancement capabilities
+- ✅ All database functions and views
+- ✅ Proper trigger system for pattern detection
+- ✅ Performance optimization with caching
+- ✅ Analytics and monitoring views
+
+**📝 REMINDER: AI_RISK_ASSESSMENT_TABLES.md is no longer needed** - everything has been merged into the main WEB file with proper organization!

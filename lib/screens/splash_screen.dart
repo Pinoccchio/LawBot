@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/connectivity_service.dart';
+import '../widgets/no_internet_dialog.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -15,6 +17,9 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+  
+  final ConnectivityService _connectivityService = ConnectivityService();
+  String _loadingMessage = 'Initializing...';
 
   @override
   void initState() {
@@ -42,22 +47,55 @@ class _SplashScreenState extends State<SplashScreen>
 
     _animationController.forward();
 
-    // FIXED: Properly wait for auth initialization
-    _checkAuthAndNavigate();
+    // Start the initialization process with connectivity check
+    _initializeApp();
   }
 
-  // FIXED: Enhanced auth check with proper initialization waiting
-  void _checkAuthAndNavigate() async {
+  // SIMPLIFIED: Initialize app - global connectivity monitoring handles connectivity
+  void _initializeApp() async {
     try {
-      print('🚀 SplashScreen: Starting auth check...');
+      print('🚀 SplashScreen: Starting app initialization...');
 
       // Wait for animation to complete
       await Future.delayed(const Duration(seconds: 2));
+
+      if (!mounted) return;
+
+      // The ConnectivityWrapper will handle connectivity monitoring globally
+      // Just proceed with authentication check
+      await _checkAuthAndNavigate();
+    } catch (e) {
+      print('❌ SplashScreen: Error during app initialization: $e');
+      if (mounted) {
+        _updateLoadingMessage('Initialization failed');
+        // Fallback to onboarding in case of error
+        await Future.delayed(const Duration(milliseconds: 500));
+        Navigator.pushReplacementNamed(context, '/onboarding');
+      }
+    }
+  }
+
+  // NEW: Update loading message with state management
+  void _updateLoadingMessage(String message) {
+    if (mounted) {
+      setState(() {
+        _loadingMessage = message;
+      });
+    }
+    print('📝 SplashScreen: $message');
+  }
+
+  // UPDATED: Enhanced auth check with proper initialization waiting
+  Future<void> _checkAuthAndNavigate() async {
+    try {
+      print('🚀 SplashScreen: Starting auth check...');
+      _updateLoadingMessage('Checking authentication...');
 
       if (mounted) {
         final authProvider = context.read<AuthProvider>();
 
         print('📱 SplashScreen: AuthProvider obtained, waiting for initialization...');
+        _updateLoadingMessage('Initializing authentication...');
 
         // CRITICAL: Wait for AuthProvider to be fully initialized
         await authProvider.waitForInitialization();
@@ -70,27 +108,35 @@ class _SplashScreenState extends State<SplashScreen>
         // Check if user is already authenticated
         if (authProvider.isAuthenticated) {
           print('🏠 SplashScreen: User is authenticated, navigating to home');
+          _updateLoadingMessage('Welcome back!');
 
           // Additional safety check: ensure user profile is loaded
           if (authProvider.userProfile == null) {
             print('⚠️ SplashScreen: User authenticated but no profile, trying to load...');
+            _updateLoadingMessage('Loading profile...');
             // Give a moment for profile to load if it's in progress
             await Future.delayed(const Duration(milliseconds: 500));
           }
 
           // Navigate to home
+          _updateLoadingMessage('Entering app...');
+          await Future.delayed(const Duration(milliseconds: 300)); // Brief pause for UX
           Navigator.pushReplacementNamed(context, '/home');
         } else {
           print('📝 SplashScreen: User not authenticated, navigating to onboarding');
+          _updateLoadingMessage('Setting up...');
           // User is not logged in, show onboarding
+          await Future.delayed(const Duration(milliseconds: 300)); // Brief pause for UX
           Navigator.pushReplacementNamed(context, '/onboarding');
         }
       }
     } catch (e) {
       print('❌ SplashScreen: Error during auth check: $e');
+      _updateLoadingMessage('Authentication failed');
 
       // Fallback: navigate to onboarding in case of error
       if (mounted) {
+        await Future.delayed(const Duration(milliseconds: 500)); // Give user time to see error
         Navigator.pushReplacementNamed(context, '/onboarding');
       }
     }
@@ -176,24 +222,13 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Status text for debugging (remove in production)
-                    Consumer<AuthProvider>(
-                      builder: (context, authProvider, child) {
-                        String statusText = 'Initializing...';
-                        if (authProvider.isInitialized) {
-                          statusText = authProvider.isAuthenticated
-                              ? 'Welcome back!'
-                              : 'Setting up...';
-                        }
-
-                        return Text(
-                          statusText,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? Colors.grey[500] : Colors.grey[500],
-                          ),
-                        );
-                      },
+                    // Dynamic loading status text
+                    Text(
+                      _loadingMessage,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[500] : Colors.grey[500],
+                      ),
                     ),
                   ],
                 ),

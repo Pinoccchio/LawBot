@@ -11,6 +11,13 @@ import '../utils/philippine_time.dart';
 import '../services/database_service.dart';
 import '../models/dynamic_field_config.dart';
 import '../services/dynamic_field_service.dart';
+import '../services/evidence_guidance_service.dart';
+import '../services/credibility_scorer_service.dart';
+import '../services/pattern_detection_service.dart';
+import '../services/ai_risk_assessment_service.dart';
+import '../models/complaint_model.dart' as ComplaintModels;
+import '../models/complaint_model.dart' show EvidenceGuidanceItem, CredibilityScore;
+import 'dart:async';
 
 class ComplaintFormScreen extends StatefulWidget {
   const ComplaintFormScreen({super.key});
@@ -58,6 +65,25 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   String? _crimeTypesError;
   String _selectedSuspectRelationship = 'Unknown';
   
+  // New features state
+  CredibilityScore? _currentCredibilityScore;
+  PatternAlert? _currentPatternAlert;
+  List<EvidenceGuidanceItem> _evidenceGuidance = [];
+  bool _showCredibilityMeter = false;
+  bool _showEvidenceGuidance = false;
+  
+  // AI Assessment state
+  AIRiskAssessment? _currentAIAssessment;
+  bool _isPerformingAIAssessment = false;
+  Timer? _aiAssessmentTimer;
+  String _lastAssessmentInput = '';
+  bool _showAIInsights = false;
+  
+  // AI Loading states
+  bool _isLoadingCredibilityScore = false;
+  bool _isLoadingEvidenceGuidance = false;
+  bool _isLoadingPatternCheck = false;
+  
   // Suspect relationship options
   final List<String> _suspectRelationshipOptions = [
     'Unknown',
@@ -73,11 +99,21 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   @override
   void initState() {
     super.initState();
+    
+    // AI services will initialize automatically when first used
+    
     // Add listeners for real-time credibility score updates
-    _descriptionController.addListener(() => setState(() {}));
-    _fullNameController.addListener(() => setState(() {}));
-    _emailController.addListener(() => setState(() {}));
-    _phoneController.addListener(() => setState(() {}));
+    _descriptionController.addListener(_updateCredibilityScore);
+    _fullNameController.addListener(_updateCredibilityScore);
+    _emailController.addListener(_updateCredibilityScore);
+    _phoneController.addListener(_updateCredibilityScore);
+    _platformWebsiteController.addListener(_updateCredibilityScore);
+    _financialLossController.addListener(_updateCredibilityScore);
+    _suspectContactController.addListener(_checkForPatterns);
+    
+    // Add listeners for real-time AI assessment
+    _descriptionController.addListener(_triggerAIAssessment);
+    _financialLossController.addListener(_triggerAIAssessment);
     
     // Load user profile data and crime types
     _loadUserProfile();
@@ -86,6 +122,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
 
   @override
   void dispose() {
+    // Cancel AI assessment timer
+    _aiAssessmentTimer?.cancel();
+    
     _descriptionController.dispose();
     _fullNameController.dispose();
     _emailController.dispose();
@@ -198,6 +237,266 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     }
   }
 
+  // Update evidence guidance using AI
+  void _updateEvidenceGuidance(ComplaintModels.CrimeType crimeType) async {
+    setState(() {
+      _isLoadingEvidenceGuidance = true;
+    });
+    
+    try {
+      print('🔍 [ComplaintForm] Getting AI evidence guidance for ${crimeType.displayName}');
+      final evidenceItems = await EvidenceGuidanceService.getEvidenceGuidance(
+        crimeType, 
+        description: _descriptionController.text,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _evidenceGuidance = evidenceItems;
+          _isLoadingEvidenceGuidance = false;
+        });
+        print('✅ [ComplaintForm] Updated evidence guidance with ${evidenceItems.length} items');
+      }
+    } catch (e) {
+      print('❌ [ComplaintForm] Error getting evidence guidance: $e');
+      // Fallback to deprecated sync method
+      if (mounted) {
+        setState(() {
+          _evidenceGuidance = EvidenceGuidanceService.getEvidenceGuidanceSync(crimeType);
+          _isLoadingEvidenceGuidance = false;
+        });
+      }
+    }
+  }
+
+  // Update credibility score based on current form data using AI
+  void _updateCredibilityScore() async {
+    if (_selectedCrimeType != null && mounted) {
+      setState(() {
+        _isLoadingCredibilityScore = true;
+      });
+      
+      try {
+        print('🔍 [ComplaintForm] Getting AI credibility score for ${_selectedCrimeType!.name}');
+        final formData = _getFormData();
+        final crimeType = ComplaintModels.CrimeType.values.firstWhere(
+          (ct) => ct.displayName == _selectedCrimeType!.name,
+          orElse: () => ComplaintModels.CrimeType.phishing,
+        );
+        
+        final credibilityScore = await CredibilityScorer.calculateCredibilityScore(formData, crimeType);
+        
+        if (mounted) {
+          setState(() {
+            _currentCredibilityScore = credibilityScore;
+            _showCredibilityMeter = true;
+            _isLoadingCredibilityScore = false;
+          });
+          print('✅ [ComplaintForm] Updated credibility score: ${credibilityScore.overallScore}%');
+        }
+      } catch (e) {
+        print('❌ [ComplaintForm] Error getting credibility score: $e');
+        if (mounted) {
+          setState(() {
+            _isLoadingCredibilityScore = false;
+          });
+        }
+        // Fallback to deprecated sync method
+        if (mounted) {
+          final formData = _getFormData();
+          final crimeType = ComplaintModels.CrimeType.values.firstWhere(
+            (ct) => ct.displayName == _selectedCrimeType!.name,
+            orElse: () => ComplaintModels.CrimeType.phishing,
+          );
+          
+          setState(() {
+            _currentCredibilityScore = CredibilityScorer.calculateCredibilityScoreSync(formData, crimeType);
+            _showCredibilityMeter = true;
+            _isLoadingCredibilityScore = false;
+          });
+        }
+      }
+    }
+  }
+
+  // Check for scammer patterns
+  void _checkForPatterns() async {
+    if (_selectedCrimeType != null && mounted) {
+      setState(() {
+        _isLoadingPatternCheck = true;
+      });
+      
+      try {
+        final formData = _getFormData();
+        final patternAlert = await PatternDetectionService.checkForPatterns(formData);
+        
+        if (mounted) {
+          setState(() {
+            _currentPatternAlert = patternAlert;
+            _isLoadingPatternCheck = false;
+          });
+          
+          if (patternAlert != null) {
+            _showPatternAlert(patternAlert);
+          }
+        }
+      } catch (e) {
+        print('❌ [ComplaintForm] Error checking patterns: $e');
+        if (mounted) {
+          setState(() {
+            _isLoadingPatternCheck = false;
+          });
+        }
+      }
+    }
+  }
+
+  // Get current form data for analysis
+  Map<String, dynamic> _getFormData() {
+    return {
+      'fullName': _fullNameController.text,
+      'email': _emailController.text,
+      'phoneNumber': _phoneController.text,
+      'description': _descriptionController.text,
+      'incidentDateTime': _selectedIncidentDateTime,
+      'estimatedFinancialLoss': double.tryParse(_financialLossController.text),
+      'platformWebsite': _platformWebsiteController.text,
+      'accountReference': _accountReferenceController.text,
+      'suspectName': _suspectNameController.text,
+      'suspectContact': _suspectContactController.text,
+      'suspectDetails': _suspectDetailsController.text,
+      'suspectRelationship': _selectedSuspectRelationship,
+      'evidenceFiles': _evidenceFiles,
+      'crimeType': _selectedCrimeType?.name,
+    };
+  }
+
+  // =============================================
+  // AI ASSESSMENT METHODS
+  // =============================================
+
+  /// Trigger AI assessment with debouncing
+  void _triggerAIAssessment() {
+    if (_selectedCrimeType == null || !mounted) return;
+    
+    final currentInput = '${_descriptionController.text}_${_financialLossController.text}_${_selectedCrimeType!.name}';
+    
+    // Skip if input hasn't changed significantly
+    if (currentInput == _lastAssessmentInput) return;
+    
+    // Cancel previous timer
+    _aiAssessmentTimer?.cancel();
+    
+    // Set up new debounced timer (2 seconds delay)
+    _aiAssessmentTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted && _selectedCrimeType != null && _descriptionController.text.trim().length > 10) {
+        _performQuickAIAssessment();
+      }
+    });
+  }
+
+  /// Perform quick AI assessment for real-time feedback
+  void _performQuickAIAssessment() async {
+    if (_isPerformingAIAssessment || !mounted) return;
+    
+    setState(() {
+      _isPerformingAIAssessment = true;
+    });
+
+    try {
+      final crimeType = ComplaintModels.CrimeType.values.firstWhere(
+        (ct) => ct.displayName == _selectedCrimeType!.name,
+        orElse: () => ComplaintModels.CrimeType.phishing,
+      );
+
+      final assessment = await _databaseService.performQuickAssessment(
+        _descriptionController.text.trim(),
+        crimeType,
+        double.tryParse(_financialLossController.text),
+      );
+
+      if (assessment != null && mounted) {
+        setState(() {
+          _currentAIAssessment = assessment;
+          _showAIInsights = true;
+          _lastAssessmentInput = '${_descriptionController.text}_${_financialLossController.text}_${_selectedCrimeType!.name}';
+        });
+        
+        print('🤖 AI Assessment completed: ${assessment.aiPriority} priority, ${assessment.aiRiskScore}% risk, ${assessment.confidenceScore}% confidence');
+      }
+    } catch (e) {
+      print('⚠️ Quick AI assessment failed: $e');
+      // Silently fail for real-time assessment
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPerformingAIAssessment = false;
+        });
+      }
+    }
+  }
+
+  /// Toggle AI insights visibility
+  void _toggleAIInsights() {
+    setState(() {
+      _showAIInsights = !_showAIInsights;
+    });
+  }
+
+  // Show pattern alert dialog
+  void _showPatternAlert(PatternAlert alert) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(alert.severityIcon, color: alert.severityColor, size: 24),
+            const SizedBox(width: 8),
+            Text(alert.alertTitle),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(alert.recommendation),
+            const SizedBox(height: 16),
+            ...alert.matches.map((match) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.warning, color: Colors.orange, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${match.typeDisplay}: ${match.matchDescription}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            )).toList(),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('I Understand'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(context); // Go back to previous screen
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Cancel Report', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Handle crime type selection and manage dynamic fields
   void _onCrimeTypeSelected(DatabaseCrimeType? crimeType) {
     // Check if we need to update form state due to field changes
@@ -213,6 +512,24 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       _previousCrimeType = _selectedCrimeType;
       _selectedCrimeType = crimeType;
       _selectedOfficer = null; // Reset officer selection when crime type changes
+      
+      // Update evidence guidance for new crime type
+      if (crimeType != null) {
+        final mappedCrimeType = ComplaintModels.CrimeType.values.firstWhere(
+          (ct) => ct.displayName == crimeType.name,
+          orElse: () => ComplaintModels.CrimeType.phishing,
+        );
+        _updateEvidenceGuidance(mappedCrimeType);
+        _showEvidenceGuidance = true;
+        
+        // Update credibility score with new crime type
+        _updateCredibilityScore();
+      } else {
+        _evidenceGuidance = [];
+        _showEvidenceGuidance = false;
+        _currentCredibilityScore = null;
+        _showCredibilityMeter = false;
+      }
     });
   }
   
@@ -516,7 +833,39 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       );
 
       // Submit to database service (need to create this method)
-      final complaintId = await _submitDatabaseComplaint(complaint);
+      // Convert DatabaseComplaint to regular Complaint for AI submission
+      final regularComplaint = ComplaintModels.Complaint(
+        userId: complaint.userId,
+        crimeType: ComplaintModels.CrimeType.values.firstWhere(
+          (ct) => ct.displayName == complaint.crimeType.name,
+          orElse: () => ComplaintModels.CrimeType.phishing,
+        ),
+        description: complaint.description,
+        evidenceFiles: complaint.evidenceFiles.map((dbFile) => ComplaintModels.EvidenceFile(
+          id: dbFile.id,
+          fileName: dbFile.fileName,
+          filePath: dbFile.filePath,
+          fileType: dbFile.fileType,
+          fileSize: dbFile.fileSize,
+          uploadedAt: dbFile.uploadedAt,
+          downloadUrl: dbFile.downloadUrl,
+        )).toList(),
+        fullName: complaint.fullName,
+        email: complaint.email,
+        phoneNumber: complaint.phoneNumber,
+        incidentDateTime: complaint.incidentDateTime,
+        incidentLocation: complaint.incidentLocation,
+        estimatedFinancialLoss: complaint.estimatedFinancialLoss,
+        createdAt: complaint.createdAt,
+        updatedAt: complaint.updatedAt,
+        suspectName: _suspectNameController.text.trim().isEmpty ? null : _suspectNameController.text.trim(),
+        suspectRelationship: _selectedSuspectRelationship != 'Unknown' ? _selectedSuspectRelationship : null,
+        suspectContact: _suspectContactController.text.trim().isEmpty ? null : _suspectContactController.text.trim(),
+        suspectDetails: _suspectDetailsController.text.trim().isEmpty ? null : _suspectDetailsController.text.trim(),
+      );
+
+      // Submit with AI assessment
+      final complaintId = await _databaseService.submitComplaintWithAI(regularComplaint);
       
       if (complaintId != null) {
         // Show success dialog with complaint ID and assigned officer info
@@ -1331,6 +1680,13 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
               
               const SizedBox(height: 24),
               
+              // Evidence Guidance Section (Smart Evidence Guidance Feature)
+              if (_showEvidenceGuidance && (_evidenceGuidance.isNotEmpty || _isLoadingEvidenceGuidance))
+                _buildEvidenceGuidanceCard(),
+              
+              if (_showEvidenceGuidance && (_evidenceGuidance.isNotEmpty || _isLoadingEvidenceGuidance))
+                const SizedBox(height: 24),
+              
               // Description Section
               _buildSectionCard(
                 title: 'Incident Details',
@@ -1597,6 +1953,20 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
               
               const SizedBox(height: 40),
               
+              // AI Risk Assessment Section
+              if (_showAIInsights && (_currentAIAssessment != null || _isPerformingAIAssessment))
+                _buildAIInsightsCard(),
+              
+              if (_showAIInsights && (_currentAIAssessment != null || _isPerformingAIAssessment))
+                const SizedBox(height: 24),
+              
+              // Credibility Meter Section (Report Credibility Meter Feature)
+              if (_showCredibilityMeter && (_currentCredibilityScore != null || _isLoadingCredibilityScore))
+                _buildCredibilityMeterCard(),
+              
+              if (_showCredibilityMeter && (_currentCredibilityScore != null || _isLoadingCredibilityScore))
+                const SizedBox(height: 24),
+              
               // Submit Button
               Container(
                 width: double.infinity,
@@ -1748,13 +2118,43 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       case ComplaintField.suspectRelationship:
         return _buildSuspectRelationshipField(isDark, description);
       case ComplaintField.suspectContact:
-        return _buildTextFormField(
-          controller: _suspectContactController,
-          label: label,
-          hint: hint ?? 'Phone, email, social media handle',
-          icon: Icons.contact_phone_outlined,
-          isDark: isDark,
-          description: description,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTextFormField(
+              controller: _suspectContactController,
+              label: label,
+              hint: hint ?? 'Phone, email, social media handle',
+              icon: Icons.contact_phone_outlined,
+              isDark: isDark,
+              description: description,
+            ),
+            if (_isLoadingPatternCheck)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0, left: 12.0),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '🔍 Checking for similar scammer patterns...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         );
       case ComplaintField.suspectDetails:
         return _buildTextAreaField(
@@ -2479,6 +2879,748 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // Build Evidence Guidance Card (Smart Evidence Guidance Feature)
+  Widget _buildEvidenceGuidanceCard() {
+    final isDark = context.read<ThemeProvider>().isDarkMode;
+    
+    return _buildSectionCard(
+      title: '💡 Smart Evidence Guidance',
+      icon: Icons.lightbulb,
+      children: [
+        // Loading indicator
+        if (_isLoadingEvidenceGuidance)
+          Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '🤖 AI is analyzing your case type to provide smart evidence recommendations...',
+                  style: TextStyle(
+                    color: isDark ? Colors.grey[300] : Colors.grey[600],
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        else ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2563EB).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: const Color(0xFF2563EB).withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.auto_awesome,
+                  color: const Color(0xFF2563EB),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Based on your selected crime type "${_selectedCrimeType?.name}", here are the recommended evidence types that will strengthen your report:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: const Color(0xFF2563EB),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+          const SizedBox(height: 16),
+          ...(_evidenceGuidance.map((guidance) => _buildEvidenceGuidanceItem(guidance, isDark)).toList()),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.tips_and_updates, color: Colors.green, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Tip: Mas maraming evidence files, mas mataas ang credibility score ng report mo!',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildEvidenceGuidanceItem(EvidenceGuidanceItem guidance, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF374151) : Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: guidance.priorityColor.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                guidance.icon,
+                style: const TextStyle(fontSize: 20),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  guidance.title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: guidance.priorityColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  guidance.priority.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: guidance.priorityColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            guidance.description,
+            style: TextStyle(
+              fontSize: 14,
+              color: isDark ? Colors.grey[300] : Colors.grey[700],
+            ),
+          ),
+          if (guidance.examples.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Examples:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 4),
+            ...guidance.examples.map((example) => Padding(
+              padding: const EdgeInsets.only(left: 12, bottom: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '• ',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: guidance.priorityColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      example,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )).toList(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Build Credibility Meter Card (Report Credibility Meter Feature)
+  Widget _buildCredibilityMeterCard() {
+    final isDark = context.read<ThemeProvider>().isDarkMode;
+    
+    return _buildSectionCard(
+      title: '📊 Report Credibility Score',
+      icon: Icons.analytics,
+      children: [
+        // Loading indicator
+        if (_isLoadingCredibilityScore)
+          Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF059669)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '🤖 AI is analyzing the credibility and completeness of your report...',
+                  style: TextStyle(
+                    color: isDark ? Colors.grey[300] : Colors.grey[600],
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        else if (_currentCredibilityScore != null) ...[
+          // Display the credibility score
+          _buildCredibilityScoreContent(_currentCredibilityScore!, isDark),
+        ],
+      ],
+    );
+  }
+
+  // Build the actual credibility score content
+  Widget _buildCredibilityScoreContent(CredibilityScore score, bool isDark) {
+    return Column(
+      children: [
+        // Overall Score Display
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                score.scoreColor.withOpacity(0.1),
+                score.scoreColor.withOpacity(0.05),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: score.scoreColor.withOpacity(0.3),
+            ),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    score.scoreIcon,
+                    color: score.scoreColor,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${score.overallScore}%',
+                        style: TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          color: score.scoreColor,
+                        ),
+                      ),
+                      Text(
+                        score.strengthLevel,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: score.scoreColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                score.scoreDescription,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 20),
+        
+        // Individual Factors
+        Text(
+          'Score Breakdown:',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: isDark ? Colors.white : Colors.black,
+          ),
+        ),
+        const SizedBox(height: 12),
+        
+        ...score.factors.map((factor) => Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF374151) : Colors.grey[50],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    factor.iconString,
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      factor.name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${factor.percentage}%',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: factor.factorColor,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: factor.score,
+                backgroundColor: (isDark ? Colors.grey[600] : Colors.grey[300]),
+                valueColor: AlwaysStoppedAnimation<Color>(factor.factorColor),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                factor.description,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        )).toList(),
+        
+        // Improvement Suggestions
+        if (score.suggestions.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.orange.withOpacity(0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.lightbulb, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Suggestions to Improve Your Report:',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...score.suggestions.map((suggestion) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.arrow_right,
+                        color: Colors.orange,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          suggestion,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.orange.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )).toList(),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Build AI Risk Assessment Insights Card
+  Widget _buildAIInsightsCard() {
+    final isDark = context.read<ThemeProvider>().isDarkMode;
+    
+    return _buildSectionCard(
+      title: '🤖 AI Risk Assessment',
+      icon: Icons.psychology,
+      children: [
+        // Loading indicator
+        if (_isPerformingAIAssessment)
+          Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF7C3AED)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '🤖 AI is performing intelligent risk assessment and priority analysis...',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isDark ? Colors.grey[300] : Colors.grey[600],
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        
+        // Assessment Results
+        else if (_currentAIAssessment != null) ...[
+          _buildAIAssessmentContent(_currentAIAssessment!, isDark),
+        ],
+      ],
+    );
+  }
+
+  // Build AI Assessment Content
+  Widget _buildAIAssessmentContent(AIRiskAssessment assessment, bool isDark) {
+    return Column(
+      children: [
+        // Priority and Risk Score Display
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                assessment.priorityColor.withOpacity(0.1),
+                assessment.riskScoreColor.withOpacity(0.1),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: assessment.priorityColor.withOpacity(0.3),
+            ),
+          ),
+          child: Row(
+            children: [
+              // Priority Section
+              Expanded(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.priority_high,
+                      color: assessment.priorityColor,
+                      size: 28,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      assessment.aiPriority.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: assessment.priorityColor,
+                      ),
+                    ),
+                    Text(
+                      'Priority',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              Container(
+                width: 1,
+                height: 50,
+                color: isDark ? Colors.grey[600] : Colors.grey[300],
+              ),
+              
+              // Risk Score Section
+              Expanded(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.analytics,
+                      color: assessment.riskScoreColor,
+                      size: 28,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${assessment.aiRiskScore}%',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: assessment.riskScoreColor,
+                      ),
+                    ),
+                    Text(
+                      'Risk Score',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              Container(
+                width: 1,
+                height: 50,
+                color: isDark ? Colors.grey[600] : Colors.grey[300],
+              ),
+              
+              // Confidence Section
+              Expanded(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.verified,
+                      color: assessment.confidenceScore >= 80 
+                          ? Colors.green 
+                          : assessment.confidenceScore >= 60 
+                              ? Colors.orange 
+                              : Colors.red,
+                      size: 28,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${assessment.confidenceScore}%',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: assessment.confidenceScore >= 80 
+                            ? Colors.green 
+                            : assessment.confidenceScore >= 60 
+                                ? Colors.orange 
+                                : Colors.red,
+                      ),
+                    ),
+                    Text(
+                      'Confidence',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 20),
+        
+        // AI Reasoning
+        if (assessment.reasoning.isNotEmpty) ...[
+          Text(
+            'AI Analysis:',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF374151) : Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              assessment.reasoning,
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.grey[300] : Colors.grey[700],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        
+        // Risk Factors
+        if (assessment.riskFactors.isNotEmpty) ...[
+          Text(
+            'Risk Factors:',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: assessment.riskFactors.map((factor) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.red.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.warning,
+                    size: 14,
+                    color: Colors.red,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    factor.replaceAll('_', ' ').split(' ')
+                        .map((word) => word[0].toUpperCase() + word.substring(1))
+                        .join(' '),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.red,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            )).toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
+        
+        // Urgency Indicators
+        if (assessment.urgencyIndicators.isNotEmpty) ...[
+          Text(
+            'Urgency Indicators:',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: assessment.urgencyIndicators.map((indicator) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.orange.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.priority_high,
+                    size: 14,
+                    color: Colors.orange,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    indicator.replaceAll('_', ' ').split(' ')
+                        .map((word) => word[0].toUpperCase() + word.substring(1))
+                        .join(' '),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            )).toList(),
+          ),
+        ],
+      ],
     );
   }
 }

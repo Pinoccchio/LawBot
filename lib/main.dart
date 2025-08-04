@@ -9,12 +9,14 @@ import 'providers/theme_provider.dart';
 import 'providers/language_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/auth_provider.dart';
+import 'providers/connectivity_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/auth/sign_in_screen.dart';
 import 'screens/auth/sign_up_screen.dart';
 import 'screens/home_screen_container.dart';
 import 'screens/auth/forgot_password_screen.dart';
+import 'widgets/connectivity_wrapper.dart';
 
 void main() async {
   // Ensure that plugin services are initialized
@@ -45,6 +47,7 @@ class LawBotApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => ConnectivityProvider()),
       ],
       child: Consumer2<ThemeProvider, LanguageProvider>(
         builder: (context, themeProvider, languageProvider, child) {
@@ -55,13 +58,26 @@ class LawBotApp extends StatelessWidget {
             darkTheme: themeProvider.darkTheme,
             themeMode: themeProvider.themeMode,
             locale: languageProvider.currentLocale,
-            home: const SplashScreen(),
+            home: const ConnectivityWrapper(
+              showDebugInfo: false, // Set to true for debugging connectivity
+              child: SplashScreen(),
+            ),
             routes: {
-              '/onboarding': (context) => const OnboardingScreen(),
-              '/signin': (context) => const SignInScreen(),
-              '/signup': (context) => const SignUpScreen(),
-              '/forgot-password': (context) => const ForgotPasswordScreen(),
-              '/home': (context) => const HomeScreenContainer(),
+              '/onboarding': (context) => ConnectivityWrapper(
+                child: OnboardingScreen(),
+              ),
+              '/signin': (context) => ConnectivityWrapper(
+                child: SignInScreen(),
+              ),
+              '/signup': (context) => ConnectivityWrapper(
+                child: SignUpScreen(),
+              ),
+              '/forgot-password': (context) => ConnectivityWrapper(
+                child: ForgotPasswordScreen(),
+              ),
+              '/home': (context) => ConnectivityWrapper(
+                child: HomeScreenContainer(),
+              ),
             },
           );
         },

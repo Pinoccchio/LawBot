@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
+import '../services/ai_risk_assessment_service.dart';
 
 enum CrimeType {
   // 📱 COMMUNICATION & SOCIAL MEDIA CRIMES - Cyber Crime Investigation Cell
@@ -304,6 +306,32 @@ class Complaint {
   final String? assignedOfficerId; // Added for proper officer tracking
   final String? remarks;
   final List<StatusUpdate> statusHistory;
+  
+  // AI Assessment Fields
+  final String? aiPriority; // AI-recommended priority
+  final int? aiRiskScore; // AI-calculated risk score (0-100)
+  final int? aiConfidenceScore; // AI confidence in assessment (0-100%)
+  final List<String> riskFactors; // AI-identified risk factors
+  final List<String> urgencyIndicators; // AI-detected urgency signals
+  final DateTime? lastAiAssessment; // Timestamp of last AI evaluation
+  final String? aiReasoning; // AI explanation/reasoning
+  final AIRiskAssessment? aiAssessment; // Full AI assessment object
+  
+  // Dynamic fields from database
+  final String? platformWebsite;
+  final String? accountReference;
+  final String? suspectName;
+  final String? suspectRelationship;
+  final String? suspectContact;
+  final String? suspectDetails;
+  final String? systemDetails;
+  final String? technicalInfo;
+  final String? vulnerabilityDetails;
+  final String? attackVector;
+  final String? securityLevel;
+  final String? targetInfo;
+  final String? impactAssessment;
+  final String? contentDescription;
 
   Complaint({
     this.id,
@@ -329,6 +357,30 @@ class Complaint {
     this.assignedOfficerId,
     this.remarks,
     this.statusHistory = const [],
+    // AI Assessment Fields
+    this.aiPriority,
+    this.aiRiskScore,
+    this.aiConfidenceScore,
+    this.riskFactors = const [],
+    this.urgencyIndicators = const [],
+    this.lastAiAssessment,
+    this.aiReasoning,
+    this.aiAssessment,
+    // Dynamic fields
+    this.platformWebsite,
+    this.accountReference,
+    this.suspectName,
+    this.suspectRelationship,
+    this.suspectContact,
+    this.suspectDetails,
+    this.systemDetails,
+    this.technicalInfo,
+    this.vulnerabilityDetails,
+    this.attackVector,
+    this.securityLevel,
+    this.targetInfo,
+    this.impactAssessment,
+    this.contentDescription,
   });
 
   factory Complaint.create({
@@ -496,6 +548,29 @@ class Complaint {
       'assignedOfficerId': assignedOfficerId,
       'remarks': remarks,
       'statusHistory': statusHistory.map((update) => update.toJson()).toList(),
+      // AI Assessment Fields
+      'aiPriority': aiPriority,
+      'aiRiskScore': aiRiskScore,
+      'aiConfidenceScore': aiConfidenceScore,
+      'riskFactors': riskFactors,
+      'urgencyIndicators': urgencyIndicators,
+      'lastAiAssessment': lastAiAssessment?.toIso8601String(),
+      'aiReasoning': aiReasoning,
+      // Dynamic fields
+      'platformWebsite': platformWebsite,
+      'accountReference': accountReference,
+      'suspectName': suspectName,
+      'suspectRelationship': suspectRelationship,
+      'suspectContact': suspectContact,
+      'suspectDetails': suspectDetails,
+      'systemDetails': systemDetails,
+      'technicalInfo': technicalInfo,
+      'vulnerabilityDetails': vulnerabilityDetails,
+      'attackVector': attackVector,
+      'securityLevel': securityLevel,
+      'targetInfo': targetInfo,
+      'impactAssessment': impactAssessment,
+      'contentDescription': contentDescription,
     };
   }
 
@@ -528,6 +603,31 @@ class Complaint {
       statusHistory: (json['statusHistory'] as List<dynamic>?)
           ?.map((update) => StatusUpdate.fromJson(update))
           .toList() ?? [],
+      // AI Assessment Fields
+      aiPriority: json['aiPriority'],
+      aiRiskScore: json['aiRiskScore'],
+      aiConfidenceScore: json['aiConfidenceScore'],
+      riskFactors: List<String>.from(json['riskFactors'] ?? []),
+      urgencyIndicators: List<String>.from(json['urgencyIndicators'] ?? []),
+      lastAiAssessment: json['lastAiAssessment'] != null 
+          ? DateTime.parse(json['lastAiAssessment']) 
+          : null,
+      aiReasoning: json['aiReasoning'],
+      // Dynamic fields
+      platformWebsite: json['platformWebsite'],
+      accountReference: json['accountReference'],
+      suspectName: json['suspectName'],
+      suspectRelationship: json['suspectRelationship'],
+      suspectContact: json['suspectContact'],
+      suspectDetails: json['suspectDetails'],
+      systemDetails: json['systemDetails'],
+      technicalInfo: json['technicalInfo'],
+      vulnerabilityDetails: json['vulnerabilityDetails'],
+      attackVector: json['attackVector'],
+      securityLevel: json['securityLevel'],
+      targetInfo: json['targetInfo'],
+      impactAssessment: json['impactAssessment'],
+      contentDescription: json['contentDescription'],
     );
   }
 
@@ -555,6 +655,30 @@ class Complaint {
     String? assignedOfficerId,
     String? remarks,
     List<StatusUpdate>? statusHistory,
+    // AI Assessment Fields
+    String? aiPriority,
+    int? aiRiskScore,
+    int? aiConfidenceScore,
+    List<String>? riskFactors,
+    List<String>? urgencyIndicators,
+    DateTime? lastAiAssessment,
+    String? aiReasoning,
+    AIRiskAssessment? aiAssessment,
+    // Dynamic fields
+    String? platformWebsite,
+    String? accountReference,
+    String? suspectName,
+    String? suspectRelationship,
+    String? suspectContact,
+    String? suspectDetails,
+    String? systemDetails,
+    String? technicalInfo,
+    String? vulnerabilityDetails,
+    String? attackVector,
+    String? securityLevel,
+    String? targetInfo,
+    String? impactAssessment,
+    String? contentDescription,
   }) {
     return Complaint(
       id: id ?? this.id,
@@ -580,6 +704,30 @@ class Complaint {
       assignedOfficerId: assignedOfficerId ?? this.assignedOfficerId,
       remarks: remarks ?? this.remarks,
       statusHistory: statusHistory ?? this.statusHistory,
+      // AI Assessment Fields
+      aiPriority: aiPriority ?? this.aiPriority,
+      aiRiskScore: aiRiskScore ?? this.aiRiskScore,
+      aiConfidenceScore: aiConfidenceScore ?? this.aiConfidenceScore,
+      riskFactors: riskFactors ?? this.riskFactors,
+      urgencyIndicators: urgencyIndicators ?? this.urgencyIndicators,
+      lastAiAssessment: lastAiAssessment ?? this.lastAiAssessment,
+      aiReasoning: aiReasoning ?? this.aiReasoning,
+      aiAssessment: aiAssessment ?? this.aiAssessment,
+      // Dynamic fields
+      platformWebsite: platformWebsite ?? this.platformWebsite,
+      accountReference: accountReference ?? this.accountReference,
+      suspectName: suspectName ?? this.suspectName,
+      suspectRelationship: suspectRelationship ?? this.suspectRelationship,
+      suspectContact: suspectContact ?? this.suspectContact,
+      suspectDetails: suspectDetails ?? this.suspectDetails,
+      systemDetails: systemDetails ?? this.systemDetails,
+      technicalInfo: technicalInfo ?? this.technicalInfo,
+      vulnerabilityDetails: vulnerabilityDetails ?? this.vulnerabilityDetails,
+      attackVector: attackVector ?? this.attackVector,
+      securityLevel: securityLevel ?? this.securityLevel,
+      targetInfo: targetInfo ?? this.targetInfo,
+      impactAssessment: impactAssessment ?? this.impactAssessment,
+      contentDescription: contentDescription ?? this.contentDescription,
     );
   }
 
@@ -591,6 +739,296 @@ class Complaint {
   
   Duration get timeSinceCreated => DateTime.now().difference(createdAt);
   Duration get timeSinceUpdated => DateTime.now().difference(updatedAt);
+  
+  // AI Assessment Helper Methods
+  bool get hasAIAssessment => aiRiskScore != null && aiPriority != null;
+  
+  String get effectivePriority => aiPriority ?? priority;
+  int get effectiveRiskScore => aiRiskScore ?? riskScore;
+  
+  String get prioritySource => aiPriority != null ? 'AI' : 'Rule-based';
+  String get riskScoreSource => aiRiskScore != null ? 'AI' : 'Rule-based';
+  
+  Color get effectivePriorityColor {
+    switch (effectivePriority.toLowerCase()) {
+      case 'critical':
+        return const Color(0xFF991B1B); // Red-800
+      case 'high':
+        return const Color(0xFFDC2626); // Red-600
+      case 'medium':
+        return const Color(0xFFF59E0B); // Amber-500
+      case 'low':
+        return const Color(0xFF10B981); // Emerald-500
+      default:
+        return const Color(0xFF6B7280); // Gray-500
+    }
+  }
+  
+  Color get effectiveRiskScoreColor {
+    final score = effectiveRiskScore;
+    if (score >= 80) return const Color(0xFFDC2626); // Red
+    if (score >= 60) return const Color(0xFFF59E0B); // Amber
+    if (score >= 40) return const Color(0xFF3B82F6); // Blue
+    return const Color(0xFF10B981); // Green
+  }
+  
+  String get aiConfidenceLevel {
+    if (aiConfidenceScore == null) return 'N/A';
+    final confidence = aiConfidenceScore!;
+    if (confidence >= 90) return 'Very High';
+    if (confidence >= 80) return 'High';
+    if (confidence >= 70) return 'Good';
+    if (confidence >= 60) return 'Moderate';
+    return 'Low';
+  }
+  
+  String get formattedRiskFactors {
+    if (riskFactors.isEmpty) return 'None identified';
+    return riskFactors.map((factor) {
+      return factor.replaceAll('_', ' ').split(' ')
+          .map((word) => word[0].toUpperCase() + word.substring(1))
+          .join(' ');
+    }).join(', ');
+  }
+  
+  String get formattedUrgencyIndicators {
+    if (urgencyIndicators.isEmpty) return 'None identified';
+    return urgencyIndicators.map((indicator) {
+      return indicator.replaceAll('_', ' ').split(' ')
+          .map((word) => word[0].toUpperCase() + word.substring(1))
+          .join(' ');
+    }).join(', ');
+  }
+  
+  bool get needsAIReassessment {
+    if (lastAiAssessment == null) return true;
+    final daysSinceAssessment = DateTime.now().difference(lastAiAssessment!).inDays;
+    return daysSinceAssessment > 7; // Reassess if older than 7 days
+  }
+  
+  /// Create updated complaint with AI assessment
+  Complaint withAIAssessment(AIRiskAssessment assessment) {
+    return copyWith(
+      aiPriority: assessment.aiPriority,
+      aiRiskScore: assessment.aiRiskScore,
+      aiConfidenceScore: assessment.confidenceScore,
+      riskFactors: assessment.riskFactors,
+      urgencyIndicators: assessment.urgencyIndicators,
+      lastAiAssessment: assessment.assessedAt,
+      aiReasoning: assessment.reasoning,
+      aiAssessment: assessment,
+    );
+  }
+}
+
+/// Evidence Guidance Item for AI-powered evidence suggestions
+class EvidenceGuidanceItem {
+  final String title;
+  final String description;
+  final String icon;
+  final String priority;
+  final List<String> examples;
+
+  EvidenceGuidanceItem({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.priority,
+    required this.examples,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'description': description,
+      'icon': icon,
+      'priority': priority,
+      'examples': examples,
+    };
+  }
+
+  factory EvidenceGuidanceItem.fromJson(Map<String, dynamic> json) {
+    return EvidenceGuidanceItem(
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      icon: json['icon'] ?? '📋',
+      priority: json['priority'] ?? 'medium',
+      examples: List<String>.from(json['examples'] ?? []),
+    );
+  }
+
+  Color get priorityColor {
+    switch (priority.toLowerCase()) {
+      case 'critical':
+        return const Color(0xFFDC2626); // Red
+      case 'high':
+        return const Color(0xFFEA580C); // Orange
+      case 'medium':
+        return const Color(0xFFCA8A04); // Yellow
+      case 'low':
+        return const Color(0xFF16A34A); // Green
+      default:
+        return const Color(0xFF6B7280); // Gray
+    }
+  }
+}
+
+/// Credibility Score for AI-powered report assessment
+class CredibilityScore {
+  final int overallScore;
+  final List<CredibilityFactor> factors;
+  final List<String> suggestions;
+  final String strengthLevel;
+
+  CredibilityScore({
+    required this.overallScore,
+    required this.factors,
+    required this.suggestions,
+    required this.strengthLevel,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'overallScore': overallScore,
+      'factors': factors.map((f) => f.toJson()).toList(),
+      'suggestions': suggestions,
+      'strengthLevel': strengthLevel,
+    };
+  }
+
+  factory CredibilityScore.fromJson(Map<String, dynamic> json) {
+    return CredibilityScore(
+      overallScore: json['overallScore'] ?? 50,
+      factors: (json['factors'] as List<dynamic>?)
+          ?.map((f) => CredibilityFactor.fromJson(f))
+          .toList() ?? [],
+      suggestions: List<String>.from(json['suggestions'] ?? []),
+      strengthLevel: json['strengthLevel'] ?? 'Moderate',
+    );
+  }
+
+  Color get scoreColor {
+    if (overallScore >= 80) return const Color(0xFF10B981); // Green
+    if (overallScore >= 60) return const Color(0xFFF59E0B); // Amber
+    if (overallScore >= 40) return const Color(0xFF3B82F6); // Blue
+    return const Color(0xFFDC2626); // Red
+  }
+
+  String get scoreDescription {
+    if (overallScore >= 80) return 'Excellent';
+    if (overallScore >= 60) return 'Good';
+    if (overallScore >= 40) return 'Fair';
+    return 'Needs Improvement';
+  }
+
+  IconData get scoreIcon {
+    if (overallScore >= 80) return Icons.check_circle;
+    if (overallScore >= 60) return Icons.thumb_up;
+    if (overallScore >= 40) return Icons.info;
+    return Icons.warning;
+  }
+}
+
+/// Individual credibility factor assessment
+class CredibilityFactor {
+  final String name;
+  final double score; // 0.0 to 1.0
+  final String description;
+  final List<String> suggestions;
+
+  CredibilityFactor({
+    required this.name,
+    required this.score,
+    required this.description,
+    required this.suggestions,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'score': score,
+      'description': description,
+      'suggestions': suggestions,
+    };
+  }
+
+  factory CredibilityFactor.fromJson(Map<String, dynamic> json) {
+    return CredibilityFactor(
+      name: json['name'] ?? '',
+      score: (json['score'] ?? 0.5).toDouble(),
+      description: json['description'] ?? '',
+      suggestions: List<String>.from(json['suggestions'] ?? []),
+    );
+  }
+
+  int get scorePercentage => (score * 100).round();
+
+  Color get scoreColor {
+    if (score >= 0.8) return const Color(0xFF10B981); // Green
+    if (score >= 0.6) return const Color(0xFFF59E0B); // Amber
+    if (score >= 0.4) return const Color(0xFF3B82F6); // Blue
+    return const Color(0xFFDC2626); // Red
+  }
+
+  Color get factorColor => scoreColor;
+
+  int get percentage => scorePercentage;
+
+  IconData get icon {
+    switch (name.toLowerCase()) {
+      case 'information completeness':
+      case 'basic information':
+        return Icons.assignment;
+      case 'evidence quality':
+      case 'evidence strength':
+        return Icons.folder;
+      case 'report consistency':
+      case 'consistency':
+        return Icons.check_circle_outline;
+      case 'urgency indicators':
+      case 'urgency':
+        return Icons.priority_high;
+      case 'suspect information':
+      case 'suspect details':
+        return Icons.person;
+      case 'timeline accuracy':
+      case 'timeline':
+        return Icons.schedule;
+      case 'financial impact':
+      case 'financial':
+        return Icons.attach_money;
+      default:
+        return Icons.assessment;
+    }
+  }
+
+  String get iconString {
+    switch (name.toLowerCase()) {
+      case 'information completeness':
+      case 'basic information':
+        return '📋';
+      case 'evidence quality':
+      case 'evidence strength':
+        return '📁';
+      case 'report consistency':
+      case 'consistency':
+        return '✅';
+      case 'urgency indicators':
+      case 'urgency':
+        return '⚠️';
+      case 'suspect information':
+      case 'suspect details':
+        return '👤';
+      case 'timeline accuracy':
+      case 'timeline':
+        return '⏰';
+      case 'financial impact':
+      case 'financial':
+        return '💰';
+      default:
+        return '📊';
+    }
+  }
 }
 
 class StatusUpdate {

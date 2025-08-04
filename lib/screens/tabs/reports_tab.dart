@@ -70,8 +70,12 @@ class _ReportsTabState extends State<ReportsTab> {
       // Load active complaints from database
       final complaintData = await _databaseService.getUserActiveComplaints();
       
+      print('📋 Reports Tab: Received ${complaintData.length} complaints from database');
+      
       // Convert database data to Complaint objects
       _complaints = complaintData.map((data) => _complaintFromDatabaseMap(data)).toList();
+      
+      print('✅ Reports Tab: Successfully converted ${_complaints.length} complaints');
       
       if (mounted) {
         setState(() {
@@ -80,12 +84,12 @@ class _ReportsTabState extends State<ReportsTab> {
       }
 
     } catch (e) {
-      print('Error loading complaints: $e');
+      print('❌ Error loading complaints: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
-          // Fallback to sample data for development
-          _complaints = _createSampleComplaints();
+          // Don't fallback to sample data - show actual empty state
+          _complaints = [];
         });
       }
     }
@@ -110,9 +114,21 @@ class _ReportsTabState extends State<ReportsTab> {
         }
       }
 
-      // Parse assigned officer info
+      // Parse assigned officer info - try direct assignment first, then case_assignments
       String? assignedOfficer;
-      if (data['case_assignments'] != null && 
+      String? assignedUnit;
+      
+      // Check direct assignment fields first (preferred method)
+      if (data['assigned_officer'] != null && data['assigned_officer'].toString().isNotEmpty) {
+        assignedOfficer = data['assigned_officer'];
+      }
+      
+      if (data['assigned_unit'] != null && data['assigned_unit'].toString().isNotEmpty) {
+        assignedUnit = data['assigned_unit'];
+      }
+      
+      // Fallback to case_assignments if direct assignment not available
+      if (assignedOfficer == null && data['case_assignments'] != null && 
           (data['case_assignments'] as List).isNotEmpty) {
         final assignment = (data['case_assignments'] as List).first;
         if (assignment['pnp_officer_profiles'] != null) {
@@ -132,6 +148,7 @@ class _ReportsTabState extends State<ReportsTab> {
           (e) => e.name == data['crime_type'],
           orElse: () => CrimeType.phishing,
         ),
+        title: data['title'], // AI-generated case title
         description: data['description'],
         evidenceFiles: evidenceFiles,
         fullName: data['full_name'],
@@ -144,12 +161,30 @@ class _ReportsTabState extends State<ReportsTab> {
           (e) => e.displayName == data['status'],
           orElse: () => ComplaintStatus.pending,
         ),
+        priority: data['priority'] ?? 'low', // Case priority from database
+        riskScore: data['risk_score'] ?? 30, // AI risk assessment
+        assignedUnit: assignedUnit, // PNP unit assignment
         createdAt: DateTime.parse(data['created_at']),
         updatedAt: DateTime.parse(data['updated_at']),
         complaintNumber: data['complaint_number'],
         assignedOfficer: assignedOfficer,
         remarks: data['remarks'],
         statusHistory: statusHistory,
+        // Dynamic fields for comprehensive display
+        platformWebsite: data['platform_website'],
+        accountReference: data['account_reference'],
+        suspectName: data['suspect_name'],
+        suspectRelationship: data['suspect_relationship'],
+        suspectContact: data['suspect_contact'],
+        suspectDetails: data['suspect_details'],
+        systemDetails: data['system_details'],
+        technicalInfo: data['technical_info'],
+        vulnerabilityDetails: data['vulnerability_details'],
+        attackVector: data['attack_vector'],
+        securityLevel: data['security_level'],
+        targetInfo: data['target_info'],
+        impactAssessment: data['impact_assessment'],
+        contentDescription: data['content_description'],
       );
     } catch (e) {
       print('Error converting database data to Complaint: $e');
@@ -687,9 +722,10 @@ class _ReportsTabState extends State<ReportsTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header Row
+                // Enhanced Header Row with Priority and Risk
                 Row(
                   children: [
+                    // Crime Type
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
@@ -705,7 +741,45 @@ class _ReportsTabState extends State<ReportsTab> {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    // Priority Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _getPriorityColor(complaint.priority).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        complaint.priority.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: _getPriorityColor(complaint.priority),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                     const Spacer(),
+                    // Risk Score
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.analytics,
+                          size: 12,
+                          color: _getRiskColor(complaint.riskScore),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${complaint.riskScore}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: _getRiskColor(complaint.riskScore),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 8),
+                    // Status
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
@@ -764,6 +838,11 @@ class _ReportsTabState extends State<ReportsTab> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+                
+                const SizedBox(height: 12),
+                
+                // Investigation Team & Key Info Section
+                _buildInvestigationInfo(complaint, isDark),
                 
                 const SizedBox(height: 16),
                 
@@ -894,5 +973,171 @@ class _ReportsTabState extends State<ReportsTab> {
       case ComplaintStatus.requiresMoreInfo:
         return Colors.blue;
     }
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'high':
+        return Colors.red;
+      case 'medium':
+        return Colors.amber;
+      case 'low':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Color _getRiskColor(int riskScore) {
+    if (riskScore >= 80) return Colors.red;
+    if (riskScore >= 60) return Colors.orange;
+    if (riskScore >= 40) return Colors.amber;
+    return Colors.green;
+  }
+
+  Widget _buildInvestigationInfo(Complaint complaint, bool isDark) {
+    final hasAssignment = complaint.assignedUnit != null || complaint.assignedOfficer != null;
+    final hasKeyInfo = complaint.platformWebsite != null || 
+                      complaint.suspectName != null || 
+                      complaint.estimatedFinancialLoss != null;
+
+    if (!hasAssignment && !hasKeyInfo) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF334155) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDark ? const Color(0xFF475569) : const Color(0xFFE2E8F0),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Investigation Team
+          if (hasAssignment) ...[
+            Row(
+              children: [
+                Icon(
+                  Icons.badge,
+                  size: 14,
+                  color: isDark ? Colors.blue[400] : Colors.blue[600],
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Investigation Team',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.blue[400] : Colors.blue[600],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (complaint.assignedUnit != null) ...[
+              Text(
+                '🏢 ${complaint.assignedUnit}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+                ),
+              ),
+            ],
+            if (complaint.assignedOfficer != null) ...[
+              Text(
+                '👮 ${complaint.assignedOfficer}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.grey[300] : Colors.grey[700],
+                ),
+              ),
+            ],
+            if (hasKeyInfo) const SizedBox(height: 8),
+          ],
+          
+          // Key Information
+          if (hasKeyInfo) ...[
+            if (hasAssignment) ...[
+              Divider(
+                height: 1,
+                color: isDark ? Colors.grey[600] : Colors.grey[300],
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: isDark ? Colors.amber[400] : Colors.amber[600],
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Key Information',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.amber[400] : Colors.amber[600],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ...(_buildKeyInfoItems(complaint, isDark)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildKeyInfoItems(Complaint complaint, bool isDark) {
+    List<Widget> items = [];
+
+    if (complaint.estimatedFinancialLoss != null && complaint.estimatedFinancialLoss! > 0) {
+      items.add(Text(
+        '💰 Financial Loss: ₱${complaint.estimatedFinancialLoss!.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontSize: 11,
+          color: isDark ? Colors.grey[300] : Colors.grey[700],
+        ),
+      ));
+    }
+
+    if (complaint.platformWebsite != null && complaint.platformWebsite!.isNotEmpty) {
+      items.add(Text(
+        '🌐 Platform: ${complaint.platformWebsite}',
+        style: TextStyle(
+          fontSize: 11,
+          color: isDark ? Colors.grey[300] : Colors.grey[700],
+        ),
+      ));
+    }
+
+    if (complaint.suspectName != null && complaint.suspectName!.isNotEmpty) {
+      items.add(Text(
+        '👤 Suspect: ${complaint.suspectName}',
+        style: TextStyle(
+          fontSize: 11,
+          color: isDark ? Colors.grey[300] : Colors.grey[700],
+        ),
+      ));
+    }
+
+    if (complaint.accountReference != null && complaint.accountReference!.isNotEmpty) {
+      items.add(Text(
+        '🏦 Account: ${complaint.accountReference}',
+        style: TextStyle(
+          fontSize: 11,
+          color: isDark ? Colors.grey[300] : Colors.grey[700],
+        ),
+      ));
+    }
+
+    return items;
   }
 }

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import '../utils/philippine_time.dart';
 import '../models/complaint_model.dart';
+import 'ai_risk_assessment_service.dart';
 
 class DatabaseService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -498,28 +499,74 @@ class DatabaseService {
   // Get user's active complaints (Pending, Under Investigation, Requires More Info)
   Future<List<Map<String, dynamic>>> getUserActiveComplaints() async {
     try {
-      if (currentUserId == null) return [];
+      if (currentUserId == null) {
+        print('❌ No current user ID for getUserActiveComplaints');
+        return [];
+      }
 
+      print('🔍 Fetching active complaints for user: $currentUserId');
+
+      // First, get complaints without complex JOINs (safer approach)
       final response = await _supabase
           .from('complaints')
-          .select('''
-            *,
-            evidence_files(*),
-            case_assignments(
-              pnp_officer_profiles(
-                full_name,
-                badge_number,
-                rank
-              )
-            )
-          ''')
+          .select('*')
           .eq('user_id', currentUserId!)
           .inFilter('status', ['Pending', 'Under Investigation', 'Requires More Information'])
           .order('created_at', ascending: false);
 
-      return List<Map<String, dynamic>>.from(response);
+      if (response == null || (response as List).isEmpty) {
+        print('❌ No active complaints found for user: $currentUserId');
+        return [];
+      }
+
+      print('✅ Found ${(response as List).length} active complaints');
+
+      // Process each complaint and add related data separately
+      List<Map<String, dynamic>> complaintsWithData = [];
+
+      for (var complaint in response as List) {
+        Map<String, dynamic> complaintData = Map<String, dynamic>.from(complaint);
+
+        try {
+          // Get evidence files separately
+          final evidenceResponse = await _supabase
+              .from('evidence_files')
+              .select('*')
+              .eq('complaint_id', complaint['id']);
+
+          complaintData['evidence_files'] = evidenceResponse ?? [];
+        } catch (e) {
+          print('⚠️ Error getting evidence files for complaint ${complaint['id']}: $e');
+          complaintData['evidence_files'] = [];
+        }
+
+        try {
+          // Get case assignments separately (if they exist)
+          final assignmentResponse = await _supabase
+              .from('case_assignments')
+              .select('''
+                *,
+                pnp_officer_profiles(
+                  full_name,
+                  badge_number,
+                  rank
+                )
+              ''')
+              .eq('complaint_id', complaint['id']);
+
+          complaintData['case_assignments'] = assignmentResponse ?? [];
+        } catch (e) {
+          print('⚠️ Error getting case assignments for complaint ${complaint['id']}: $e');
+          complaintData['case_assignments'] = [];
+        }
+
+        complaintsWithData.add(complaintData);
+      }
+
+      print('✅ Successfully processed ${complaintsWithData.length} complaints with related data');
+      return complaintsWithData;
     } catch (e) {
-      print('Error getting active complaints: $e');
+      print('❌ Error getting active complaints: $e');
       return [];
     }
   }
@@ -527,28 +574,74 @@ class DatabaseService {
   // Get user's completed complaints (Resolved, Dismissed)
   Future<List<Map<String, dynamic>>> getUserCompletedComplaints() async {
     try {
-      if (currentUserId == null) return [];
+      if (currentUserId == null) {
+        print('❌ No current user ID for getUserCompletedComplaints');
+        return [];
+      }
 
+      print('🔍 Fetching completed complaints for user: $currentUserId');
+
+      // First, get complaints without complex JOINs (safer approach)
       final response = await _supabase
           .from('complaints')
-          .select('''
-            *,
-            evidence_files(*),
-            case_assignments(
-              pnp_officer_profiles(
-                full_name,
-                badge_number,
-                rank
-              )
-            )
-          ''')
+          .select('*')
           .eq('user_id', currentUserId!)
           .inFilter('status', ['Resolved', 'Dismissed'])
           .order('updated_at', ascending: false);
 
-      return List<Map<String, dynamic>>.from(response);
+      if (response == null || (response as List).isEmpty) {
+        print('❌ No completed complaints found for user: $currentUserId');
+        return [];
+      }
+
+      print('✅ Found ${(response as List).length} completed complaints');
+
+      // Process each complaint and add related data separately
+      List<Map<String, dynamic>> complaintsWithData = [];
+
+      for (var complaint in response as List) {
+        Map<String, dynamic> complaintData = Map<String, dynamic>.from(complaint);
+
+        try {
+          // Get evidence files separately
+          final evidenceResponse = await _supabase
+              .from('evidence_files')
+              .select('*')
+              .eq('complaint_id', complaint['id']);
+
+          complaintData['evidence_files'] = evidenceResponse ?? [];
+        } catch (e) {
+          print('⚠️ Error getting evidence files for completed complaint ${complaint['id']}: $e');
+          complaintData['evidence_files'] = [];
+        }
+
+        try {
+          // Get case assignments separately (if they exist)
+          final assignmentResponse = await _supabase
+              .from('case_assignments')
+              .select('''
+                *,
+                pnp_officer_profiles(
+                  full_name,
+                  badge_number,
+                  rank
+                )
+              ''')
+              .eq('complaint_id', complaint['id']);
+
+          complaintData['case_assignments'] = assignmentResponse ?? [];
+        } catch (e) {
+          print('⚠️ Error getting case assignments for completed complaint ${complaint['id']}: $e');
+          complaintData['case_assignments'] = [];
+        }
+
+        complaintsWithData.add(complaintData);
+      }
+
+      print('✅ Successfully processed ${complaintsWithData.length} completed complaints with related data');
+      return complaintsWithData;
     } catch (e) {
-      print('Error getting completed complaints: $e');
+      print('❌ Error getting completed complaints: $e');
       return [];
     }
   }
@@ -805,6 +898,381 @@ class DatabaseService {
     } catch (e) {
       print('Error getting complaint stats: $e');
       return {};
+    }
+  }
+
+  // =============================================
+  // AI ASSESSMENT METHODS
+  // =============================================
+
+  /// Submit complaint with AI assessment
+  Future<String?> submitComplaintWithAI(Complaint complaint) async {
+    try {
+      if (currentUserId == null) {
+        throw 'User not authenticated';
+      }
+
+      print('🤖 Starting complaint submission with AI assessment');
+
+      // First, get AI assessment
+      final suspectInfo = {
+        'suspectName': complaint.suspectName ?? '',
+        'suspectRelationship': complaint.suspectRelationship ?? '',
+        'suspectContact': complaint.suspectContact ?? '',
+        'suspectDetails': complaint.suspectDetails ?? '',
+      };
+
+      AIRiskAssessment? aiAssessment;
+      try {
+        aiAssessment = await AIRiskAssessmentService.assessComplaint(
+          description: complaint.description,
+          crimeType: complaint.crimeType,
+          evidenceFiles: complaint.evidenceFiles,
+          financialLoss: complaint.estimatedFinancialLoss,
+          suspectInfo: suspectInfo,
+          incidentDate: complaint.incidentDateTime,
+          incidentLocation: complaint.incidentLocation,
+        );
+        print('✅ AI assessment completed: ${aiAssessment.aiPriority} priority, ${aiAssessment.aiRiskScore}% risk');
+      } catch (e) {
+        print('⚠️ AI assessment failed, proceeding with rule-based: $e');
+      }
+
+      // Generate complaint number
+      final now = PhilippineTime.now();
+      final year = now.year;
+      
+      final latestResponse = await _supabase
+          .from('complaints')
+          .select('complaint_number')
+          .like('complaint_number', 'CYB-$year-%')
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      int sequenceNumber = 1;
+      if (latestResponse.isNotEmpty) {
+        final latestNumber = latestResponse.first['complaint_number'] as String;
+        final parts = latestNumber.split('-');
+        if (parts.length == 3) {
+          sequenceNumber = (int.tryParse(parts[2]) ?? 0) + 1;
+        }
+      }
+
+      final complaintNumber = 'CYB-$year-${sequenceNumber.toString().padLeft(3, '0')}';
+
+      // Prepare complaint data with AI fields
+      final complaintData = {
+        'user_id': currentUserId!,
+        'complaint_number': complaintNumber,
+        'crime_type': complaint.crimeType.name,
+        'title': _generateComplaintTitle(complaint.crimeType, complaint.description),
+        'description': complaint.description,
+        'full_name': complaint.fullName,
+        'email': complaint.email,
+        'phone_number': complaint.phoneNumber,
+        'incident_date_time': complaint.incidentDateTime.toUtc().toIso8601String(),
+        'incident_location': complaint.incidentLocation,
+        'estimated_loss': complaint.estimatedFinancialLoss,
+        'status': 'Pending',
+        // Rule-based scores (fallback)
+        'priority': _calculatePriority(complaint.crimeType, complaint.estimatedFinancialLoss),
+        'risk_score': _calculateRiskScore(complaint.crimeType, complaint.estimatedFinancialLoss),
+        // AI scores (if available)
+        'ai_priority': aiAssessment?.aiPriority,
+        'ai_risk_score': aiAssessment?.aiRiskScore,
+        'ai_confidence_score': aiAssessment?.confidenceScore,
+        'risk_factors': aiAssessment?.riskFactors ?? [],
+        'urgency_indicators': aiAssessment?.urgencyIndicators ?? [],
+        'last_ai_assessment': aiAssessment?.assessedAt.toIso8601String(),
+        'ai_reasoning': aiAssessment?.reasoning,
+        'assigned_unit': complaint.crimeType.assignedUnit,
+        'created_at': PhilippineTime.toUtc(now).toIso8601String(),
+        'updated_at': PhilippineTime.toUtc(now).toIso8601String(),
+      };
+
+      // Insert complaint
+      final response = await _supabase
+          .from('complaints')
+          .insert(complaintData)
+          .select('id')
+          .single();
+
+      final complaintId = response['id'] as String;
+
+      // Store detailed AI assessment if available
+      if (aiAssessment != null) {
+        await _storeAIAssessment(complaintId, aiAssessment, {
+          'description': complaint.description,
+          'crimeType': complaint.crimeType.name,
+          'financialLoss': complaint.estimatedFinancialLoss,
+          'evidenceCount': complaint.evidenceFiles.length,
+          'suspectInfo': suspectInfo,
+        });
+      }
+
+      // Upload evidence files if any
+      if (complaint.evidenceFiles.isNotEmpty) {
+        await _uploadEvidenceFiles(complaintId, complaint.evidenceFiles);
+      }
+
+      // Add initial status history
+      await _addStatusUpdate(
+        complaintId,
+        'Pending',
+        'System',
+        'Complaint submitted successfully with ${aiAssessment != null ? 'AI' : 'rule-based'} assessment',
+      );
+
+      print('✅ Complaint submitted successfully: $complaintNumber');
+      return complaintId;
+
+    } catch (e) {
+      print('❌ Error submitting complaint with AI: $e');
+      throw 'Failed to submit complaint: $e';
+    }
+  }
+
+  /// Store detailed AI assessment in dedicated table
+  Future<void> _storeAIAssessment(
+    String complaintId, 
+    AIRiskAssessment assessment,
+    Map<String, dynamic> inputData,
+  ) async {
+    try {
+      await _supabase.from('ai_risk_assessments').insert({
+        'complaint_id': complaintId,
+        'ai_risk_score': assessment.aiRiskScore,
+        'ai_priority': assessment.aiPriority,
+        'confidence_score': assessment.confidenceScore,
+        'risk_factors': assessment.riskFactors,
+        'urgency_indicators': assessment.urgencyIndicators,
+        'reasoning': assessment.reasoning,
+        'assessment_type': 'full',
+        'model_version': 'gemini-2.0-flash',
+        'input_data': inputData,
+        'created_at': assessment.assessedAt.toIso8601String(),
+      });
+      
+      print('✅ AI assessment stored successfully');
+    } catch (e) {
+      print('⚠️ Failed to store AI assessment: $e');
+      // Don't throw - this is non-critical
+    }
+  }
+
+  /// Update complaint with new AI assessment
+  Future<void> updateComplaintAIAssessment(
+    String complaintId,
+    AIRiskAssessment assessment,
+  ) async {
+    try {
+      // Get current complaint data for change tracking
+      final currentData = await _supabase
+          .from('complaints')
+          .select('ai_priority, ai_risk_score, ai_confidence_score')
+          .eq('id', complaintId)
+          .single();
+
+      // Update complaint with new AI data
+      await _supabase.from('complaints').update({
+        'ai_priority': assessment.aiPriority,
+        'ai_risk_score': assessment.aiRiskScore,
+        'ai_confidence_score': assessment.confidenceScore,
+        'risk_factors': assessment.riskFactors,
+        'urgency_indicators': assessment.urgencyIndicators,
+        'last_ai_assessment': assessment.assessedAt.toIso8601String(),
+        'ai_reasoning': assessment.reasoning,
+        'updated_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
+      }).eq('id', complaintId);
+
+      // Store detailed assessment
+      await _storeAIAssessment(complaintId, assessment, {
+        'assessmentType': 'update',
+        'previousPriority': currentData['ai_priority'],
+        'previousRiskScore': currentData['ai_risk_score'],
+      });
+
+      // Log the change
+      await _logPriorityChange(
+        complaintId: complaintId,
+        changeType: 'ai_update',
+        oldValue: {
+          'ai_priority': currentData['ai_priority'],
+          'ai_risk_score': currentData['ai_risk_score'],
+        },
+        newValue: {
+          'ai_priority': assessment.aiPriority,
+          'ai_risk_score': assessment.aiRiskScore,
+        },
+        reason: 'AI reassessment triggered',
+        confidenceBefore: currentData['ai_confidence_score'],
+        confidenceAfter: assessment.confidenceScore,
+      );
+
+      print('✅ Complaint AI assessment updated: $complaintId');
+    } catch (e) {
+      print('❌ Error updating AI assessment: $e');
+      throw 'Failed to update AI assessment: $e';
+    }
+  }
+
+  /// Get complaints with AI assessment data
+  Future<List<Map<String, dynamic>>> getUserActiveComplaintsWithAI() async {
+    try {
+      if (currentUserId == null) {
+        print('❌ No current user ID for getUserActiveComplaintsWithAI');
+        return [];
+      }
+
+      print('🔍 Fetching active complaints with AI data for user: $currentUserId');
+
+      final response = await _supabase
+          .from('complaints')
+          .select('''
+            *,
+            ai_risk_assessments (
+              id,
+              confidence_score,
+              reasoning,
+              assessment_type,
+              created_at
+            )
+          ''')
+          .eq('user_id', currentUserId!)
+          .inFilter('status', ['Pending', 'Under Investigation', 'Requires More Information'])
+          .order('created_at', ascending: false);
+
+      print('✅ Fetched ${response.length} active complaints with AI data');
+      return response;
+    } catch (e) {
+      print('❌ Error fetching complaints with AI data: $e');
+      return [];
+    }
+  }
+
+  /// Perform quick AI assessment for real-time form updates
+  Future<AIRiskAssessment?> performQuickAssessment(
+    String description,
+    CrimeType crimeType,
+    double? financialLoss,
+  ) async {
+    try {
+      print('🚀 Performing quick AI assessment...');
+      
+      final assessment = await AIRiskAssessmentService.quickAssessment(
+        description: description,
+        crimeType: crimeType,
+        financialLoss: financialLoss,
+      );
+      
+      print('✅ Quick AI assessment completed: ${assessment.aiPriority} priority');
+      return assessment;
+    } catch (e) {
+      print('⚠️ Quick AI assessment failed: $e');
+      return null;
+    }
+  }
+
+  /// Log priority/risk score changes for audit trail
+  Future<void> _logPriorityChange({
+    required String complaintId,
+    required String changeType,
+    required Map<String, dynamic> oldValue,
+    required Map<String, dynamic> newValue,
+    required String reason,
+    int? confidenceBefore,
+    int? confidenceAfter,
+    String? sessionId,
+  }) async {
+    try {
+      await _supabase.from('priority_change_log').insert({
+        'complaint_id': complaintId,
+        'change_type': changeType,
+        'old_value': oldValue,
+        'new_value': newValue,
+        'changed_by_type': 'ai',
+        'reason': reason,
+        'confidence_before': confidenceBefore,
+        'confidence_after': confidenceAfter,
+        'session_id': sessionId,
+        'created_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
+      });
+    } catch (e) {
+      print('⚠️ Failed to log priority change: $e');
+      // Don't throw - this is non-critical
+    }
+  }
+
+  /// Get AI assessment history for a complaint
+  Future<List<Map<String, dynamic>>> getAIAssessmentHistory(String complaintId) async {
+    try {
+      final response = await _supabase
+          .from('ai_risk_assessments')
+          .select('*')
+          .eq('complaint_id', complaintId)
+          .order('created_at', ascending: false);
+
+      return response;
+    } catch (e) {
+      print('❌ Error fetching AI assessment history: $e');
+      return [];
+    }
+  }
+
+  /// Get priority change log for analysis
+  Future<List<Map<String, dynamic>>> getPriorityChangeLog(String complaintId) async {
+    try {
+      final response = await _supabase
+          .from('priority_change_log')
+          .select('*')
+          .eq('complaint_id', complaintId)
+          .order('created_at', ascending: false);
+
+      return response;
+    } catch (e) {
+      print('❌ Error fetching priority change log: $e');
+      return [];
+    }
+  }
+
+  /// Check if complaint needs AI reassessment
+  Future<bool> needsAIReassessment(String complaintId) async {
+    try {
+      final response = await _supabase
+          .from('complaints')
+          .select('last_ai_assessment')
+          .eq('id', complaintId)
+          .single();
+
+      final lastAssessment = response['last_ai_assessment'];
+      if (lastAssessment == null) return true;
+
+      final lastAssessmentDate = DateTime.parse(lastAssessment);
+      final daysSince = DateTime.now().difference(lastAssessmentDate).inDays;
+      
+      return daysSince > 7; // Reassess if older than 7 days
+    } catch (e) {
+      print('❌ Error checking AI reassessment need: $e');
+      return true; // Default to needing reassessment
+    }
+  }
+
+  /// Batch update multiple complaints with AI assessments
+  Future<void> batchUpdateAIAssessments(List<Map<String, dynamic>> updates) async {
+    try {
+      print('🔄 Batch updating ${updates.length} AI assessments...');
+      
+      for (final update in updates) {
+        final complaintId = update['complaintId'] as String;
+        final assessment = update['assessment'] as AIRiskAssessment;
+        
+        await updateComplaintAIAssessment(complaintId, assessment);
+      }
+      
+      print('✅ Batch AI assessment update completed');
+    } catch (e) {
+      print('❌ Error in batch AI assessment update: $e');
+      throw 'Failed to batch update AI assessments: $e';
     }
   }
 }

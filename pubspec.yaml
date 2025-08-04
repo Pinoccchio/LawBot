@@ -25,6 +25,9 @@ dependencies:
   uuid: ^4.1.0
   share_plus: ^11.0.0
   timeago: ^3.7.1
+  connectivity_plus: ^6.0.5
+  http: ^1.1.0
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
