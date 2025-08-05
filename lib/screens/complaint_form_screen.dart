@@ -13,8 +13,8 @@ import '../models/dynamic_field_config.dart';
 import '../services/dynamic_field_service.dart';
 import '../services/evidence_guidance_service.dart';
 import '../services/credibility_scorer_service.dart';
-import '../services/pattern_detection_service.dart';
 import '../services/ai_risk_assessment_service.dart';
+import '../services/pattern_detection_service.dart';
 import '../models/complaint_model.dart' as ComplaintModels;
 import '../models/complaint_model.dart' show EvidenceGuidanceItem, CredibilityScore;
 import 'dart:async';
@@ -39,11 +39,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   final _suspectNameController = TextEditingController();
   final _suspectContactController = TextEditingController();
   final _suspectDetailsController = TextEditingController();
-  
-  // Focus nodes for suspect section tracking
-  final _suspectNameFocus = FocusNode();
-  final _suspectContactFocus = FocusNode();
-  final _suspectDetailsFocus = FocusNode();
   
   // Additional dynamic field controllers
   final _systemDetailsController = TextEditingController();
@@ -72,7 +67,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   
   // New features state
   CredibilityScore? _currentCredibilityScore;
-  bool _patternAlertShown = false; // Track if pattern alert was shown to user
   List<EvidenceGuidanceItem> _evidenceGuidance = [];
   bool _showCredibilityMeter = false;
   bool _showEvidenceGuidance = false;
@@ -87,12 +81,15 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Debounce timers for heavy AI operations
   Timer? _credibilityDebounceTimer;
   Timer? _evidenceGuidanceDebounceTimer;
-  Timer? _patternDetectionDebounceTimer;
+  
+  // Pattern detection state
+  Timer? _patternDetectionTimer;
+  bool _patternAlertShown = false;
+  bool _isPatternCheckInProgress = false;
   
   // AI Loading states
   bool _isLoadingCredibilityScore = false;
   bool _isLoadingEvidenceGuidance = false;
-  bool _isLoadingPatternCheck = false;
   
   // Suspect relationship options
   final List<String> _suspectRelationshipOptions = [
@@ -140,9 +137,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _suspectContactController.addListener(_triggerAIAssessment);
     _suspectDetailsController.addListener(_triggerAIAssessment);
     
-    // Pattern detection - only trigger when ALL required suspect fields are completed
-    _suspectNameController.addListener(_checkSuspectCompletion);
-    _suspectContactController.addListener(_checkSuspectCompletion);
+    // Add pattern detection listeners for suspect fields
+    _suspectNameController.addListener(_triggerPatternDetection);
+    _suspectContactController.addListener(_triggerPatternDetection);
     
     // Load user profile data and crime types
     _loadUserProfile();
@@ -155,7 +152,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _aiAssessmentTimer?.cancel();
     _credibilityDebounceTimer?.cancel();
     _evidenceGuidanceDebounceTimer?.cancel();
-    _patternDetectionDebounceTimer?.cancel();
+    _patternDetectionTimer?.cancel();
     
     _descriptionController.dispose();
     _fullNameController.dispose();
@@ -168,12 +165,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _suspectNameController.dispose();
     _suspectContactController.dispose();
     _suspectDetailsController.dispose();
-    
-    // Dispose focus nodes
-    _suspectNameFocus.dispose();
-    _suspectContactFocus.dispose();
-    _suspectDetailsFocus.dispose();
-    
     _systemDetailsController.dispose();
     _technicalInfoController.dispose();
     _vulnerabilityDetailsController.dispose();
@@ -367,66 +358,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     }
   }
 
-  // Check for scammer patterns with debouncing
-  void _checkForPatterns() {
-    if (_selectedCrimeType == null || !mounted) return;
-    
-    // Cancel previous timer
-    _patternDetectionDebounceTimer?.cancel();
-    
-    // Set up debounced timer (1 second delay to prevent excessive API calls)
-    _patternDetectionDebounceTimer = Timer(const Duration(seconds: 1), () {
-      if (mounted && _selectedCrimeType != null) {
-        _performPatternDetection();
-      }
-    });
-  }
-
-  // Perform the actual pattern detection
-  Future<void> _performPatternDetection() async {
-    if (!mounted) return;
-    
-    setState(() {
-      _isLoadingPatternCheck = true;
-    });
-    
-    try {
-      final formData = _getFormData();
-      final patternAlert = await PatternDetectionService.checkForPatterns(formData);
-      
-      if (mounted) {
-        setState(() {
-          _isLoadingPatternCheck = false;
-        });
-        
-        if (patternAlert != null) {
-          _showPatternAlert(patternAlert);
-        }
-      }
-    } catch (e) {
-      print('❌ [ComplaintForm] Error checking patterns: $e');
-      if (mounted) {
-        setState(() {
-          _isLoadingPatternCheck = false;
-        });
-      }
-    }
-  }
-
-  // Check if all required suspect fields are completed and trigger pattern detection
-  void _checkSuspectCompletion() {
-    if (_patternAlertShown || !mounted) return;
-    
-    // Check if ALL required suspect fields are completed
-    final bool hasCompleteSuspectData = _suspectNameController.text.trim().isNotEmpty &&
-                                       _suspectContactController.text.trim().isNotEmpty &&
-                                       _selectedSuspectRelationship != 'Unknown';
-    
-    if (hasCompleteSuspectData) {
-      print('🎯 [PatternDetection] All required suspect fields completed - triggering pattern check');
-      _checkForPatterns();
-    }
-  }
 
   // Get current form data for analysis
   Map<String, dynamic> _getFormData() {
@@ -461,7 +392,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     // Update all AI assessments
     _updateCredibilityScore();
     _triggerAIAssessment();
-    _checkForPatterns();
     
     // Update evidence guidance if crime type is selected
     if (_selectedCrimeType != null) {
@@ -541,143 +471,83 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     });
   }
 
-  // Generate simple summary of matched fields
-  String _getSimpleMatchSummary(List<PatternMatch> matches) {
-    final List<String> matchedFields = [];
-    
-    for (final match in matches) {
-      switch (match.type) {
-        case PatternType.suspectName:
-          matchedFields.add('Name');
-          break;
-        case PatternType.email:
-          matchedFields.add('Email');
-          break;
-        case PatternType.phoneNumber:
-          matchedFields.add('Phone');
-          break;
-        case PatternType.platformAccount:
-          matchedFields.add('Social Media');
-          break;
-        case PatternType.website:
-          matchedFields.add('Website');
-          break;
-        case PatternType.similarDescription:
-          matchedFields.add('Description');
-          break;
-        case PatternType.suspectCombination:
-          matchedFields.add('Multiple Fields');
-          break;
-      }
-    }
-    
-    if (matchedFields.isEmpty) {
-      return 'Similar report found';
-    } else if (matchedFields.length == 1) {
-      return 'Matched: ${matchedFields.first}';
-    } else if (matchedFields.length == 2) {
-      return 'Matched: ${matchedFields[0]} & ${matchedFields[1]}';
-    } else {
-      final lastField = matchedFields.removeLast();
-      return 'Matched: ${matchedFields.join(', ')} & $lastField';
-    }
+  /// Check if all required suspect fields are completed
+  bool _isSuspectSectionComplete() {
+    return _suspectNameController.text.trim().isNotEmpty &&
+           _selectedSuspectRelationship != 'Unknown' &&
+           _suspectContactController.text.trim().isNotEmpty;
   }
 
-  // Show pattern alert dialog
-  void _showPatternAlert(PatternAlert alert) {
-    // Mark that pattern alert was shown to user
-    _patternAlertShown = true;
+  /// Trigger pattern detection with intelligent timing
+  void _triggerPatternDetection() {
+    // Cancel any existing timer
+    _patternDetectionTimer?.cancel();
     
-    final isDark = context.read<ThemeProvider>().isDarkMode;
+    // Only trigger if suspect section is complete and we haven't shown alert yet
+    if (!_isSuspectSectionComplete() || _patternAlertShown || _isPatternCheckInProgress) {
+      return;
+    }
     
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Alert Icon Circle
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: alert.severityColor.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                alert.severityIcon,
-                color: alert.severityColor,
-                size: 50,
-              ),
-            ),
-            const SizedBox(height: 16),
-            
-            // Alert Title
-            Text(
-              alert.alertTitle,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black,
-              ),
-            ),
-            const SizedBox(height: 8),
-            
-            // Alert Message
-            Text(
-              alert.recommendation,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: isDark ? Colors.grey[300] : Colors.grey[600],
-              ),
-            ),
-            
-            // Simple matched fields summary
-            if (alert.matches.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                _getSimpleMatchSummary(alert.matches),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: const Color(0xFF2563EB),
-                ),
-              ),
-            ],
-            
-            const SizedBox(height: 24),
-            
-            // Action Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text(
-                  'Continue with Report',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // Debounce for 2 seconds to ensure user has finished typing
+    _patternDetectionTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted && _isSuspectSectionComplete() && !_patternAlertShown) {
+        _checkSuspectPatterns();
+      }
+    });
+  }
+
+  /// Reset pattern detection state (call when form is cleared or new crime type selected)
+  void _resetPatternDetectionState() {
+    _patternDetectionTimer?.cancel();
+    setState(() {
+      _patternAlertShown = false;
+      _isPatternCheckInProgress = false;
+    });
+    print('🔄 Pattern detection state reset');
+  }
+
+  /// Check for suspect patterns using the pattern detection service
+  Future<void> _checkSuspectPatterns() async {
+    if (!_isSuspectSectionComplete() || _patternAlertShown || _isPatternCheckInProgress || !mounted) {
+      return;
+    }
+
+    print('🔍 Starting pattern detection for suspect information');
+    
+    setState(() {
+      _isPatternCheckInProgress = true;
+    });
+    
+    try {
+      final formData = {
+        'suspectName': _suspectNameController.text.trim(),
+        'suspectContact': _suspectContactController.text.trim(),
+        'platformWebsite': _platformWebsiteController.text.trim(),
+      };
+
+      print('🔍 Checking patterns for: ${formData.toString()}');
+      
+      final alert = await PatternDetectionService.checkForPatterns(formData);
+      
+      if (alert != null && mounted) {
+        print('🚨 Pattern detected! Showing dialog with ${alert.matches.length} matches');
+        _showPatternDetectionDialog(alert);
+        setState(() {
+          _patternAlertShown = true;
+        });
+      } else {
+        print('✅ No patterns detected');
+      }
+    } catch (e) {
+      print('❌ Pattern detection error: $e');
+      // Silently fail - don't interrupt user experience
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPatternCheckInProgress = false;
+        });
+      }
+    }
   }
 
   // Handle crime type selection and manage dynamic fields
@@ -689,6 +559,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       // Clear fields that are no longer visible
       final fieldsToClear = DynamicFieldService.getFieldsToClear(_previousCrimeType, crimeType);
       _clearFieldControllers(fieldsToClear);
+      
+      // Reset pattern detection state when fields are cleared
+      _resetPatternDetectionState();
     }
     
     setState(() {
@@ -956,22 +829,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   }
 
   Future<void> _submitComplaint() async {
-    // Final pattern detection check before submission
-    if (!_patternAlertShown) {
-      final bool hasCompleteSuspectData = _suspectNameController.text.trim().isNotEmpty &&
-                                         _suspectContactController.text.trim().isNotEmpty &&
-                                         _selectedSuspectRelationship != 'Unknown';
-      
-      if (hasCompleteSuspectData) {
-        print('🎯 [PatternDetection] Final check before submission - triggering pattern detection');
-        await _performPatternDetection(); // Wait for pattern detection to complete
-        
-        // If pattern was found and shown, let user see it before continuing
-        if (_patternAlertShown) {
-          return; // Stop submission, user will continue after seeing the alert
-        }
-      }
-    }
 
     if (!_formKey.currentState!.validate()) {
       return;
@@ -1137,7 +994,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       print('👮 Assigned Officer ID: ${regularComplaint.assignedOfficerId}');
       
       print('🚀 ===== SUBMITTING WITH AI ASSESSMENT =====');
-      print('🔍 Pattern Alert Shown: $_patternAlertShown');
       // Submit with AI assessment
       final complaintId = await _databaseService.submitComplaintWithAI(
         regularComplaint, 
@@ -1329,6 +1185,146 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     } catch (e) {
       print('Error uploading evidence files: $e');
       throw 'Failed to upload evidence files: $e';
+    }
+  }
+
+  /// Show pattern detection dialog with specific match details
+  void _showPatternDetectionDialog(PatternAlert alert) {
+    final isDark = context.read<ThemeProvider>().isDarkMode;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              alert.severityIcon,
+              color: alert.severityColor,
+              size: 24,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Similar Report Found',
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'We found similar reports with matching:',
+              style: TextStyle(
+                color: isDark ? Colors.grey[300] : Colors.grey[700],
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...alert.matches.map((match) => _buildMatchItem(match, isDark)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF334155) : Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF475569) : Colors.blue.shade200,
+                ),
+              ),
+              child: Text(
+                alert.recommendation,
+                style: TextStyle(
+                  color: isDark ? Colors.blue[300] : Colors.blue[800],
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Continue Anyway',
+              style: TextStyle(
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF3B82F6),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Got It'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build a match item widget for the pattern detection dialog
+  Widget _buildMatchItem(PatternMatch match, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle,
+            color: Colors.green,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${match.typeDisplay}: ${_getMatchSummary(match)}',
+              style: TextStyle(
+                color: isDark ? Colors.white : Colors.black87,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Get a human-readable summary of the pattern match
+  String _getMatchSummary(PatternMatch match) {
+    final count = match.complaintIds.length;
+    switch (match.type) {
+      case PatternType.suspectName:
+        return '$count report${count > 1 ? 's' : ''} with same suspect name';
+      case PatternType.email:
+        return '$count report${count > 1 ? 's' : ''} with same email';
+      case PatternType.phoneNumber:
+        return '$count report${count > 1 ? 's' : ''} with same phone number';
+      case PatternType.platformAccount:
+        return '$count report${count > 1 ? 's' : ''} with same platform account';
+      case PatternType.suspectCombination:
+        return '$count report${count > 1 ? 's' : ''} with matching suspect info';
+      case PatternType.website:
+        return '$count report${count > 1 ? 's' : ''} with same website/URL';
+      case PatternType.similarDescription:
+        return '$count report${count > 1 ? 's' : ''} with similar description';
+      default:
+        return '$count similar report${count > 1 ? 's' : ''} found';
     }
   }
 
@@ -2386,7 +2382,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       case ComplaintField.suspectName:
         return _buildTextFormField(
           controller: _suspectNameController,
-          focusNode: _suspectNameFocus,
           label: label,
           hint: hint ?? 'Real name, nickname, or username',
           icon: Icons.person_outline,
@@ -2401,44 +2396,17 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           children: [
             _buildTextFormField(
               controller: _suspectContactController,
-              focusNode: _suspectContactFocus,
               label: label,
               hint: hint ?? 'Phone, email, social media handle',
               icon: Icons.contact_phone_outlined,
               isDark: isDark,
               description: description,
             ),
-            if (_isLoadingPatternCheck)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0, left: 12.0),
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '🔍 Checking for similar scammer patterns...',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
           ],
         );
       case ComplaintField.suspectDetails:
         return _buildTextAreaField(
           controller: _suspectDetailsController,
-          focusNode: _suspectDetailsFocus,
           label: label,
           hint: hint ?? 'Physical description, location, other details',
           icon: Icons.description_outlined,
@@ -2533,7 +2501,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Build standard text form field
   Widget _buildTextFormField({
     required TextEditingController controller,
-    FocusNode? focusNode,
     required String label,
     String? hint,
     IconData? icon,
@@ -2556,7 +2523,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         ],
         TextFormField(
           controller: controller,
-          focusNode: focusNode,
           style: TextStyle(
             color: isDark ? Colors.white : Colors.black,
           ),
@@ -2586,7 +2552,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Build text area field (multiline)
   Widget _buildTextAreaField({
     required TextEditingController controller,
-    FocusNode? focusNode,
     required String label,
     String? hint,
     IconData? icon,
@@ -2610,7 +2575,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         ],
         TextFormField(
           controller: controller,
-          focusNode: focusNode,
           maxLines: maxLines,
           style: TextStyle(
             color: isDark ? Colors.white : Colors.black,
@@ -2739,8 +2703,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
               print('👥 Suspect relationship updated, triggering AI updates');
               _triggerAllAIUpdates();
               
-              // Check if suspect completion triggers pattern detection
-              _checkSuspectCompletion();
+              // Trigger pattern detection when suspect relationship changes
+              _triggerPatternDetection();
             }
           },
         ),
