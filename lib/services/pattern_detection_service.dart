@@ -32,6 +32,12 @@ class PatternDetectionService {
         alerts.addAll(phoneMatches);
       }
 
+      // Check for suspect name patterns
+      if (formData['suspectName']?.isNotEmpty == true) {
+        final nameMatches = await _checkSuspectNamePattern(formData['suspectName']);
+        alerts.addAll(nameMatches);
+      }
+
       // Check for platform/account patterns
       if (formData['platformWebsite']?.isNotEmpty == true) {
         final platformMatches = await _checkPlatformPattern(
@@ -53,6 +59,10 @@ class PatternDetectionService {
         final descriptionMatches = await _checkDescriptionPattern(formData['description']);
         alerts.addAll(descriptionMatches);
       }
+
+      // Check for cross-field combinations (comprehensive suspect validation)
+      final crossFieldMatches = await _checkCrossFieldPatterns(formData);
+      alerts.addAll(crossFieldMatches);
 
       // Return alert if patterns found
       if (alerts.isNotEmpty) {
@@ -79,27 +89,16 @@ class PatternDetectionService {
           .gte('created_at', DateTime.now().subtract(const Duration(days: 30)).toIso8601String())
           .limit(10);
 
-      final matches = <PatternMatch>[];
-      for (final complaint in response as List) {
-        matches.add(PatternMatch(
-          type: PatternType.email,
-          value: email,
-          matchCount: 1,
-          recentCount: 1,
-          lastReported: DateTime.parse(complaint['created_at']),
-          crimeTypes: [complaint['crime_type']],
-        ));
-      }
-
-      // Group by email and count
-      if (matches.isNotEmpty) {
+      if ((response as List).isNotEmpty) {
+        final complaintIds = response.map((r) => r['id'].toString()).toList();
         return [PatternMatch(
           type: PatternType.email,
           value: email,
-          matchCount: matches.length,
-          recentCount: matches.length,
-          lastReported: matches.first.lastReported,
-          crimeTypes: matches.map((m) => m.crimeTypes.first).toList(),
+          matchCount: response.length,
+          recentCount: response.length,
+          lastReported: DateTime.parse(response.first['created_at']),
+          crimeTypes: response.map((r) => r['crime_type'] as String).toList(),
+          complaintIds: complaintIds,
         )];
       }
 
@@ -120,7 +119,8 @@ class PatternDetectionService {
           .gte('created_at', DateTime.now().subtract(const Duration(days: 30)).toIso8601String())
           .limit(10);
 
-      if ((response as List).length > 1) {
+      if ((response as List).length >= 1) {
+        final complaintIds = response.map((r) => r['id'].toString()).toList();
         return [PatternMatch(
           type: PatternType.phoneNumber,
           value: phone,
@@ -128,6 +128,35 @@ class PatternDetectionService {
           recentCount: response.length,
           lastReported: DateTime.parse(response.first['created_at']),
           crimeTypes: response.map((r) => r['crime_type'] as String).toList(),
+          complaintIds: complaintIds,
+        )];
+      }
+
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<PatternMatch>> _checkSuspectNamePattern(String suspectName) async {
+    try {
+      final response = await _supabase
+          .from('complaints')
+          .select('id, suspect_name, created_at, crime_type')
+          .ilike('suspect_name', '%$suspectName%')
+          .gte('created_at', DateTime.now().subtract(const Duration(days: 30)).toIso8601String())
+          .limit(10);
+
+      if ((response as List).length >= 1) {
+        final complaintIds = response.map((r) => r['id'].toString()).toList();
+        return [PatternMatch(
+          type: PatternType.suspectName,
+          value: suspectName,
+          matchCount: response.length,
+          recentCount: response.length,
+          lastReported: DateTime.parse(response.first['created_at']),
+          crimeTypes: response.map((r) => r['crime_type'] as String).toList(),
+          complaintIds: complaintIds,
         )];
       }
 
@@ -151,7 +180,8 @@ class PatternDetectionService {
             .gte('created_at', DateTime.now().subtract(const Duration(days: 30)).toIso8601String())
             .limit(10);
 
-        if ((response as List).length > 1) {
+        if ((response as List).length >= 1) {
+          final complaintIds = response.map((r) => r['id'].toString()).toList();
           matches.add(PatternMatch(
             type: PatternType.platformAccount,
             value: '$platform - $suspectName',
@@ -159,6 +189,7 @@ class PatternDetectionService {
             recentCount: response.length,
             lastReported: DateTime.parse(response.first['created_at']),
             crimeTypes: response.map((r) => r['crime_type'] as String).toList(),
+            complaintIds: complaintIds,
           ));
         }
       }
@@ -178,7 +209,8 @@ class PatternDetectionService {
           .gte('created_at', DateTime.now().subtract(const Duration(days: 30)).toIso8601String())
           .limit(10);
 
-      if ((response as List).length > 1) {
+      if ((response as List).length >= 1) {
+        final complaintIds = response.map((r) => r['id'].toString()).toList();
         return [PatternMatch(
           type: PatternType.website,
           value: url,
@@ -186,6 +218,7 @@ class PatternDetectionService {
           recentCount: response.length,
           lastReported: DateTime.parse(response.first['created_at']),
           crimeTypes: response.map((r) => r['crime_type'] as String).toList(),
+          complaintIds: complaintIds,
         )];
       }
 
@@ -210,7 +243,8 @@ class PatternDetectionService {
               .gte('created_at', DateTime.now().subtract(const Duration(days: 7)).toIso8601String())
               .limit(5);
 
-          if ((response as List).length > 2) {
+          if ((response as List).length >= 1) {
+            final complaintIds = response.map((r) => r['id'].toString()).toList();
             matches.add(PatternMatch(
               type: PatternType.similarDescription,
               value: phrase,
@@ -218,6 +252,7 @@ class PatternDetectionService {
               recentCount: response.length,
               lastReported: DateTime.parse(response.first['created_at']),
               crimeTypes: response.map((r) => r['crime_type'] as String).toList(),
+              complaintIds: complaintIds,
             ));
           }
         }
@@ -225,6 +260,70 @@ class PatternDetectionService {
 
       return matches;
     } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<PatternMatch>> _checkCrossFieldPatterns(Map<String, dynamic> formData) async {
+    try {
+      final matches = <PatternMatch>[];
+      final suspectName = formData['suspectName'] ?? '';
+      final suspectContact = formData['suspectContact'] ?? '';
+      final platformWebsite = formData['platformWebsite'] ?? '';
+      
+      // Skip if not enough data for cross-field validation
+      if (suspectName.isEmpty && suspectContact.isEmpty && platformWebsite.isEmpty) {
+        return matches;
+      }
+
+      // Build dynamic query conditions
+      final List<String> conditions = [];
+      final List<String> orConditions = [];
+      
+      if (suspectName.isNotEmpty) {
+        orConditions.add('suspect_name.ilike.%$suspectName%');
+      }
+      
+      if (suspectContact.isNotEmpty) {
+        orConditions.add('suspect_contact.ilike.%$suspectContact%');
+      }
+      
+      if (platformWebsite.isNotEmpty && suspectName.isNotEmpty) {
+        orConditions.add('and(platform_website.ilike.%$platformWebsite%,suspect_name.ilike.%$suspectName%)');
+      }
+
+      if (orConditions.isEmpty) return matches;
+
+      final response = await _supabase
+          .from('complaints')
+          .select('id, suspect_name, suspect_contact, platform_website, created_at, crime_type')
+          .or(orConditions.join(','))
+          .gte('created_at', DateTime.now().subtract(const Duration(days: 30)).toIso8601String())
+          .limit(15);
+
+      if ((response as List).length >= 1) {
+        // Create a combined match for cross-field validation
+        final combinedValue = [
+          if (suspectName.isNotEmpty) 'Name: $suspectName',
+          if (suspectContact.isNotEmpty) 'Contact: $suspectContact',
+          if (platformWebsite.isNotEmpty) 'Platform: $platformWebsite',
+        ].join(' | ');
+
+        final complaintIds = response.map((r) => r['id'].toString()).toList();
+        matches.add(PatternMatch(
+          type: PatternType.suspectCombination,
+          value: combinedValue,
+          matchCount: response.length,
+          recentCount: response.length,
+          lastReported: DateTime.parse(response.first['created_at']),
+          crimeTypes: response.map((r) => r['crime_type'] as String).toList(),
+          complaintIds: complaintIds,
+        ));
+      }
+
+      return matches;
+    } catch (e) {
+      _debugLog('❌ Error in cross-field pattern check: $e');
       return [];
     }
   }
@@ -255,14 +354,19 @@ class PatternDetectionService {
   }
 
   static PatternSeverity _calculateSeverity(List<PatternMatch> matches) {
-    int totalMatches = matches.fold(0, (sum, match) => sum + match.matchCount);
-    int recentMatches = matches.fold(0, (sum, match) => sum + match.recentCount);
+    // Deduplicate by complaint IDs to get unique report count
+    final Set<String> uniqueComplaintIds = {};
+    for (final match in matches) {
+      uniqueComplaintIds.addAll(match.complaintIds);
+    }
     
-    if (totalMatches >= 10 || recentMatches >= 5) {
+    final int uniqueReports = uniqueComplaintIds.length;
+    
+    if (uniqueReports >= 10) {
       return PatternSeverity.critical;
-    } else if (totalMatches >= 5 || recentMatches >= 3) {
+    } else if (uniqueReports >= 5) {
       return PatternSeverity.high;
-    } else if (totalMatches >= 3 || recentMatches >= 2) {
+    } else if (uniqueReports >= 3) {
       return PatternSeverity.medium;
     } else {
       return PatternSeverity.low;
@@ -271,17 +375,44 @@ class PatternDetectionService {
 
   static String _generateRecommendation(List<PatternMatch> matches) {
     final severity = _calculateSeverity(matches);
-    final totalMatches = matches.fold(0, (sum, match) => sum + match.matchCount);
+    
+    // Deduplicate by complaint IDs to get unique report count
+    final Set<String> uniqueComplaintIds = {};
+    for (final match in matches) {
+      uniqueComplaintIds.addAll(match.complaintIds);
+    }
+    final int uniqueReports = uniqueComplaintIds.length;
+    
+    // Get most recent match for timeframe context
+    final mostRecent = matches.first.lastReported;
+    final difference = DateTime.now().difference(mostRecent);
+    String timeContext = '';
+    
+    if (difference.inHours <= 24) {
+      timeContext = ' in the last 24 hours';
+    } else if (difference.inDays <= 7) {
+      timeContext = ' this week';
+    } else {
+      timeContext = ' recently';
+    }
     
     switch (severity) {
       case PatternSeverity.critical:
-        return 'CRITICAL: Itong scammer ay naka-report na ng $totalMatches times. Huwag magpadala ng pera o personal information!';
+        return 'VERIFIED SCAMMER: This suspect has been reported $uniqueReports times$timeContext by other users. This helps strengthen your case and supports ongoing investigations.';
       case PatternSeverity.high:
-        return 'HIGH RISK: May $totalMatches similar reports na. Mag-ingat at verify muna bago mag-transact.';
+        return 'PATTERN CONFIRMED: $uniqueReports similar reports found$timeContext. Your report adds valuable evidence to help catch this scammer and protect others.';
       case PatternSeverity.medium:
-        return 'MODERATE RISK: May mga similar reports na nakita. Recommended na mag-double check.';
+        if (uniqueReports == 1) {
+          return 'PATTERN DETECTED: 1 similar report found$timeContext. Your report helps build a stronger case against this suspect.';
+        } else {
+          return 'PATTERN DETECTED: $uniqueReports similar reports found$timeContext. Thank you for helping build evidence against this scammer.';
+        }
       case PatternSeverity.low:
-        return 'Low risk pattern detected. Still proceed with caution.';
+        if (uniqueReports == 1) {
+          return 'INFORMATION: 1 similar report exists$timeContext. Your report contributes to identifying potential scam patterns.';
+        } else {
+          return 'HELPFUL INFO: Your report adds to our database and helps identify scam patterns for better protection.';
+        }
     }
   }
 
@@ -419,26 +550,39 @@ class PatternAlert {
   IconData get severityIcon {
     switch (severity) {
       case PatternSeverity.critical:
-        return Icons.dangerous;
+        return Icons.verified;
       case PatternSeverity.high:
-        return Icons.warning;
+        return Icons.shield;
       case PatternSeverity.medium:
-        return Icons.info;
+        return Icons.analytics;
       case PatternSeverity.low:
-        return Icons.check_circle;
+        return Icons.lightbulb;
     }
   }
 
   String get alertTitle {
+    // Deduplicate by complaint IDs to get unique report count
+    final Set<String> uniqueComplaintIds = {};
+    for (final match in matches) {
+      uniqueComplaintIds.addAll(match.complaintIds);
+    }
+    final int uniqueReports = uniqueComplaintIds.length;
+    
     switch (severity) {
       case PatternSeverity.critical:
-        return '🚨 CRITICAL ALERT';
+        return '✅ VERIFIED SCAMMER';
       case PatternSeverity.high:
-        return '⚠️ HIGH RISK WARNING';
+        return '🎯 PATTERN CONFIRMED';
       case PatternSeverity.medium:
-        return '📊 PATTERN DETECTED';
+        if (uniqueReports == 1) {
+          return '📋 PATTERN DETECTED';
+        }
+        return '📊 MULTIPLE REPORTS';
       case PatternSeverity.low:
-        return 'ℹ️ INFORMATION';
+        if (uniqueReports == 1) {
+          return '💡 HELPFUL INFO';
+        }
+        return '📝 PATTERN INFO';
     }
   }
 }
@@ -450,6 +594,7 @@ class PatternMatch {
   final int recentCount;
   final DateTime lastReported;
   final List<String> crimeTypes;
+  final List<String> complaintIds; // Track unique complaint IDs
 
   PatternMatch({
     required this.type,
@@ -458,6 +603,7 @@ class PatternMatch {
     required this.recentCount,
     required this.lastReported,
     required this.crimeTypes,
+    required this.complaintIds,
   });
 
   String get typeDisplay {
@@ -466,18 +612,39 @@ class PatternMatch {
         return 'Email Address';
       case PatternType.phoneNumber:
         return 'Phone Number';
+      case PatternType.suspectName:
+        return 'Suspect Name';
       case PatternType.platformAccount:
         return 'Social Media Account';
       case PatternType.website:
         return 'Website/URL';
       case PatternType.similarDescription:
         return 'Similar Report';
+      case PatternType.suspectCombination:
+        return 'Suspect Information';
     }
   }
 
   String get matchDescription {
     final timeAgo = _getTimeAgo(lastReported);
-    return '$matchCount similar reports in the last 30 days (last reported $timeAgo)';
+    final difference = DateTime.now().difference(lastReported);
+    
+    // Dynamic timeframe based on recency
+    String timeFrame;
+    if (difference.inHours <= 24) {
+      timeFrame = 'last 24 hours';
+    } else if (difference.inDays <= 7) {
+      timeFrame = 'last week';
+    } else {
+      timeFrame = 'last 30 days';
+    }
+    
+    // Dynamic message based on count
+    if (matchCount == 1) {
+      return 'This ${typeDisplay.toLowerCase()} was reported by 1 other user in the $timeFrame (reported $timeAgo)';
+    } else {
+      return 'This ${typeDisplay.toLowerCase()} was reported by $matchCount others in the $timeFrame (last reported $timeAgo)';
+    }
   }
 
   String _getTimeAgo(DateTime dateTime) {
@@ -512,9 +679,11 @@ class TrendingAlert {
 enum PatternType {
   email,
   phoneNumber,
+  suspectName,
   platformAccount,
   website,
   similarDescription,
+  suspectCombination,
 }
 
 enum PatternSeverity {

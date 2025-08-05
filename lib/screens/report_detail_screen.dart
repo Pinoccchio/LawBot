@@ -47,6 +47,13 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             
             const SizedBox(height: 16),
             
+            // AI Assessment Card
+            if (_hasAiAssessment())
+              _buildAiAssessmentCard(isDark),
+            
+            if (_hasAiAssessment())
+              const SizedBox(height: 16),
+            
             // Investigation Team Card
             if (_hasInvestigationInfo())
               _buildInvestigationTeamCard(isDark),
@@ -86,7 +93,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   Widget _buildEnhancedHeaderCard(bool isDark) {
     final statusColor = _getStatusColor(widget.complaint.status);
-    final priorityColor = _getPriorityColor(widget.complaint.priority);
+    // Use AI priority if available, fallback to regular priority
+    final effectivePriority = widget.complaint.aiPriority ?? widget.complaint.priority;
+    final priorityColor = _getPriorityColor(effectivePriority);
+    final isAiAssessed = widget.complaint.aiPriority != null;
     
     return Container(
       width: double.infinity,
@@ -147,14 +157,22 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (isAiAssessed) ...[
+                      Icon(
+                        Icons.psychology,
+                        size: 10,
+                        color: priorityColor,
+                      ),
+                      const SizedBox(width: 2),
+                    ],
                     Icon(
-                      _getPriorityIcon(widget.complaint.priority),
+                      _getPriorityIcon(effectivePriority),
                       size: 12,
                       color: priorityColor,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      widget.complaint.priority.toUpperCase(),
+                      effectivePriority.toUpperCase(),
                       style: TextStyle(
                         fontSize: 10,
                         color: priorityColor,
@@ -172,33 +190,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           // Risk Score and Status Row
           Row(
             children: [
-              // Risk Score
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.analytics,
-                      size: 14,
-                      color: Colors.orange,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Risk: ${widget.complaint.riskScore}%',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Enhanced Risk Score with AI indication
+              _buildEnhancedRiskCard(),
               const Spacer(),
               // Status Badge
               Container(
@@ -1941,5 +1934,440 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       default:
         return Icons.help;
     }
+  }
+
+  // Enhanced Risk Card with AI indication
+  Widget _buildEnhancedRiskCard() {
+    // Use AI risk score if available, fallback to regular risk score
+    final effectiveRiskScore = widget.complaint.aiRiskScore ?? widget.complaint.riskScore;
+    final isAiAssessed = widget.complaint.aiRiskScore != null;
+    final riskColor = _getRiskColor(effectiveRiskScore);
+    final hasHighConfidence = widget.complaint.aiConfidenceScore != null && widget.complaint.aiConfidenceScore! >= 80;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: riskColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isAiAssessed ? Icons.psychology : Icons.analytics,
+            size: 14,
+            color: riskColor,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Risk: $effectiveRiskScore%',
+            style: TextStyle(
+              fontSize: 12,
+              color: riskColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (isAiAssessed && hasHighConfidence) ...[
+            const SizedBox(width: 4),
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Check if complaint has AI assessment data
+  bool _hasAiAssessment() {
+    return widget.complaint.aiPriority != null ||
+           widget.complaint.aiRiskScore != null ||
+           widget.complaint.aiConfidenceScore != null ||
+           widget.complaint.riskFactors != null ||
+           widget.complaint.urgencyIndicators != null ||
+           widget.complaint.aiReasoning != null;
+  }
+
+  // AI Assessment Card
+  Widget _buildAiAssessmentCard(bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.purple.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withOpacity(0.3)
+                : Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.purple.withOpacity(0.1), Colors.blue.withOpacity(0.1)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.psychology,
+                  color: Colors.purple,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AI Risk Assessment',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      ),
+                    ),
+                    Text(
+                      'Powered by Gemini 2.0 Flash',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.complaint.lastAiAssessment != null)
+                Text(
+                  'Updated ${_formatTimeAgo(widget.complaint.lastAiAssessment!)}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isDark ? Colors.grey[500] : Colors.grey[500],
+                  ),
+                ),
+            ],
+          ),
+          
+          const SizedBox(height: 20),
+          
+          // AI Metrics Row
+          Row(
+            children: [
+              // AI Priority
+              if (widget.complaint.aiPriority != null) ...[
+                Expanded(
+                  child: _buildAiMetricCard(
+                    title: 'AI Priority',
+                    value: widget.complaint.aiPriority!.toUpperCase(),
+                    color: _getPriorityColor(widget.complaint.aiPriority!),
+                    icon: Icons.priority_high,
+                    isDark: isDark,
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              
+              // AI Risk Score
+              if (widget.complaint.aiRiskScore != null) ...[
+                Expanded(
+                  child: _buildAiMetricCard(
+                    title: 'Risk Score',
+                    value: '${widget.complaint.aiRiskScore}%',
+                    color: _getRiskColor(widget.complaint.aiRiskScore!),
+                    icon: Icons.trending_up,
+                    isDark: isDark,
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              
+              // AI Confidence
+              if (widget.complaint.aiConfidenceScore != null) ...[
+                Expanded(
+                  child: _buildAiMetricCard(
+                    title: 'Confidence',
+                    value: '${widget.complaint.aiConfidenceScore}%',
+                    color: _getConfidenceColor(widget.complaint.aiConfidenceScore!),
+                    icon: Icons.verified,
+                    isDark: isDark,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          
+          // Risk Factors
+          if (widget.complaint.riskFactors != null && widget.complaint.riskFactors!.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            _buildRiskFactorsSection(isDark),
+          ],
+          
+          // Urgency Indicators
+          if (widget.complaint.urgencyIndicators != null && widget.complaint.urgencyIndicators!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _buildUrgencyIndicatorsSection(isDark),
+          ],
+          
+          // AI Reasoning
+          if (widget.complaint.aiReasoning != null && widget.complaint.aiReasoning!.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            _buildAiReasoningSection(isDark),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // AI Metric Card
+  Widget _buildAiMetricCard({
+    required String title,
+    required String value,
+    required Color color,
+    required IconData icon,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            color: color,
+            size: 20,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Risk Factors Section
+  Widget _buildRiskFactorsSection(bool isDark) {
+    List<String> factors = widget.complaint.riskFactors;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.warning_amber,
+              size: 16,
+              color: Colors.red,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Risk Factors',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: factors.map((factor) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.red.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Text(
+              factor,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.red,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          )).toList(),
+        ),
+      ],
+    );
+  }
+
+  // Urgency Indicators Section
+  Widget _buildUrgencyIndicatorsSection(bool isDark) {
+    List<String> indicators = widget.complaint.urgencyIndicators;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.speed,
+              size: 16,
+              color: Colors.orange,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Urgency Indicators',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: indicators.map((indicator) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.orange.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Text(
+              indicator,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          )).toList(),
+        ),
+      ],
+    );
+  }
+
+  // AI Reasoning Section
+  Widget _buildAiReasoningSection(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.lightbulb_outline,
+              size: 16,
+              color: Colors.blue,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'AI Analysis',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.blue.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Text(
+            widget.complaint.aiReasoning!,
+            style: TextStyle(
+              fontSize: 13,
+              color: isDark ? Colors.grey[200] : Colors.grey[700],
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Helper method to get confidence color
+  Color _getConfidenceColor(int confidence) {
+    if (confidence >= 90) return Colors.green;
+    if (confidence >= 70) return Colors.blue;
+    if (confidence >= 50) return Colors.orange;
+    return Colors.red;
+  }
+
+  // Helper method to get risk color (enhanced version)
+  Color _getRiskColor(int riskScore) {
+    if (riskScore >= 80) return Colors.red;
+    if (riskScore >= 60) return Colors.orange;  
+    if (riskScore >= 40) return Colors.amber;
+    return Colors.green;
+  }
+
+  // Helper method to format time ago
+  String _formatTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    if (difference.inMinutes < 1) return 'just now';
+    if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+    if (difference.inHours < 24) return '${difference.inHours}h ago';
+    if (difference.inDays < 7) return '${difference.inDays}d ago';
+    return '${(difference.inDays / 7).floor()}w ago';
   }
 }

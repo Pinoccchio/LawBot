@@ -40,6 +40,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   final _suspectContactController = TextEditingController();
   final _suspectDetailsController = TextEditingController();
   
+  // Focus nodes for suspect section tracking
+  final _suspectNameFocus = FocusNode();
+  final _suspectContactFocus = FocusNode();
+  final _suspectDetailsFocus = FocusNode();
+  
   // Additional dynamic field controllers
   final _systemDetailsController = TextEditingController();
   final _technicalInfoController = TextEditingController();
@@ -67,7 +72,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   
   // New features state
   CredibilityScore? _currentCredibilityScore;
-  PatternAlert? _currentPatternAlert;
+  bool _patternAlertShown = false; // Track if pattern alert was shown to user
   List<EvidenceGuidanceItem> _evidenceGuidance = [];
   bool _showCredibilityMeter = false;
   bool _showEvidenceGuidance = false;
@@ -121,13 +126,23 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _suspectNameController.addListener(_updateCredibilityScore);
     _suspectDetailsController.addListener(_updateCredibilityScore);
     
-    // Pattern detection listeners
-    _suspectContactController.addListener(_checkForPatterns);
-    _suspectNameController.addListener(_checkForPatterns);
     
     // Add listeners for real-time AI assessment
     _descriptionController.addListener(_triggerAIAssessment);
+    _fullNameController.addListener(_triggerAIAssessment);
+    _emailController.addListener(_triggerAIAssessment);
+    _phoneController.addListener(_triggerAIAssessment);
+    _platformWebsiteController.addListener(_triggerAIAssessment);
     _financialLossController.addListener(_triggerAIAssessment);
+    _incidentLocationController.addListener(_triggerAIAssessment);
+    _accountReferenceController.addListener(_triggerAIAssessment);
+    _suspectNameController.addListener(_triggerAIAssessment);
+    _suspectContactController.addListener(_triggerAIAssessment);
+    _suspectDetailsController.addListener(_triggerAIAssessment);
+    
+    // Pattern detection - only trigger when ALL required suspect fields are completed
+    _suspectNameController.addListener(_checkSuspectCompletion);
+    _suspectContactController.addListener(_checkSuspectCompletion);
     
     // Load user profile data and crime types
     _loadUserProfile();
@@ -153,6 +168,12 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _suspectNameController.dispose();
     _suspectContactController.dispose();
     _suspectDetailsController.dispose();
+    
+    // Dispose focus nodes
+    _suspectNameFocus.dispose();
+    _suspectContactFocus.dispose();
+    _suspectDetailsFocus.dispose();
+    
     _systemDetailsController.dispose();
     _technicalInfoController.dispose();
     _vulnerabilityDetailsController.dispose();
@@ -346,35 +367,64 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     }
   }
 
-  // Check for scammer patterns
-  void _checkForPatterns() async {
-    if (_selectedCrimeType != null && mounted) {
-      setState(() {
-        _isLoadingPatternCheck = true;
-      });
+  // Check for scammer patterns with debouncing
+  void _checkForPatterns() {
+    if (_selectedCrimeType == null || !mounted) return;
+    
+    // Cancel previous timer
+    _patternDetectionDebounceTimer?.cancel();
+    
+    // Set up debounced timer (1 second delay to prevent excessive API calls)
+    _patternDetectionDebounceTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted && _selectedCrimeType != null) {
+        _performPatternDetection();
+      }
+    });
+  }
+
+  // Perform the actual pattern detection
+  Future<void> _performPatternDetection() async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingPatternCheck = true;
+    });
+    
+    try {
+      final formData = _getFormData();
+      final patternAlert = await PatternDetectionService.checkForPatterns(formData);
       
-      try {
-        final formData = _getFormData();
-        final patternAlert = await PatternDetectionService.checkForPatterns(formData);
+      if (mounted) {
+        setState(() {
+          _isLoadingPatternCheck = false;
+        });
         
-        if (mounted) {
-          setState(() {
-            _currentPatternAlert = patternAlert;
-            _isLoadingPatternCheck = false;
-          });
-          
-          if (patternAlert != null) {
-            _showPatternAlert(patternAlert);
-          }
-        }
-      } catch (e) {
-        print('❌ [ComplaintForm] Error checking patterns: $e');
-        if (mounted) {
-          setState(() {
-            _isLoadingPatternCheck = false;
-          });
+        if (patternAlert != null) {
+          _showPatternAlert(patternAlert);
         }
       }
+    } catch (e) {
+      print('❌ [ComplaintForm] Error checking patterns: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingPatternCheck = false;
+        });
+      }
+    }
+  }
+
+  // Check if all required suspect fields are completed and trigger pattern detection
+  void _checkSuspectCompletion() {
+    if (_patternAlertShown || !mounted) return;
+    
+    // Check if ALL required suspect fields are completed
+    final bool hasCompleteSuspectData = _suspectNameController.text.trim().isNotEmpty &&
+                                       _suspectContactController.text.trim().isNotEmpty &&
+                                       _selectedSuspectRelationship != 'Unknown';
+    
+    if (hasCompleteSuspectData) {
+      print('🎯 [PatternDetection] All required suspect fields completed - triggering pattern check');
+      _checkForPatterns();
     }
   }
 
@@ -435,8 +485,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     // Cancel previous timer
     _aiAssessmentTimer?.cancel();
     
-    // Set up new debounced timer (2 seconds delay)
-    _aiAssessmentTimer = Timer(const Duration(seconds: 2), () {
+    // Set up new debounced timer (1.5 seconds delay for consistency with credibility score)
+    _aiAssessmentTimer = Timer(const Duration(milliseconds: 1500), () {
       if (mounted && _selectedCrimeType != null && _descriptionController.text.trim().length > 10) {
         _performQuickAIAssessment();
       }
@@ -491,56 +541,141 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     });
   }
 
+  // Generate simple summary of matched fields
+  String _getSimpleMatchSummary(List<PatternMatch> matches) {
+    final List<String> matchedFields = [];
+    
+    for (final match in matches) {
+      switch (match.type) {
+        case PatternType.suspectName:
+          matchedFields.add('Name');
+          break;
+        case PatternType.email:
+          matchedFields.add('Email');
+          break;
+        case PatternType.phoneNumber:
+          matchedFields.add('Phone');
+          break;
+        case PatternType.platformAccount:
+          matchedFields.add('Social Media');
+          break;
+        case PatternType.website:
+          matchedFields.add('Website');
+          break;
+        case PatternType.similarDescription:
+          matchedFields.add('Description');
+          break;
+        case PatternType.suspectCombination:
+          matchedFields.add('Multiple Fields');
+          break;
+      }
+    }
+    
+    if (matchedFields.isEmpty) {
+      return 'Similar report found';
+    } else if (matchedFields.length == 1) {
+      return 'Matched: ${matchedFields.first}';
+    } else if (matchedFields.length == 2) {
+      return 'Matched: ${matchedFields[0]} & ${matchedFields[1]}';
+    } else {
+      final lastField = matchedFields.removeLast();
+      return 'Matched: ${matchedFields.join(', ')} & $lastField';
+    }
+  }
+
   // Show pattern alert dialog
   void _showPatternAlert(PatternAlert alert) {
+    // Mark that pattern alert was shown to user
+    _patternAlertShown = true;
+    
+    final isDark = context.read<ThemeProvider>().isDarkMode;
+    
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(alert.severityIcon, color: alert.severityColor, size: 24),
-            const SizedBox(width: 8),
-            Text(alert.alertTitle),
-          ],
-        ),
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(alert.recommendation),
-            const SizedBox(height: 16),
-            ...alert.matches.map((match) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  Icon(Icons.warning, color: Colors.orange, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${match.typeDisplay}: ${match.matchDescription}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
+            // Alert Icon Circle
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: alert.severityColor.withOpacity(0.1),
+                shape: BoxShape.circle,
               ),
-            )).toList(),
+              child: Icon(
+                alert.severityIcon,
+                color: alert.severityColor,
+                size: 50,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Alert Title
+            Text(
+              alert.alertTitle,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+            const SizedBox(height: 8),
+            
+            // Alert Message
+            Text(
+              alert.recommendation,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.grey[300] : Colors.grey[600],
+              ),
+            ),
+            
+            // Simple matched fields summary
+            if (alert.matches.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                _getSimpleMatchSummary(alert.matches),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF2563EB),
+                ),
+              ),
+            ],
+            
+            const SizedBox(height: 24),
+            
+            // Action Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'Continue with Report',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('I Understand'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context); // Go back to previous screen
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Cancel Report', style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
     );
   }
@@ -572,6 +707,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         
         // Update credibility score with new crime type
         _updateCredibilityScore();
+        
+        // Update AI risk assessment with new crime type
+        _triggerAIAssessment();
       } else {
         _evidenceGuidance = [];
         _showEvidenceGuidance = false;
@@ -818,6 +956,23 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   }
 
   Future<void> _submitComplaint() async {
+    // Final pattern detection check before submission
+    if (!_patternAlertShown) {
+      final bool hasCompleteSuspectData = _suspectNameController.text.trim().isNotEmpty &&
+                                         _suspectContactController.text.trim().isNotEmpty &&
+                                         _selectedSuspectRelationship != 'Unknown';
+      
+      if (hasCompleteSuspectData) {
+        print('🎯 [PatternDetection] Final check before submission - triggering pattern detection');
+        await _performPatternDetection(); // Wait for pattern detection to complete
+        
+        // If pattern was found and shown, let user see it before continuing
+        if (_patternAlertShown) {
+          return; // Stop submission, user will continue after seeing the alert
+        }
+      }
+    }
+
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -982,8 +1137,12 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       print('👮 Assigned Officer ID: ${regularComplaint.assignedOfficerId}');
       
       print('🚀 ===== SUBMITTING WITH AI ASSESSMENT =====');
+      print('🔍 Pattern Alert Shown: $_patternAlertShown');
       // Submit with AI assessment
-      final complaintId = await _databaseService.submitComplaintWithAI(regularComplaint);
+      final complaintId = await _databaseService.submitComplaintWithAI(
+        regularComplaint, 
+        patternAlertShown: _patternAlertShown,
+      );
       
       if (complaintId != null) {
         // Show success dialog with complaint ID and assigned officer info
@@ -2227,6 +2386,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       case ComplaintField.suspectName:
         return _buildTextFormField(
           controller: _suspectNameController,
+          focusNode: _suspectNameFocus,
           label: label,
           hint: hint ?? 'Real name, nickname, or username',
           icon: Icons.person_outline,
@@ -2241,6 +2401,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           children: [
             _buildTextFormField(
               controller: _suspectContactController,
+              focusNode: _suspectContactFocus,
               label: label,
               hint: hint ?? 'Phone, email, social media handle',
               icon: Icons.contact_phone_outlined,
@@ -2277,6 +2438,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       case ComplaintField.suspectDetails:
         return _buildTextAreaField(
           controller: _suspectDetailsController,
+          focusNode: _suspectDetailsFocus,
           label: label,
           hint: hint ?? 'Physical description, location, other details',
           icon: Icons.description_outlined,
@@ -2371,6 +2533,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Build standard text form field
   Widget _buildTextFormField({
     required TextEditingController controller,
+    FocusNode? focusNode,
     required String label,
     String? hint,
     IconData? icon,
@@ -2393,6 +2556,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         ],
         TextFormField(
           controller: controller,
+          focusNode: focusNode,
           style: TextStyle(
             color: isDark ? Colors.white : Colors.black,
           ),
@@ -2422,6 +2586,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Build text area field (multiline)
   Widget _buildTextAreaField({
     required TextEditingController controller,
+    FocusNode? focusNode,
     required String label,
     String? hint,
     IconData? icon,
@@ -2445,6 +2610,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         ],
         TextFormField(
           controller: controller,
+          focusNode: focusNode,
           maxLines: maxLines,
           style: TextStyle(
             color: isDark ? Colors.white : Colors.black,
@@ -2571,7 +2737,10 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
               });
               // Trigger AI updates when suspect relationship changes
               print('👥 Suspect relationship updated, triggering AI updates');
-              _triggerAllAIUpdates();  
+              _triggerAllAIUpdates();
+              
+              // Check if suspect completion triggers pattern detection
+              _checkSuspectCompletion();
             }
           },
         ),

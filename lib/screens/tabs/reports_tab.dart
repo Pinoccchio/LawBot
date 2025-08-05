@@ -163,6 +163,16 @@ class _ReportsTabState extends State<ReportsTab> {
         ),
         priority: data['priority'] ?? 'low', // Case priority from database
         riskScore: data['risk_score'] ?? 30, // AI risk assessment
+        // AI Enhancement fields
+        aiPriority: data['ai_priority'], // AI-assessed priority (critical/high/medium/low)
+        aiRiskScore: data['ai_risk_score']?.toInt(), // AI-calculated risk score (0-100)
+        aiConfidenceScore: data['ai_confidence_score']?.toInt(), // AI confidence level (0-100)
+        riskFactors: _parseStringList(data['risk_factors']), // JSON array of risk factors
+        urgencyIndicators: _parseStringList(data['urgency_indicators']), // JSON array of urgency indicators
+        aiReasoning: data['ai_reasoning'], // AI explanation text
+        lastAiAssessment: data['last_ai_assessment'] != null 
+            ? DateTime.parse(data['last_ai_assessment']) 
+            : null, // Last AI assessment timestamp
         assignedUnit: assignedUnit, // PNP unit assignment
         createdAt: DateTime.parse(data['created_at']),
         updatedAt: DateTime.parse(data['updated_at']),
@@ -742,42 +752,11 @@ class _ReportsTabState extends State<ReportsTab> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Priority Badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: _getPriorityColor(complaint.priority).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        complaint.priority.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 9,
-                          color: _getPriorityColor(complaint.priority),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+                    // Enhanced Priority Badge with AI indicator
+                    _buildEnhancedPriorityBadge(complaint),
                     const Spacer(),
-                    // Risk Score
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.analytics,
-                          size: 12,
-                          color: _getRiskColor(complaint.riskScore),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${complaint.riskScore}',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: _getRiskColor(complaint.riskScore),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+                    // Enhanced Risk Score with AI indicator
+                    _buildEnhancedRiskBadge(complaint),
                     const SizedBox(width: 8),
                     // Status
                     Container(
@@ -1139,5 +1118,128 @@ class _ReportsTabState extends State<ReportsTab> {
     }
 
     return items;
+  }
+
+  // Helper method to parse string lists from database (handles both JSON arrays and comma-separated strings)
+  List<String> _parseStringList(dynamic data) {
+    if (data == null) return [];
+    
+    if (data is List) {
+      return data.map((e) => e.toString()).toList();
+    } else if (data is String) {
+      if (data.startsWith('[') && data.endsWith(']')) {
+        // Try to parse as JSON array
+        try {
+          final List<dynamic> parsed = data
+              .substring(1, data.length - 1)
+              .split(',')
+              .map((e) => e.trim().replaceAll('"', ''))
+              .toList();
+          return parsed.map((e) => e.toString()).toList();
+        } catch (e) {
+          // Fallback to comma-separated parsing
+          return data.split(',').map((e) => e.trim()).toList();
+        }
+      } else {
+        // Comma-separated string
+        return data.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      }
+    }
+    
+    return [data.toString()];
+  }
+
+  // Enhanced Priority Badge with AI indication
+  Widget _buildEnhancedPriorityBadge(Complaint complaint) {
+    // Use AI priority if available, fallback to regular priority
+    final effectivePriority = complaint.aiPriority ?? complaint.priority;
+    final isAiAssessed = complaint.aiPriority != null;
+    final priorityColor = _getPriorityColor(effectivePriority);
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: priorityColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isAiAssessed) ...[
+                Icon(
+                  Icons.psychology,
+                  size: 8,
+                  color: priorityColor,
+                ),
+                const SizedBox(width: 2),
+              ],
+              Text(
+                effectivePriority.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 9,
+                  color: priorityColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Enhanced Risk Score with AI indication and confidence
+  Widget _buildEnhancedRiskBadge(Complaint complaint) {
+    // Use AI risk score if available, fallback to regular risk score
+    final effectiveRiskScore = complaint.aiRiskScore ?? complaint.riskScore;
+    final isAiAssessed = complaint.aiRiskScore != null;
+    final riskColor = _getRiskColor(effectiveRiskScore);
+    final hasHighConfidence = complaint.aiConfidenceScore != null && complaint.aiConfidenceScore! >= 80;
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: riskColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isAiAssessed ? Icons.psychology : Icons.analytics,
+                size: 10,
+                color: riskColor,
+              ),
+              const SizedBox(width: 2),
+              Text(
+                '$effectiveRiskScore',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: riskColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (isAiAssessed && hasHighConfidence) ...[
+                const SizedBox(width: 2),
+                Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

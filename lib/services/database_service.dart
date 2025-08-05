@@ -924,7 +924,7 @@ class DatabaseService {
   // =============================================
 
   /// Submit complaint with AI assessment
-  Future<String?> submitComplaintWithAI(Complaint complaint) async {
+  Future<String?> submitComplaintWithAI(Complaint complaint, {bool patternAlertShown = false}) async {
     try {
       if (currentUserId == null) {
         throw 'User not authenticated';
@@ -1064,6 +1064,9 @@ class DatabaseService {
         'target_info': complaint.targetInfo,
         'impact_assessment': complaint.impactAssessment,
         'content_description': complaint.contentDescription,
+        
+        // 🔍 NOVELTY FEATURES (Smart Enhancements)
+        'pattern_alert_shown': patternAlertShown, // Track if pattern alert was shown to user
         
         'created_at': PhilippineTime.toUtc(now).toIso8601String(),
         'updated_at': PhilippineTime.toUtc(now).toIso8601String(),
