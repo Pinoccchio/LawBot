@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 
 import '../models/complaint_model.dart';
+import '../utils/philippine_time.dart';
 import 'gemini_service.dart';
 import 'ai_database_service.dart';
 
@@ -51,7 +52,7 @@ class AIRiskAssessmentService {
     String? incidentLocation,
     String? complaintId,
   }) async {
-    final startTime = DateTime.now();
+    final startTime = PhilippineTime.now();
     _debugLog('🚀 Starting AI risk assessment for ${crimeType.displayName}');
     
     // Prepare input data for caching
@@ -75,7 +76,7 @@ class AIRiskAssessmentService {
       );
       
       if (cachedAssessment != null) {
-        final cacheTime = DateTime.now().difference(startTime).inMilliseconds;
+        final cacheTime = PhilippineTime.now().difference(startTime).inMilliseconds;
         _debugLog('⚡ Cache HIT! Assessment retrieved in ${cacheTime}ms');
         return cachedAssessment;
       }
@@ -107,7 +108,7 @@ class AIRiskAssessmentService {
       // Parse AI response
       final assessment = _parseAIResponse(aiAnalysis, crimeType, financialLoss);
       
-      final processingTime = DateTime.now().difference(startTime).inMilliseconds;
+      final processingTime = PhilippineTime.now().difference(startTime).inMilliseconds;
       _debugLog('✅ AI Risk Assessment completed in ${processingTime}ms');
       _debugLog('📊 Results: Priority=${assessment.aiPriority}, Risk=${assessment.aiRiskScore}%, Confidence=${assessment.confidenceScore}%');
       
@@ -134,7 +135,7 @@ class AIRiskAssessmentService {
       
       return assessment;
     } catch (e) {
-      final processingTime = DateTime.now().difference(startTime).inMilliseconds;
+      final processingTime = PhilippineTime.now().difference(startTime).inMilliseconds;
       _debugLog('❌ AI Risk Assessment error after ${processingTime}ms: $e');
       
       // Fallback to rule-based calculation if AI fails
@@ -166,7 +167,7 @@ class AIRiskAssessmentService {
     required DateTime incidentDate,
     String? incidentLocation,
   }) {
-    final now = DateTime.now();
+    final now = PhilippineTime.now();
     final daysSinceIncident = now.difference(incidentDate).inDays;
     
     return '''
@@ -299,6 +300,14 @@ Respond ONLY with valid JSON. Be thorough but concise in reasoning.
     return buffer.toString();
   }
 
+  /// Normalize AI priority to lowercase for database consistency
+  static String _normalizePriority(String? priority) {
+    final normalized = priority?.toLowerCase() ?? 'medium';
+    // Validate against allowed values
+    const validPriorities = ['critical', 'high', 'medium', 'low'];
+    return validPriorities.contains(normalized) ? normalized : 'medium';
+  }
+
   /// Parse AI response into structured assessment
   static AIRiskAssessment _parseAIResponse(String aiResponse, CrimeType crimeType, double? financialLoss) {
     try {
@@ -316,12 +325,12 @@ Respond ONLY with valid JSON. Be thorough but concise in reasoning.
       
       return AIRiskAssessment(
         aiRiskScore: (parsed['aiRiskScore'] as num?)?.toInt() ?? 50,
-        aiPriority: parsed['aiPriority'] as String? ?? 'medium',
+        aiPriority: _normalizePriority(parsed['aiPriority'] as String?),
         confidenceScore: (parsed['confidenceScore'] as num?)?.toInt() ?? 70,
         riskFactors: List<String>.from(parsed['riskFactors'] ?? []),
         urgencyIndicators: List<String>.from(parsed['urgencyIndicators'] ?? []),
         reasoning: parsed['reasoning'] as String? ?? 'AI analysis completed',
-        assessedAt: DateTime.now(),
+        assessedAt: PhilippineTime.now(),
       );
     } catch (e) {
       print('❌ Error parsing AI response: $e');
@@ -345,7 +354,7 @@ Respond ONLY with valid JSON. Be thorough but concise in reasoning.
       riskFactors: _getRuleBasedRiskFactors(crimeType, financialLoss),
       urgencyIndicators: _getRuleBasedUrgencyIndicators(crimeType),
       reasoning: 'Assessment based on rule-based analysis due to AI service unavailability. Crime type: ${crimeType.displayName}${financialLoss != null ? ', Financial loss: ₱${financialLoss.toStringAsFixed(2)}' : ''}',
-      assessedAt: DateTime.now(),
+      assessedAt: PhilippineTime.now(),
     );
   }
 
@@ -537,12 +546,12 @@ Provide brief JSON assessment:
       
       return AIRiskAssessment(
         aiRiskScore: (parsed['aiRiskScore'] as num?)?.toInt() ?? 50,
-        aiPriority: parsed['aiPriority'] as String? ?? 'medium',
+        aiPriority: _normalizePriority(parsed['aiPriority'] as String?),
         confidenceScore: (parsed['confidenceScore'] as num?)?.toInt() ?? 70,
         riskFactors: [], // Empty for quick assessment
         urgencyIndicators: [], // Empty for quick assessment
         reasoning: parsed['reasoning'] as String? ?? 'Quick AI assessment',
-        assessedAt: DateTime.now(),
+        assessedAt: PhilippineTime.now(),
       );
     } catch (e) {
       return _createFallbackAssessment(crimeType, financialLoss);
@@ -581,15 +590,15 @@ Provide brief JSON assessment:
       
       // Create AI priority scoring object
       final aiScoring = AIPriorityScoring(
-        priority: parsed['priority'] as String? ?? 'medium',
+        priority: _normalizePriority(parsed['priority'] as String?),
         riskScore: (parsed['riskScore'] as num?)?.toInt() ?? 50,
-        aiPriority: parsed['aiPriority'] as String? ?? 'medium',
+        aiPriority: _normalizePriority(parsed['aiPriority'] as String?),
         aiRiskScore: (parsed['aiRiskScore'] as num?)?.toInt() ?? 50,
         confidenceScore: (parsed['confidenceScore'] as num?)?.toInt() ?? 75,
         reasoning: parsed['reasoning'] as String? ?? 'AI-based assessment',
         riskFactors: List<String>.from(parsed['riskFactors'] ?? []),
         urgencyIndicators: List<String>.from(parsed['urgencyIndicators'] ?? []),
-        assessedAt: DateTime.now(),
+        assessedAt: PhilippineTime.now(),
       );
       
       _debugLog('✅ AI priority scoring completed: ${aiScoring.priority}/${aiScoring.riskScore}');
@@ -711,7 +720,7 @@ Consider Philippine context, cybercrime trends, and investigative priorities.
       reasoning: 'Intelligent fallback assessment - AI service temporarily unavailable',
       riskFactors: riskFactors,
       urgencyIndicators: urgencyIndicators,
-      assessedAt: DateTime.now(),
+      assessedAt: PhilippineTime.now(),
     );
   }
 }
@@ -758,7 +767,7 @@ class AIRiskAssessment {
       riskFactors: List<String>.from(json['riskFactors'] ?? []),
       urgencyIndicators: List<String>.from(json['urgencyIndicators'] ?? []),
       reasoning: json['reasoning'] ?? '',
-      assessedAt: DateTime.parse(json['assessedAt'] ?? DateTime.now().toIso8601String()),
+      assessedAt: DateTime.parse(json['assessedAt'] ?? PhilippineTime.now().toIso8601String()),
     );
   }
 
@@ -873,7 +882,7 @@ class AIPriorityScoring {
       reasoning: json['reasoning'] ?? '',
       riskFactors: List<String>.from(json['riskFactors'] ?? []),
       urgencyIndicators: List<String>.from(json['urgencyIndicators'] ?? []),
-      assessedAt: DateTime.parse(json['assessedAt'] ?? DateTime.now().toIso8601String()),
+      assessedAt: DateTime.parse(json['assessedAt'] ?? PhilippineTime.now().toIso8601String()),
     );
   }
 

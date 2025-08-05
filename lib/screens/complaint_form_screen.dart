@@ -49,6 +49,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   final _attackVectorController = TextEditingController();
   final _contentDescriptionController = TextEditingController();
   final _impactAssessmentController = TextEditingController();
+  final _scrollController = ScrollController();
   final _databaseService = DatabaseService();
   final _pnpUnitsService = PNPUnitsService();
 
@@ -86,6 +87,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   Timer? _patternDetectionTimer;
   bool _patternAlertShown = false;
   bool _isPatternCheckInProgress = false;
+  
+  // Debounced AI updates timer (for dropdown changes)
+  Timer? _debouncedAIUpdatesTimer;
   
   // AI Loading states
   bool _isLoadingCredibilityScore = false;
@@ -153,6 +157,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _credibilityDebounceTimer?.cancel();
     _evidenceGuidanceDebounceTimer?.cancel();
     _patternDetectionTimer?.cancel();
+    _debouncedAIUpdatesTimer?.cancel();
     
     _descriptionController.dispose();
     _fullNameController.dispose();
@@ -173,6 +178,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _attackVectorController.dispose();
     _contentDescriptionController.dispose();
     _impactAssessmentController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -268,9 +274,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
 
   // Update evidence guidance using AI
   void _updateEvidenceGuidance(ComplaintModels.CrimeType crimeType) async {
-    setState(() {
-      _isLoadingEvidenceGuidance = true;
-    });
+    // Start loading state
+    _batchUpdateUIStates(isLoadingEvidence: true);
     
     try {
       print('🔍 [ComplaintForm] Getting AI evidence guidance for ${crimeType.displayName}');
@@ -280,20 +285,22 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       );
       
       if (mounted) {
-        setState(() {
-          _evidenceGuidance = evidenceItems;
-          _isLoadingEvidenceGuidance = false;
-        });
+        // Batch update evidence guidance states
+        _batchUpdateUIStates(
+          evidenceGuidance: evidenceItems,
+          isLoadingEvidence: false,
+        );
         print('✅ [ComplaintForm] Updated evidence guidance with ${evidenceItems.length} items');
       }
     } catch (e) {
       print('❌ [ComplaintForm] Error getting evidence guidance: $e');
       // Fallback to deprecated sync method
       if (mounted) {
-        setState(() {
-          _evidenceGuidance = EvidenceGuidanceService.getEvidenceGuidanceSync(crimeType);
-          _isLoadingEvidenceGuidance = false;
-        });
+        final syncGuidance = EvidenceGuidanceService.getEvidenceGuidanceSync(crimeType);
+        _batchUpdateUIStates(
+          evidenceGuidance: syncGuidance,
+          isLoadingEvidence: false,
+        );
       }
     }
   }
@@ -311,9 +318,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
 
   void _performCredibilityScoreUpdate() async {
     if (_selectedCrimeType != null && mounted) {
-      setState(() {
-        _isLoadingCredibilityScore = true;
-      });
+      // Start loading state
+      _batchUpdateUIStates(isLoadingCredibility: true);
       
       try {
         print('🔍 [ComplaintForm] Getting AI credibility score for ${_selectedCrimeType!.name}');
@@ -326,19 +332,18 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         final credibilityScore = await CredibilityScorer.calculateCredibilityScore(formData, crimeType);
         
         if (mounted) {
-          setState(() {
-            _currentCredibilityScore = credibilityScore;
-            _showCredibilityMeter = true;
-            _isLoadingCredibilityScore = false;
-          });
+          // Batch update all credibility-related states
+          _batchUpdateUIStates(
+            credibilityScore: credibilityScore,
+            showCredibility: true,
+            isLoadingCredibility: false,
+          );
           print('✅ [ComplaintForm] Updated credibility score: ${credibilityScore.overallScore}%');
         }
       } catch (e) {
         print('❌ [ComplaintForm] Error getting credibility score: $e');
         if (mounted) {
-          setState(() {
-            _isLoadingCredibilityScore = false;
-          });
+          _batchUpdateUIStates(isLoadingCredibility: false);
         }
         // Fallback to deprecated sync method
         if (mounted) {
@@ -348,11 +353,12 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             orElse: () => ComplaintModels.CrimeType.phishing,
           );
           
-          setState(() {
-            _currentCredibilityScore = CredibilityScorer.calculateCredibilityScoreSync(formData, crimeType);
-            _showCredibilityMeter = true;
-            _isLoadingCredibilityScore = false;
-          });
+          final syncScore = CredibilityScorer.calculateCredibilityScoreSync(formData, crimeType);
+          _batchUpdateUIStates(
+            credibilityScore: syncScore,
+            showCredibility: true,
+            isLoadingCredibility: false,
+          );
         }
       }
     }
@@ -401,6 +407,21 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       );
       _updateEvidenceGuidance(mappedCrimeType);
     }
+  }
+
+  /// Debounced version of _triggerAllAIUpdates to prevent scroll jumping
+  void _debouncedAIUpdates() {
+    // Cancel previous timer
+    _debouncedAIUpdatesTimer?.cancel();
+    
+    // Set up debounced timer (500ms delay to allow UI to stabilize)
+    _debouncedAIUpdatesTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        _preserveScrollDuringUpdate(() {
+          _triggerAllAIUpdates();
+        });
+      }
+    });
   }
 
   /// Trigger AI assessment with debouncing
@@ -488,8 +509,26 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       return;
     }
     
-    // Debounce for 2 seconds to ensure user has finished typing
-    _patternDetectionTimer = Timer(const Duration(seconds: 2), () {
+    // Longer debounce for pattern detection to avoid interfering with UI updates
+    _patternDetectionTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _isSuspectSectionComplete() && !_patternAlertShown) {
+        _checkSuspectPatterns();
+      }
+    });
+  }
+
+  /// Trigger pattern detection specifically for dropdown changes (with longer delay)
+  void _triggerPatternDetectionFromDropdown() {
+    // Cancel any existing timer
+    _patternDetectionTimer?.cancel();
+    
+    // Only trigger if suspect section is complete and we haven't shown alert yet
+    if (!_isSuspectSectionComplete() || _patternAlertShown || _isPatternCheckInProgress) {
+      return;
+    }
+    
+    // Extra long debounce for dropdown changes to let AI updates settle first
+    _patternDetectionTimer = Timer(const Duration(seconds: 4), () {
       if (mounted && _isSuspectSectionComplete() && !_patternAlertShown) {
         _checkSuspectPatterns();
       }
@@ -504,6 +543,52 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       _isPatternCheckInProgress = false;
     });
     print('🔄 Pattern detection state reset');
+  }
+
+  /// Preserve scroll position during UI updates to prevent scroll jumping
+  void _preserveScrollDuringUpdate(VoidCallback updateCallback) {
+    final double currentPosition = _scrollController.hasClients 
+        ? _scrollController.offset 
+        : 0.0;
+    
+    updateCallback();
+    
+    // Restore scroll position after the frame is rebuilt
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients && mounted) {
+        try {
+          _scrollController.jumpTo(currentPosition);
+        } catch (e) {
+          // Silently handle scroll position errors
+          print('📍 Could not restore scroll position: $e');
+        }
+      }
+    });
+  }
+
+  /// Batch multiple UI state updates to reduce rebuilds
+  void _batchUpdateUIStates({
+    bool? showCredibility,
+    bool? showEvidence,
+    CredibilityScore? credibilityScore,
+    List<EvidenceGuidanceItem>? evidenceGuidance,
+    bool? isLoadingCredibility,
+    bool? isLoadingEvidence,
+    AIRiskAssessment? aiAssessment,
+    bool? showAIInsights,
+  }) {
+    _preserveScrollDuringUpdate(() {
+      setState(() {
+        if (showCredibility != null) _showCredibilityMeter = showCredibility;
+        if (showEvidence != null) _showEvidenceGuidance = showEvidence;
+        if (credibilityScore != null) _currentCredibilityScore = credibilityScore;
+        if (evidenceGuidance != null) _evidenceGuidance = evidenceGuidance;
+        if (isLoadingCredibility != null) _isLoadingCredibilityScore = isLoadingCredibility;
+        if (isLoadingEvidence != null) _isLoadingEvidenceGuidance = isLoadingEvidence;
+        if (aiAssessment != null) _currentAIAssessment = aiAssessment;
+        if (showAIInsights != null) _showAIInsights = showAIInsights;
+      });
+    });
   }
 
   /// Check for suspect patterns using the pattern detection service
@@ -1052,7 +1137,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         'full_name': complaint.fullName,
         'email': complaint.email,
         'phone_number': complaint.phoneNumber,
-        'incident_date_time': complaint.incidentDateTime.toUtc().toIso8601String(),
+        'incident_date_time': PhilippineTime.toUtc(complaint.incidentDateTime).toIso8601String(),
         'incident_location': complaint.incidentLocation,
         'estimated_loss': complaint.estimatedFinancialLoss,
         
@@ -1479,6 +1564,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
+          controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2696,15 +2782,19 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           }).toList(),
           onChanged: (String? newValue) {
             if (newValue != null) {
-              setState(() {
-                _selectedSuspectRelationship = newValue;
+              // Use scroll-preserving update for the dropdown change
+              _preserveScrollDuringUpdate(() {
+                setState(() {
+                  _selectedSuspectRelationship = newValue;
+                });
               });
-              // Trigger AI updates when suspect relationship changes
-              print('👥 Suspect relationship updated, triggering AI updates');
-              _triggerAllAIUpdates();
               
-              // Trigger pattern detection when suspect relationship changes
-              _triggerPatternDetection();
+              // Use debounced AI updates to prevent scroll jumping
+              print('👥 Suspect relationship updated, scheduling debounced AI updates');
+              _debouncedAIUpdates();
+              
+              // Trigger pattern detection with longer delay for dropdown changes
+              _triggerPatternDetectionFromDropdown();
             }
           },
         ),

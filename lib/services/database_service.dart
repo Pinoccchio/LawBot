@@ -1041,7 +1041,9 @@ class DatabaseService {
         'ai_confidence_score': aiAssessment?.confidenceScore,
         'risk_factors': aiAssessment?.riskFactors ?? [],
         'urgency_indicators': aiAssessment?.urgencyIndicators ?? [],
-        'last_ai_assessment': aiAssessment?.assessedAt.toIso8601String(),
+        'last_ai_assessment': aiAssessment?.assessedAt != null 
+            ? PhilippineTime.toUtc(aiAssessment!.assessedAt).toIso8601String()
+            : null,
         'ai_reasoning': aiAssessment?.reasoning,
         'assigned_unit': complaint.crimeType.assignedUnit,
         
@@ -1165,7 +1167,7 @@ class DatabaseService {
         'assessment_type': 'full',
         'model_version': 'gemini-2.0-flash',
         'input_data': inputData,
-        'created_at': assessment.assessedAt.toIso8601String(),
+        'created_at': PhilippineTime.toUtc(assessment.assessedAt).toIso8601String(),
       });
       
       print('✅ AI assessment stored successfully');
@@ -1195,7 +1197,7 @@ class DatabaseService {
         'ai_confidence_score': assessment.confidenceScore,
         'risk_factors': assessment.riskFactors,
         'urgency_indicators': assessment.urgencyIndicators,
-        'last_ai_assessment': assessment.assessedAt.toIso8601String(),
+        'last_ai_assessment': PhilippineTime.toUtc(assessment.assessedAt).toIso8601String(),
         'ai_reasoning': assessment.reasoning,
         'updated_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
       }).eq('id', complaintId);

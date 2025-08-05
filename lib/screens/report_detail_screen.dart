@@ -2361,8 +2361,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   // Helper method to format time ago
   String _formatTimeAgo(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
+    // Use PhilippineTime utility for proper timezone handling
+    final now = PhilippineTime.now();
+    final philippineDateTime = PhilippineTime.fromUtc(dateTime);
+    final difference = now.difference(philippineDateTime);
+    
+    // Temporary debug logging
+    print('🕐 AI Assessment Debug:');
+    print('   Database timestamp (UTC): $dateTime');
+    print('   Philippines timestamp: $philippineDateTime');
+    print('   Current Philippines time: $now');
+    print('   Difference: ${difference.inMinutes} minutes');
     
     if (difference.inMinutes < 1) return 'just now';
     if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
