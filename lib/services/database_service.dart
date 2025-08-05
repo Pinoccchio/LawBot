@@ -444,6 +444,26 @@ class DatabaseService {
 
       print('📝 Submitting complaint: $complaintNumber');
 
+      // 🚀 AI-driven priority and risk scoring for legacy method
+      final formData = {
+        'description': complaint.description,
+        'estimatedFinancialLoss': complaint.estimatedFinancialLoss,
+        'incidentDateTime': complaint.incidentDateTime,
+        'incidentLocation': complaint.incidentLocation,
+        'evidenceFiles': complaint.evidenceFiles,
+      };
+
+      AIPriorityScoring? aiPriorityScoring;
+      try {
+        aiPriorityScoring = await AIRiskAssessmentService.calculateAIPriorityAndRisk(
+          formData,
+          complaint.crimeType,
+        );
+        print('✅ AI priority scoring: ${aiPriorityScoring.priority}/${aiPriorityScoring.riskScore}');
+      } catch (e) {
+        print('⚠️ AI priority scoring failed: $e');
+      }
+
       // Prepare complaint data for database
       final complaintData = {
         'user_id': currentUserId!,
@@ -458,8 +478,11 @@ class DatabaseService {
         'incident_location': complaint.incidentLocation,
         'estimated_loss': complaint.estimatedFinancialLoss,
         'status': 'Pending',
-        'priority': _calculatePriority(complaint.crimeType, complaint.estimatedFinancialLoss),
-        'risk_score': _calculateRiskScore(complaint.crimeType, complaint.estimatedFinancialLoss),
+        // 🚀 AI-driven scores (replaces hard-coded calculations)
+        'priority': aiPriorityScoring?.priority ?? 'medium',
+        'risk_score': aiPriorityScoring?.riskScore ?? 50,
+        'ai_priority': aiPriorityScoring?.aiPriority,
+        'ai_risk_score': aiPriorityScoring?.aiRiskScore,
         'assigned_unit': complaint.crimeType.assignedUnit,
         'created_at': PhilippineTime.toUtc(now).toIso8601String(),
         'updated_at': PhilippineTime.toUtc(now).toIso8601String(),
@@ -544,17 +567,35 @@ class DatabaseService {
           // Get case assignments separately (if they exist)
           final assignmentResponse = await _supabase
               .from('case_assignments')
-              .select('''
-                *,
-                pnp_officer_profiles(
-                  full_name,
-                  badge_number,
-                  rank
-                )
-              ''')
+              .select('*')
               .eq('complaint_id', complaint['id']);
 
-          complaintData['case_assignments'] = assignmentResponse ?? [];
+          // 🔧 FIX: Manually join officer data to handle missing foreign key relationships
+          final assignmentsWithOfficers = <Map<String, dynamic>>[];
+          for (final assignment in assignmentResponse) {
+            final assignmentData = Map<String, dynamic>.from(assignment);
+            
+            // Try to get officer data separately
+            if (assignment['officer_id'] != null) {
+              try {
+                final officerResponse = await _supabase
+                    .from('pnp_officer_profiles')
+                    .select('full_name, badge_number, rank, phone_number')
+                    .eq('id', assignment['officer_id'])
+                    .maybeSingle();
+                
+                assignmentData['officer'] = officerResponse;
+                print('✅ Officer data loaded for assignment: ${officerResponse?['full_name']}');
+              } catch (officerError) {
+                print('⚠️ Could not load officer ${assignment['officer_id']}: $officerError');
+                assignmentData['officer'] = null;
+              }
+            }
+            
+            assignmentsWithOfficers.add(assignmentData);
+          }
+
+          complaintData['case_assignments'] = assignmentsWithOfficers;
         } catch (e) {
           print('⚠️ Error getting case assignments for complaint ${complaint['id']}: $e');
           complaintData['case_assignments'] = [];
@@ -619,17 +660,35 @@ class DatabaseService {
           // Get case assignments separately (if they exist)
           final assignmentResponse = await _supabase
               .from('case_assignments')
-              .select('''
-                *,
-                pnp_officer_profiles(
-                  full_name,
-                  badge_number,
-                  rank
-                )
-              ''')
+              .select('*')
               .eq('complaint_id', complaint['id']);
 
-          complaintData['case_assignments'] = assignmentResponse ?? [];
+          // 🔧 FIX: Manually join officer data to handle missing foreign key relationships
+          final assignmentsWithOfficers = <Map<String, dynamic>>[];
+          for (final assignment in assignmentResponse) {
+            final assignmentData = Map<String, dynamic>.from(assignment);
+            
+            // Try to get officer data separately
+            if (assignment['officer_id'] != null) {
+              try {
+                final officerResponse = await _supabase
+                    .from('pnp_officer_profiles')
+                    .select('full_name, badge_number, rank, phone_number')
+                    .eq('id', assignment['officer_id'])
+                    .maybeSingle();
+                
+                assignmentData['officer'] = officerResponse;
+                print('✅ Officer data loaded for completed case: ${officerResponse?['full_name']}');
+              } catch (officerError) {
+                print('⚠️ Could not load officer ${assignment['officer_id']}: $officerError');
+                assignmentData['officer'] = null;
+              }
+            }
+            
+            assignmentsWithOfficers.add(assignmentData);
+          }
+
+          complaintData['case_assignments'] = assignmentsWithOfficers;
         } catch (e) {
           print('⚠️ Error getting case assignments for completed complaint ${complaint['id']}: $e');
           complaintData['case_assignments'] = [];
@@ -651,28 +710,68 @@ class DatabaseService {
     try {
       if (currentUserId == null) return null;
 
+      // 🔧 FIX: Get complaint data without problematic joins first
       final response = await _supabase
           .from('complaints')
-          .select('''
-            *,
-            evidence_files(*),
-            case_assignments(
-              pnp_officer_profiles(
-                full_name,
-                badge_number,
-                rank,
-                phone_number,
-                pnp_units(
-                  unit_name,
-                  unit_code,
-                  category
-                )
-              )
-            )
-          ''')
+          .select('*, evidence_files(*)')
           .eq('id', complaintId)
           .eq('user_id', currentUserId!)
           .single();
+
+      // 🔧 FIX: Manually get case assignments with officer data
+      try {
+        final assignmentResponse = await _supabase
+            .from('case_assignments')
+            .select('*')
+            .eq('complaint_id', complaintId);
+
+        final assignmentsWithOfficers = <Map<String, dynamic>>[];
+        for (final assignment in assignmentResponse) {
+          final assignmentData = Map<String, dynamic>.from(assignment);
+          
+          // Try to get officer data with unit info
+          if (assignment['officer_id'] != null) {
+            try {
+              final officerResponse = await _supabase
+                  .from('pnp_officer_profiles')
+                  .select('full_name, badge_number, rank, phone_number, unit_id')
+                  .eq('id', assignment['officer_id'])
+                  .maybeSingle();
+              
+              if (officerResponse != null) {
+                // Get unit information if officer has unit_id
+                if (officerResponse['unit_id'] != null) {
+                  try {
+                    final unitResponse = await _supabase
+                        .from('pnp_units')
+                        .select('unit_name, unit_code, category')
+                        .eq('id', officerResponse['unit_id'])
+                        .maybeSingle();
+                    
+                    officerResponse['unit'] = unitResponse;
+                  } catch (unitError) {
+                    print('⚠️ Could not load unit for officer: $unitError');
+                    officerResponse['unit'] = null;
+                  }
+                }
+                
+                assignmentData['officer'] = officerResponse;
+                print('✅ Officer and unit data loaded: ${officerResponse['full_name']}');
+              }
+            } catch (officerError) {
+              print('⚠️ Could not load officer ${assignment['officer_id']}: $officerError');
+              assignmentData['officer'] = null;
+            }
+          }
+          
+          assignmentsWithOfficers.add(assignmentData);
+        }
+
+        response['case_assignments'] = assignmentsWithOfficers;
+      } catch (assignmentError) {
+        print('⚠️ Could not load case assignments: $assignmentError');
+        response['case_assignments'] = [];
+      }
 
       return response;
     } catch (e) {
@@ -685,10 +784,10 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getComplaintStatusHistory(String complaintId) async {
     try {
       final response = await _supabase
-          .from('complaint_status_history')
+          .from('status_history')
           .select('*')
           .eq('complaint_id', complaintId)
-          .order('created_at', ascending: true);
+          .order('timestamp', ascending: true);
 
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
@@ -747,12 +846,12 @@ class DatabaseService {
     String? remarks,
   ) async {
     try {
-      await _supabase.from('complaint_status_history').insert({
+      await _supabase.from('status_history').insert({
         'complaint_id': complaintId,
         'status': status,
         'updated_by': updatedBy,
         'remarks': remarks,
-        'created_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
+        'timestamp': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
       });
     } catch (e) {
       print('Error adding status update: $e');
@@ -766,93 +865,12 @@ class DatabaseService {
     return title.length > 100 ? '${title.substring(0, 97)}...' : title;
   }
 
-  // Helper: Calculate priority based on crime type and financial loss
-  String _calculatePriority(CrimeType crimeType, double? financialLoss) {
-    // High priority crimes
-    if ([
-      CrimeType.cyberterrorism,
-      CrimeType.governmentSystemHacking,
-      CrimeType.criticalInfrastructureAttacks,
-      CrimeType.childSexualAbuseMaterial,
-      CrimeType.ransomware,
-      CrimeType.onlinePredatoryBehavior,
-    ].contains(crimeType)) {
-      return 'high';
-    }
-
-    // High priority based on financial loss
-    if (financialLoss != null && financialLoss >= 100000) {
-      return 'high';
-    }
-
-    // Medium priority crimes
-    if ([
-      CrimeType.identityTheft,
-      CrimeType.onlineBankingFraud,
-      CrimeType.creditCardFraud,
-      CrimeType.sextortion,
-      CrimeType.dataBreach,
-      CrimeType.denialOfServiceAttacks,
-    ].contains(crimeType)) {
-      return 'medium';
-    }
-
-    // Medium priority based on financial loss
-    if (financialLoss != null && financialLoss >= 10000) {
-      return 'medium';
-    }
-
-    return 'low';
-  }
+  // 🚀 REMOVED: Hard-coded priority calculation method
+  // Replaced with AI-driven scoring using AIRiskAssessmentService.calculateAIPriorityAndRisk()
 
 
-  // Helper: Calculate risk score based on various factors
-  int _calculateRiskScore(CrimeType crimeType, double? financialLoss) {
-    int baseScore = 30;
-
-    // Crime type multiplier
-    final highRiskCrimes = [
-      CrimeType.cyberterrorism,
-      CrimeType.governmentSystemHacking,
-      CrimeType.criticalInfrastructureAttacks,
-      CrimeType.childSexualAbuseMaterial,
-      CrimeType.ransomware,
-      CrimeType.onlinePredatoryBehavior,
-    ];
-
-    final mediumRiskCrimes = [
-      CrimeType.identityTheft,
-      CrimeType.onlineBankingFraud,
-      CrimeType.creditCardFraud,
-      CrimeType.sextortion,
-      CrimeType.dataBreach,
-      CrimeType.denialOfServiceAttacks,
-    ];
-
-    if (highRiskCrimes.contains(crimeType)) {
-      baseScore += 40;
-    } else if (mediumRiskCrimes.contains(crimeType)) {
-      baseScore += 25;
-    } else {
-      baseScore += 10;
-    }
-
-    // Financial loss impact
-    if (financialLoss != null) {
-      if (financialLoss >= 1000000) {
-        baseScore += 25;
-      } else if (financialLoss >= 100000) {
-        baseScore += 15;
-      } else if (financialLoss >= 10000) {
-        baseScore += 10;
-      } else if (financialLoss >= 1000) {
-        baseScore += 5;
-      }
-    }
-
-    // Ensure score is between 0-100
-    return baseScore.clamp(0, 100);
-  }
+  // 🚀 REMOVED: Hard-coded risk score calculation method  
+  // Replaced with AI-driven scoring using AIRiskAssessmentService.calculateAIPriorityAndRisk()
 
   // Get user complaint statistics
   Future<Map<String, dynamic>> getUserComplaintStats() async {
@@ -938,6 +956,37 @@ class DatabaseService {
         print('⚠️ AI assessment failed, proceeding with rule-based: $e');
       }
 
+      // 🚀 NEW: AI-driven priority and risk scoring (replaces hard-coded calculations)
+      print('🎯 ===== AI PRIORITY & RISK SCORING =====');
+      final formData = {
+        'description': complaint.description,
+        'estimatedFinancialLoss': complaint.estimatedFinancialLoss,
+        'incidentDateTime': complaint.incidentDateTime,
+        'incidentLocation': complaint.incidentLocation,
+        'suspectName': complaint.suspectName,
+        'suspectRelationship': complaint.suspectRelationship,
+        'suspectContact': complaint.suspectContact,
+        'suspectDetails': complaint.suspectDetails,
+        'platformWebsite': complaint.platformWebsite,
+        'accountReference': complaint.accountReference,
+        'evidenceFiles': complaint.evidenceFiles,
+        'systemDetails': complaint.systemDetails,
+        'technicalInfo': complaint.technicalInfo,
+        'attackVector': complaint.attackVector,
+      };
+
+      AIPriorityScoring? aiPriorityScoring;
+      try {
+        aiPriorityScoring = await AIRiskAssessmentService.calculateAIPriorityAndRisk(
+          formData,
+          complaint.crimeType,
+        );
+        print('✅ AI priority scoring completed: ${aiPriorityScoring.priority}/${aiPriorityScoring.riskScore} (AI: ${aiPriorityScoring.aiPriority}/${aiPriorityScoring.aiRiskScore})');
+      } catch (e) {
+        print('⚠️ AI priority scoring failed: $e');
+        // Will use intelligent fallback within the service
+      }
+
       // Generate complaint number
       final now = PhilippineTime.now();
       final year = now.year;
@@ -960,6 +1009,15 @@ class DatabaseService {
 
       final complaintNumber = 'CYB-$year-${sequenceNumber.toString().padLeft(3, '0')}';
 
+      print('🔍 ===== DATABASE SERVICE DEBUGGING =====');
+      print('👤 Suspect Name from Complaint: ${complaint.suspectName}');
+      print('🔗 Suspect Relationship from Complaint: ${complaint.suspectRelationship}');
+      print('📞 Suspect Contact from Complaint: ${complaint.suspectContact}');
+      print('📄 Suspect Details from Complaint: ${complaint.suspectDetails}');
+      print('📍 Incident Location from Complaint: ${complaint.incidentLocation}');
+      print('💰 Financial Loss from Complaint: ${complaint.estimatedFinancialLoss}');
+      print('🏢 Assigned Unit from Crime Type: ${complaint.crimeType.assignedUnit}');
+
       // Prepare complaint data with AI fields
       final complaintData = {
         'user_id': currentUserId!,
@@ -974,21 +1032,57 @@ class DatabaseService {
         'incident_location': complaint.incidentLocation,
         'estimated_loss': complaint.estimatedFinancialLoss,
         'status': 'Pending',
-        // Rule-based scores (fallback)
-        'priority': _calculatePriority(complaint.crimeType, complaint.estimatedFinancialLoss),
-        'risk_score': _calculateRiskScore(complaint.crimeType, complaint.estimatedFinancialLoss),
-        // AI scores (if available)
-        'ai_priority': aiAssessment?.aiPriority,
-        'ai_risk_score': aiAssessment?.aiRiskScore,
+        // 🚀 AI-driven scores (replaces hard-coded calculations)
+        'priority': aiPriorityScoring?.priority ?? 'medium',
+        'risk_score': aiPriorityScoring?.riskScore ?? 50,
+        // Enhanced AI scores 
+        'ai_priority': aiPriorityScoring?.aiPriority ?? aiAssessment?.aiPriority,
+        'ai_risk_score': aiPriorityScoring?.aiRiskScore ?? aiAssessment?.aiRiskScore,
         'ai_confidence_score': aiAssessment?.confidenceScore,
         'risk_factors': aiAssessment?.riskFactors ?? [],
         'urgency_indicators': aiAssessment?.urgencyIndicators ?? [],
         'last_ai_assessment': aiAssessment?.assessedAt.toIso8601String(),
         'ai_reasoning': aiAssessment?.reasoning,
         'assigned_unit': complaint.crimeType.assignedUnit,
+        
+        // 🔧 FIX: Add missing officer assignment fields
+        'assigned_officer': complaint.assignedOfficer,
+        'assigned_officer_id': complaint.assignedOfficerId,
+        
+        // 🔧 FIX: Add missing dynamic fields from Flutter complaint object
+        'platform_website': complaint.platformWebsite,
+        'account_reference': complaint.accountReference,
+        'suspect_name': complaint.suspectName,
+        'suspect_relationship': complaint.suspectRelationship,
+        'suspect_contact': complaint.suspectContact,
+        'suspect_details': complaint.suspectDetails,
+        'system_details': complaint.systemDetails,
+        'technical_info': complaint.technicalInfo,
+        'vulnerability_details': complaint.vulnerabilityDetails,
+        'attack_vector': complaint.attackVector,
+        'security_level': complaint.securityLevel,
+        'target_info': complaint.targetInfo,
+        'impact_assessment': complaint.impactAssessment,
+        'content_description': complaint.contentDescription,
+        
         'created_at': PhilippineTime.toUtc(now).toIso8601String(),
         'updated_at': PhilippineTime.toUtc(now).toIso8601String(),
       };
+      
+      print('📊 ===== COMPLAINT DATA TO INSERT =====');
+      print('👤 suspect_name: ${complaintData['suspect_name']}');
+      print('🔗 suspect_relationship: ${complaintData['suspect_relationship']}');
+      print('📞 suspect_contact: ${complaintData['suspect_contact']}');
+      print('🌐 platform_website: ${complaintData['platform_website']}');
+      print('📍 incident_location: ${complaintData['incident_location']}');
+      print('🔢 account_reference: ${complaintData['account_reference']}');
+      print('📊 priority: ${complaintData['priority']}');
+      print('⚠️ risk_score: ${complaintData['risk_score']}');
+      print('🤖 ai_priority: ${complaintData['ai_priority']}');
+      print('🤖 ai_risk_score: ${complaintData['ai_risk_score']}');
+      print('👮 assigned_officer: ${complaintData['assigned_officer']}');
+      print('👮 assigned_officer_id: ${complaintData['assigned_officer_id']}');
+      print('📄 content_description: ${complaintData['content_description']}');
 
       // Insert complaint
       final response = await _supabase
@@ -998,6 +1092,24 @@ class DatabaseService {
           .single();
 
       final complaintId = response['id'] as String;
+
+      // 🔧 FIX: Create case assignment if officer is assigned
+      if (complaint.assignedOfficerId != null) {
+        try {
+          await _supabase.from('case_assignments').insert({
+            'complaint_id': complaintId,
+            'officer_id': complaint.assignedOfficerId!,
+            'assigned_by': 'Complainant',
+            'assignment_type': 'primary',
+            'status': 'active',
+            'notes': 'Officer selected by complainant during report submission',
+            'created_at': PhilippineTime.toUtc(now).toIso8601String(),
+          });
+          print('✅ Case assignment created for officer: ${complaint.assignedOfficer}');
+        } catch (e) {
+          print('⚠️ Failed to create case assignment: $e');
+        }
+      }
 
       // Store detailed AI assessment if available
       if (aiAssessment != null) {

@@ -548,6 +548,172 @@ Provide brief JSON assessment:
       return _createFallbackAssessment(crimeType, financialLoss);
     }
   }
+
+  /// 🚀 NEW: AI-driven priority and risk scoring (replaces hard-coded calculations)
+  /// This method provides intelligent, context-aware priority and risk assessment
+  static Future<AIPriorityScoring> calculateAIPriorityAndRisk(
+    Map<String, dynamic> formData,
+    CrimeType crimeType,
+  ) async {
+    _debugLog('🎯 Starting AI-driven priority and risk calculation');
+    
+    try {
+      // Build comprehensive prompt for AI analysis
+      final prompt = _buildPriorityAssessmentPrompt(formData, crimeType);
+      
+      final model = _getModel;
+      final response = await model.generateContent([Content.text(prompt)]);
+      final responseText = response.text;
+      
+      if (responseText == null) {
+        throw 'AI response was empty';
+      }
+      
+      _debugLog('📨 AI Response received: ${responseText.length} characters');
+      
+      // Parse AI response
+      final cleanedResponse = responseText
+          .replaceAll('```json', '')
+          .replaceAll('```', '')
+          .trim();
+      
+      final parsed = json.decode(cleanedResponse);
+      
+      // Create AI priority scoring object
+      final aiScoring = AIPriorityScoring(
+        priority: parsed['priority'] as String? ?? 'medium',
+        riskScore: (parsed['riskScore'] as num?)?.toInt() ?? 50,
+        aiPriority: parsed['aiPriority'] as String? ?? 'medium',
+        aiRiskScore: (parsed['aiRiskScore'] as num?)?.toInt() ?? 50,
+        confidenceScore: (parsed['confidenceScore'] as num?)?.toInt() ?? 75,
+        reasoning: parsed['reasoning'] as String? ?? 'AI-based assessment',
+        riskFactors: List<String>.from(parsed['riskFactors'] ?? []),
+        urgencyIndicators: List<String>.from(parsed['urgencyIndicators'] ?? []),
+        assessedAt: DateTime.now(),
+      );
+      
+      _debugLog('✅ AI priority scoring completed: ${aiScoring.priority}/${aiScoring.riskScore}');
+      return aiScoring;
+      
+    } catch (e) {
+      _debugLog('❌ AI priority scoring failed: $e');
+      return _createFallbackPriorityScoring(crimeType, formData);
+    }
+  }
+
+  /// Build comprehensive prompt for AI priority assessment
+  static String _buildPriorityAssessmentPrompt(Map<String, dynamic> formData, CrimeType crimeType) {
+    return '''
+You are an expert cybercrime analyst for the Philippine National Police. Analyze this cybercrime report and provide intelligent priority and risk scoring.
+
+CYBERCRIME DETAILS:
+- Crime Type: ${crimeType.displayName} (${crimeType.name})
+- Category: ${crimeType.categoryName}
+- Description: ${formData['description'] ?? 'No description'}
+- Financial Loss: ₱${formData['estimatedFinancialLoss'] ?? 'None'}
+- Incident Date: ${formData['incidentDateTime']?.toString() ?? 'Not specified'}
+- Location: ${formData['incidentLocation'] ?? 'Not specified'}
+
+SUSPECT INFORMATION:
+- Name: ${formData['suspectName'] ?? 'Unknown'}
+- Relationship: ${formData['suspectRelationship'] ?? 'Unknown'}
+- Contact: ${formData['suspectContact'] ?? 'None'}
+- Details: ${formData['suspectDetails'] ?? 'None'}
+
+DIGITAL EVIDENCE:
+- Platform/Website: ${formData['platformWebsite'] ?? 'None'}
+- Account Reference: ${formData['accountReference'] ?? 'None'}
+- Evidence Files: ${formData['evidenceFiles']?.length ?? 0} files
+
+TECHNICAL DETAILS:
+- System Details: ${formData['systemDetails'] ?? 'None'}
+- Technical Info: ${formData['technicalInfo'] ?? 'None'}
+- Attack Vector: ${formData['attackVector'] ?? 'None'}
+
+ANALYSIS REQUIREMENTS:
+1. Consider the full context, not just crime type and financial loss
+2. Factor in evidence quality, suspect information, and urgency indicators
+3. Consider threat patterns, escalation potential, and victim vulnerability
+4. Evaluate immediate vs long-term risks
+5. Consider resource allocation and investigative complexity
+
+Please provide a comprehensive priority and risk assessment in the following JSON format:
+
+{
+  "priority": "low|medium|high",
+  "riskScore": 0-100,
+  "aiPriority": "low|medium|high|critical", 
+  "aiRiskScore": 0-100,
+  "confidenceScore": 0-100,
+  "reasoning": "Detailed explanation in 2-3 sentences explaining the priority and risk assessment",
+  "riskFactors": ["specific_risk_1", "specific_risk_2"],
+  "urgencyIndicators": ["urgency_factor_1", "urgency_factor_2"]
+}
+
+SCORING GUIDELINES:
+- Priority: Basic case urgency (low/medium/high)
+- AI Priority: Enhanced urgency with critical option (low/medium/high/critical)
+- Risk Score: Overall case complexity and threat level (0-100)
+- AI Risk Score: Context-aware risk assessment (0-100)
+- Confidence: How certain you are of this assessment (0-100)
+
+Consider Philippine context, cybercrime trends, and investigative priorities.
+''';
+  }
+
+  /// Intelligent fallback when AI fails (replaces hard-coded rules)
+  static AIPriorityScoring _createFallbackPriorityScoring(CrimeType crimeType, Map<String, dynamic> formData) {
+    _debugLog('⚠️ Using intelligent fallback priority scoring');
+    
+    // Smart fallbacks based on crime type and context
+    String priority = 'medium';
+    int riskScore = 50;
+    String aiPriority = 'medium';
+    int aiRiskScore = 50;
+    List<String> riskFactors = ['ai_assessment_failed'];
+    List<String> urgencyIndicators = [];
+    
+    // Context-aware adjustments (basic intelligence)
+    final financialLoss = formData['estimatedFinancialLoss'] as double?;
+    final hasEvidence = (formData['evidenceFiles'] as List?)?.isNotEmpty ?? false;
+    final hasSuspectInfo = (formData['suspectName'] as String?)?.isNotEmpty ?? false;
+    
+    // Adjust based on financial impact
+    if (financialLoss != null && financialLoss > 100000) {
+      priority = 'high';
+      aiPriority = 'high';
+      riskScore = 80;
+      aiRiskScore = 80;
+      riskFactors.add('high_financial_loss');
+    } else if (financialLoss != null && financialLoss > 10000) {
+      riskScore = 65;
+      aiRiskScore = 65;
+      riskFactors.add('moderate_financial_loss');
+    }
+    
+    // Adjust based on evidence and suspect info
+    if (hasEvidence) {
+      riskScore += 10;
+      aiRiskScore += 10;
+      riskFactors.add('evidence_available');
+    }
+    
+    if (hasSuspectInfo) {
+      urgencyIndicators.add('suspect_identified');
+    }
+    
+    return AIPriorityScoring(
+      priority: priority,
+      riskScore: riskScore.clamp(0, 100),
+      aiPriority: aiPriority,
+      aiRiskScore: aiRiskScore.clamp(0, 100),
+      confidenceScore: 60, // Lower confidence for fallback
+      reasoning: 'Intelligent fallback assessment - AI service temporarily unavailable',
+      riskFactors: riskFactors,
+      urgencyIndicators: urgencyIndicators,
+      assessedAt: DateTime.now(),
+    );
+  }
 }
 
 /// AI Risk Assessment data model
@@ -653,5 +819,90 @@ class AIRiskAssessment {
   static void setDebugMode(bool enabled) {
     AIRiskAssessmentService._debugMode = enabled;
     AIRiskAssessmentService._debugLog(enabled ? '🟢 Debug mode enabled' : '🔴 Debug mode disabled');
+  }
+}
+
+/// 🚀 NEW: AI Priority Scoring data model (replaces hard-coded calculations)
+/// Focused specifically on priority and risk score calculation
+class AIPriorityScoring {
+  final String priority;              // Basic priority: 'low', 'medium', 'high'
+  final int riskScore;               // Basic risk score: 0-100
+  final String aiPriority;           // AI priority: 'low', 'medium', 'high', 'critical'
+  final int aiRiskScore;             // AI risk score: 0-100
+  final int confidenceScore;         // AI confidence: 0-100%
+  final String reasoning;            // AI explanation
+  final List<String> riskFactors;    // Identified risk factors
+  final List<String> urgencyIndicators; // Urgency signals
+  final DateTime assessedAt;         // Assessment timestamp
+
+  AIPriorityScoring({
+    required this.priority,
+    required this.riskScore,
+    required this.aiPriority,
+    required this.aiRiskScore,
+    required this.confidenceScore,
+    required this.reasoning,
+    required this.riskFactors,
+    required this.urgencyIndicators,
+    required this.assessedAt,
+  });
+
+  /// Convert to JSON for database storage
+  Map<String, dynamic> toJson() {
+    return {
+      'priority': priority,
+      'riskScore': riskScore,
+      'aiPriority': aiPriority,
+      'aiRiskScore': aiRiskScore,
+      'confidenceScore': confidenceScore,
+      'reasoning': reasoning,
+      'riskFactors': riskFactors,
+      'urgencyIndicators': urgencyIndicators,
+      'assessedAt': assessedAt.toIso8601String(),
+    };
+  }
+
+  /// Create from JSON (for database retrieval)
+  factory AIPriorityScoring.fromJson(Map<String, dynamic> json) {
+    return AIPriorityScoring(
+      priority: json['priority'] ?? 'medium',
+      riskScore: json['riskScore'] ?? 50,
+      aiPriority: json['aiPriority'] ?? 'medium',
+      aiRiskScore: json['aiRiskScore'] ?? 50,
+      confidenceScore: json['confidenceScore'] ?? 75,
+      reasoning: json['reasoning'] ?? '',
+      riskFactors: List<String>.from(json['riskFactors'] ?? []),
+      urgencyIndicators: List<String>.from(json['urgencyIndicators'] ?? []),
+      assessedAt: DateTime.parse(json['assessedAt'] ?? DateTime.now().toIso8601String()),
+    );
+  }
+
+  /// Get priority color for UI display
+  Color get priorityColor {
+    switch (aiPriority.toLowerCase()) {
+      case 'critical':
+        return const Color(0xFF991B1B); // Red-800
+      case 'high':
+        return const Color(0xFFDC2626); // Red-600
+      case 'medium':
+        return const Color(0xFFF59E0B); // Amber-500
+      case 'low':
+        return const Color(0xFF10B981); // Emerald-500
+      default:
+        return const Color(0xFF6B7280); // Gray-500
+    }
+  }
+
+  /// Get risk score color for UI display
+  Color get riskScoreColor {
+    if (aiRiskScore >= 80) return const Color(0xFFDC2626); // Red
+    if (aiRiskScore >= 60) return const Color(0xFFF59E0B); // Amber
+    if (aiRiskScore >= 40) return const Color(0xFF3B82F6); // Blue
+    return const Color(0xFF10B981); // Green
+  }
+
+  @override
+  String toString() {
+    return 'AIPriorityScoring(priority: $priority, riskScore: $riskScore, aiPriority: $aiPriority, aiRiskScore: $aiRiskScore, confidence: $confidenceScore%)';
   }
 }

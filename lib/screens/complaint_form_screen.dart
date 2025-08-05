@@ -858,18 +858,40 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     });
 
     try {
+      print('🔍 ===== DEBUGGING COMPLAINT SUBMISSION =====');
+      
       // Get current user ID
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) {
         _showErrorSnackBar('Please sign in to submit a complaint');
         return;
       }
+      
+      print('👤 Current User: ${currentUser.uid}');
 
       // Parse optional financial loss for priority calculation
       double? financialLoss;
       if (_financialLossController.text.trim().isNotEmpty) {
         financialLoss = double.tryParse(_financialLossController.text.trim());
       }
+      
+      print('📋 ===== FORM DATA DEBUGGING =====');
+      print('🏷️ Crime Type: ${_selectedCrimeType?.name} (${_selectedCrimeType?.displayName})');
+      print('👮 Selected Officer: ${_selectedOfficer?.fullName} (ID: ${_selectedOfficer?.id})');
+      print('🏢 Assigned Unit: ${_selectedCrimeType?.assignedUnit}');
+      print('💰 Financial Loss: $financialLoss');
+      print('📅 Incident Date: $_selectedIncidentDateTime');
+      print('📝 Description Length: ${_descriptionController.text.trim().length}');
+      print('📎 Evidence Files: ${_evidenceFiles.length}');
+      
+      print('📋 ===== DYNAMIC FIELDS DEBUGGING =====');
+      print('🌐 Platform Website: "${_platformWebsiteController.text.trim()}"');
+      print('📍 Incident Location: "${_incidentLocationController.text.trim()}"');
+      print('🔢 Account Reference: "${_accountReferenceController.text.trim()}"');
+      print('👤 Suspect Name: "${_suspectNameController.text.trim()}"');
+      print('🔗 Suspect Relationship: "$_selectedSuspectRelationship"');
+      print('📞 Suspect Contact: "${_suspectContactController.text.trim()}"');
+      print('📄 Suspect Details: "${_suspectDetailsController.text.trim()}"');
 
       // Create dynamic complaint object
       final complaint = DatabaseComplaint.create(
@@ -885,6 +907,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             ? _incidentLocationController.text.trim() 
             : null,
         estimatedFinancialLoss: financialLoss,
+        assignedOfficer: _selectedOfficer, // 🔧 FIXED: Pass selected officer
       );
 
       // Submit to database service (need to create this method)
@@ -917,8 +940,48 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         suspectRelationship: _selectedSuspectRelationship != 'Unknown' ? _selectedSuspectRelationship : null,
         suspectContact: _suspectContactController.text.trim().isEmpty ? null : _suspectContactController.text.trim(),
         suspectDetails: _suspectDetailsController.text.trim().isEmpty ? null : _suspectDetailsController.text.trim(),
+        // 🔧 FIXED: Add ALL missing dynamic fields for ALL crime types and categories
+        platformWebsite: _platformWebsiteController.text.trim().isEmpty ? null : _platformWebsiteController.text.trim(),
+        accountReference: _accountReferenceController.text.trim().isEmpty ? null : _accountReferenceController.text.trim(),
+        systemDetails: _systemDetailsController.text.trim().isEmpty ? null : _systemDetailsController.text.trim(),
+        technicalInfo: _technicalInfoController.text.trim().isEmpty ? null : _technicalInfoController.text.trim(),
+        vulnerabilityDetails: _vulnerabilityDetailsController.text.trim().isEmpty ? null : _vulnerabilityDetailsController.text.trim(),
+        securityLevel: _securityLevelController.text.trim().isEmpty ? null : _securityLevelController.text.trim(),
+        targetInfo: _targetInfoController.text.trim().isEmpty ? null : _targetInfoController.text.trim(),
+        attackVector: _attackVectorController.text.trim().isEmpty ? null : _attackVectorController.text.trim(),
+        contentDescription: _contentDescriptionController.text.trim().isEmpty ? null : _contentDescriptionController.text.trim(),
+        impactAssessment: _impactAssessmentController.text.trim().isEmpty ? null : _impactAssessmentController.text.trim(),
+        // 🔧 FIXED: Add officer assignment fields
+        assignedOfficer: _selectedOfficer?.fullName,
+        assignedOfficerId: _selectedOfficer?.id,
       );
 
+      print('📋 ===== COMPLAINT OBJECT DEBUGGING =====');
+      print('📝 Title: ${regularComplaint.title}');
+      print('👤 Suspect Name: ${regularComplaint.suspectName}');
+      print('🔗 Suspect Relationship: ${regularComplaint.suspectRelationship}');
+      print('📞 Suspect Contact: ${regularComplaint.suspectContact}');
+      print('📄 Suspect Details: ${regularComplaint.suspectDetails}');
+      print('📍 Incident Location: ${regularComplaint.incidentLocation}');
+      print('💰 Financial Loss: ${regularComplaint.estimatedFinancialLoss}');
+      
+      print('📋 ===== ALL DYNAMIC FIELDS DEBUGGING =====');
+      print('🌐 Platform Website: ${regularComplaint.platformWebsite}');
+      print('🔢 Account Reference: ${regularComplaint.accountReference}');
+      print('💻 System Details: ${regularComplaint.systemDetails}');
+      print('🔧 Technical Info: ${regularComplaint.technicalInfo}');
+      print('🛡️ Vulnerability Details: ${regularComplaint.vulnerabilityDetails}');
+      print('🔒 Security Level: ${regularComplaint.securityLevel}');
+      print('🎯 Target Info: ${regularComplaint.targetInfo}');
+      print('⚔️ Attack Vector: ${regularComplaint.attackVector}');
+      print('📄 Content Description: ${regularComplaint.contentDescription}');
+      print('📊 Impact Assessment: ${regularComplaint.impactAssessment}');
+      
+      print('👮 ===== OFFICER ASSIGNMENT =====');
+      print('👮 Assigned Officer: ${regularComplaint.assignedOfficer}');
+      print('👮 Assigned Officer ID: ${regularComplaint.assignedOfficerId}');
+      
+      print('🚀 ===== SUBMITTING WITH AI ASSESSMENT =====');
       // Submit with AI assessment
       final complaintId = await _databaseService.submitComplaintWithAI(regularComplaint);
       

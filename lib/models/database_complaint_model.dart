@@ -191,6 +191,7 @@ class DatabaseComplaint {
     required DateTime incidentDateTime,
     String? incidentLocation,
     double? estimatedFinancialLoss,
+    PNPOfficer? assignedOfficer, // 🔧 NEW: Accept officer parameter
   }) {
     final now = DateTime.now();
     
@@ -213,7 +214,7 @@ class DatabaseComplaint {
       priority: priority,
       riskScore: riskScore,
       assignedUnit: crimeType.assignedUnit,
-      assignedOfficer: null, // Officer assignment handled by admin
+      assignedOfficer: assignedOfficer, // 🔧 FIXED: Use passed officer parameter
       createdAt: now,
       updatedAt: now,
       statusHistory: [

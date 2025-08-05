@@ -520,6 +520,11 @@ CREATE TRIGGER update_complaints_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+-- 🔧 FIX: Add missing officer assignment fields to complaints table (if not present)
+ALTER TABLE complaints 
+ADD COLUMN IF NOT EXISTS assigned_officer TEXT,
+ADD COLUMN IF NOT EXISTS assigned_officer_id UUID REFERENCES pnp_officer_profiles(id) ON DELETE SET NULL;
+
 -- Auto-assign unit based on crime type (handles both manual and automatic assignment)
 CREATE OR REPLACE FUNCTION auto_assign_unit()
 RETURNS TRIGGER AS $$
@@ -629,8 +634,9 @@ CREATE TABLE IF NOT EXISTS evidence_files (
     download_url TEXT,
     
     -- Metadata
-    uploaded_at TIMESTAMPTZ DEFAULT NOW(),
-    uploaded_by UUID REFERENCES auth.users(id),
+    uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
+    uploaded_by TEXT,
     
     -- File Validation
     is_valid BOOLEAN DEFAULT true,
@@ -641,6 +647,7 @@ CREATE TABLE IF NOT EXISTS evidence_files (
 CREATE INDEX idx_evidence_files_complaint_id ON evidence_files(complaint_id);
 CREATE INDEX idx_evidence_files_file_type ON evidence_files(file_type);
 CREATE INDEX idx_evidence_files_uploaded_at ON evidence_files(uploaded_at);
+CREATE INDEX idx_evidence_files_created_at ON evidence_files(created_at);
 
 -- RLS disabled for simple public bucket approach
 -- ALTER TABLE evidence_files ENABLE ROW LEVEL SECURITY;
