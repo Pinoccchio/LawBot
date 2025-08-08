@@ -713,10 +713,23 @@ class DatabaseService {
       // 🔧 FIX: Get complaint data without problematic joins first
       final response = await _supabase
           .from('complaints')
-          .select('*, evidence_files(*)')
+          .select('*')
           .eq('id', complaintId)
           .eq('user_id', currentUserId!)
           .single();
+
+      // 🔧 FIX: Get evidence files separately 
+      try {
+        final evidenceResponse = await _supabase
+            .from('evidence_files')
+            .select('*')
+            .eq('complaint_id', complaintId);
+
+        response['evidence_files'] = evidenceResponse ?? [];
+      } catch (e) {
+        print('⚠️ Error getting evidence files for complaint $complaintId: $e');
+        response['evidence_files'] = [];
+      }
 
       // 🔧 FIX: Manually get case assignments with officer data
       try {
@@ -783,15 +796,59 @@ class DatabaseService {
   // Get complaint status history
   Future<List<Map<String, dynamic>>> getComplaintStatusHistory(String complaintId) async {
     try {
+      print('🔍 Fetching status history for complaint ID: $complaintId');
+      
+      // Validate complaint ID format
+      if (complaintId.isEmpty) {
+        print('❌ Empty complaint ID provided');
+        return [];
+      }
+      
       final response = await _supabase
           .from('status_history')
           .select('*')
           .eq('complaint_id', complaintId)
           .order('timestamp', ascending: true);
 
+      print('✅ Status history query result: ${response.length} records found');
+      
+      // Debug: Print first few entries if any exist
+      if (response.isNotEmpty) {
+        print('📊 First status history entry: ${response[0]}');
+        for (int i = 0; i < response.length && i < 3; i++) {
+          final entry = response[i];
+          print('   [$i] ${entry['status']} - ${entry['updated_by']} - ${entry['timestamp']}');
+        }
+      } else {
+        print('⚠️ No status history found for complaint: $complaintId');
+        
+        // Debug: Check if complaint exists with this ID
+        try {
+          final complaintCheck = await _supabase
+              .from('complaints')
+              .select('id, complaint_number')
+              .eq('id', complaintId)
+              .maybeSingle();
+          
+          if (complaintCheck != null) {
+            print('✅ Complaint exists: ${complaintCheck['complaint_number']}');
+          } else {
+            print('❌ Complaint with ID $complaintId does not exist');
+          }
+        } catch (checkError) {
+          print('⚠️ Error checking complaint existence: $checkError');
+        }
+      }
+
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
-      print('Error getting complaint status history: $e');
+      print('❌ Error getting complaint status history for $complaintId: $e');
+      print('❌ Error type: ${e.runtimeType}');
+      if (e is PostgrestException) {
+        print('❌ Postgrest error details: ${e.details}');
+        print('❌ Postgrest error hint: ${e.hint}');
+        print('❌ Postgrest error code: ${e.code}');
+      }
       return [];
     }
   }

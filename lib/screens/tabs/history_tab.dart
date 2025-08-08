@@ -5,6 +5,7 @@ import '../../providers/language_provider.dart';
 import '../../services/database_service.dart';
 import '../../utils/philippine_time.dart';
 import '../../models/complaint_model.dart';
+import '../../widgets/expandable_status_timeline.dart';
 import '../report_detail_screen.dart';
 import 'dart:async';
 
@@ -683,7 +684,15 @@ class _HistoryTabState extends State<HistoryTab> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                
+                // Expandable Status Timeline
+                ExpandableStatusTimeline(
+                  complaint: complaint,
+                  isDarkMode: isDark,
+                ),
+                
+                const SizedBox(height: 12),
                 
                 // Footer Row
                 Row(

@@ -108,7 +108,7 @@ class ComplaintService {
           (e) => e.displayName == data['status'],
           orElse: () => ComplaintStatus.pending,
         ),
-        timestamp: DateTime.parse(data['created_at']),
+        timestamp: DateTime.parse(data['timestamp']),
         updatedBy: data['updated_by'],
         remarks: data['remarks'],
       )).toList();
@@ -182,6 +182,74 @@ class ComplaintService {
       print('Error searching complaints: $e');
       return [];
     }
+  }
+
+  /// Load status history for a specific complaint with caching
+  Future<List<StatusUpdate>> loadComplaintStatusHistory(String complaintId) async {
+    try {
+      print('🔄 [ComplaintService] Loading status history for complaint: $complaintId');
+      
+      // Validate complaint ID
+      if (complaintId.isEmpty) {
+        print('❌ [ComplaintService] Empty complaint ID provided');
+        return [];
+      }
+      
+      // Get status history from database
+      final statusHistory = await _databaseService.getComplaintStatusHistory(complaintId);
+      
+      print('📊 [ComplaintService] Raw status history data: ${statusHistory.length} records');
+      
+      if (statusHistory.isEmpty) {
+        print('⚠️ [ComplaintService] No status history found for complaint: $complaintId');
+        return [];
+      }
+      
+      // Debug: Print raw data structure
+      print('📊 [ComplaintService] First raw entry: ${statusHistory[0]}');
+      
+      // Convert to StatusUpdate objects
+      final statusUpdates = <StatusUpdate>[];
+      
+      for (int i = 0; i < statusHistory.length; i++) {
+        final data = statusHistory[i];
+        try {
+          // Debug each conversion
+          print('🔄 [ComplaintService] Converting entry $i: ${data['status']} by ${data['updated_by']}');
+          
+          final statusUpdate = StatusUpdate(
+            status: ComplaintStatus.values.firstWhere(
+              (e) => e.displayName == data['status'],
+              orElse: () {
+                print('⚠️ [ComplaintService] Unknown status: ${data['status']}, defaulting to pending');
+                return ComplaintStatus.pending;
+              },
+            ),
+            timestamp: DateTime.parse(data['timestamp']),
+            updatedBy: data['updated_by'],
+            remarks: data['remarks'],
+          );
+          
+          statusUpdates.add(statusUpdate);
+          print('✅ [ComplaintService] Successfully converted entry $i');
+        } catch (convertError) {
+          print('❌ [ComplaintService] Error converting entry $i: $convertError');
+          print('❌ [ComplaintService] Raw data: $data');
+        }
+      }
+      
+      print('✅ [ComplaintService] Loaded ${statusUpdates.length} status updates for complaint: $complaintId');
+      return statusUpdates;
+    } catch (e) {
+      print('❌ [ComplaintService] Error loading status history for complaint $complaintId: $e');
+      print('❌ [ComplaintService] Error type: ${e.runtimeType}');
+      return [];
+    }
+  }
+
+  /// Update complaint object with loaded status history
+  Complaint updateComplaintWithStatusHistory(Complaint complaint, List<StatusUpdate> statusHistory) {
+    return complaint.copyWith(statusHistory: statusHistory);
   }
 
   // =============================================
@@ -297,6 +365,11 @@ class ComplaintService {
   /// Convert database map to Complaint object
   Complaint _complaintFromDatabaseMap(Map<String, dynamic> data) {
     try {
+      // Debug: Print complaint ID information
+      print('📊 [ComplaintService] Mapping complaint data:');
+      print('   - ID (UUID): ${data['id']}');
+      print('   - Complaint Number: ${data['complaint_number']}');
+      print('   - Status: ${data['status']}');
       // Parse evidence files
       final evidenceFiles = <EvidenceFile>[];
       if (data['evidence_files'] != null) {

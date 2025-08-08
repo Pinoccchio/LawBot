@@ -7,6 +7,7 @@ import '../../providers/theme_provider.dart';
 import '../../services/database_service.dart';
 import '../../utils/philippine_time.dart';
 import '../../models/complaint_model.dart';
+import '../../widgets/expandable_status_timeline.dart';
 import '../complaint_form_screen.dart';
 import '../report_detail_screen.dart';
 
@@ -823,7 +824,15 @@ class _ReportsTabState extends State<ReportsTab> {
                 // Investigation Team & Key Info Section
                 _buildInvestigationInfo(complaint, isDark),
                 
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                
+                // Expandable Status Timeline
+                ExpandableStatusTimeline(
+                  complaint: complaint,
+                  isDarkMode: isDark,
+                ),
+                
+                const SizedBox(height: 12),
                 
                 // Footer Row
                 Row(

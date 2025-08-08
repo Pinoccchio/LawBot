@@ -92,7 +92,7 @@ class RealtimeService {
       .onPostgresChanges(
         event: PostgresChangeEvent.insert,
         schema: 'public',
-        table: 'complaint_status_history',
+        table: 'status_history',
         callback: _handleStatusHistoryChange,
       )
       .subscribe();

@@ -5,7 +5,8 @@
       "Bash(flutter analyze:*)",
       "Bash(mv:*)",
       "Bash(flutter:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }

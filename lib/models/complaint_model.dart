@@ -5,13 +5,17 @@ import '../services/ai_risk_assessment_service.dart';
 enum CrimeType {
   // 📱 COMMUNICATION & SOCIAL MEDIA CRIMES - Cyber Crime Investigation Cell
   phishing('Phishing', CrimeCategory.communicationSocialMedia),
-  socialEngineering('Social Engineering', CrimeCategory.communicationSocialMedia),
+  socialEngineering(
+      'Social Engineering', CrimeCategory.communicationSocialMedia),
   spamMessages('Spam Messages', CrimeCategory.communicationSocialMedia),
-  fakeSocialMediaProfiles('Fake Social Media Profiles', CrimeCategory.communicationSocialMedia),
-  onlineImpersonation('Online Impersonation', CrimeCategory.communicationSocialMedia),
-  businessEmailCompromise('Business Email Compromise', CrimeCategory.communicationSocialMedia),
+  fakeSocialMediaProfiles(
+      'Fake Social Media Profiles', CrimeCategory.communicationSocialMedia),
+  onlineImpersonation(
+      'Online Impersonation', CrimeCategory.communicationSocialMedia),
+  businessEmailCompromise(
+      'Business Email Compromise', CrimeCategory.communicationSocialMedia),
   smsFraud('SMS Fraud', CrimeCategory.communicationSocialMedia),
-  
+
   // 💰 FINANCIAL & ECONOMIC CRIMES - Economic Offenses Wing
   onlineBankingFraud('Online Banking Fraud', CrimeCategory.financialEconomic),
   creditCardFraud('Credit Card Fraud', CrimeCategory.financialEconomic),
@@ -22,17 +26,19 @@ enum CrimeType {
   insuranceFraud('Insurance Fraud', CrimeCategory.financialEconomic),
   taxFraud('Tax Fraud', CrimeCategory.financialEconomic),
   moneyLaundering('Money Laundering', CrimeCategory.financialEconomic),
-  
+
   // 🔒 DATA & PRIVACY CRIMES - Cyber Security Division
   identityTheft('Identity Theft', CrimeCategory.dataPrivacy),
   dataBreach('Data Breach', CrimeCategory.dataPrivacy),
-  unauthorizedSystemAccess('Unauthorized System Access', CrimeCategory.dataPrivacy),
+  unauthorizedSystemAccess(
+      'Unauthorized System Access', CrimeCategory.dataPrivacy),
   corporateEspionage('Corporate Espionage', CrimeCategory.dataPrivacy),
   governmentDataTheft('Government Data Theft', CrimeCategory.dataPrivacy),
   medicalRecordsTheft('Medical Records Theft', CrimeCategory.dataPrivacy),
-  personalInformationTheft('Personal Information Theft', CrimeCategory.dataPrivacy),
+  personalInformationTheft(
+      'Personal Information Theft', CrimeCategory.dataPrivacy),
   accountTakeover('Account Takeover', CrimeCategory.dataPrivacy),
-  
+
   // 💻 MALWARE & SYSTEM ATTACKS - Cyber Crime Technical Unit
   ransomware('Ransomware', CrimeCategory.malwareSystemAttacks),
   virusAttacks('Virus Attacks', CrimeCategory.malwareSystemAttacks),
@@ -44,55 +50,71 @@ enum CrimeType {
   rootkits('Rootkits', CrimeCategory.malwareSystemAttacks),
   cryptojacking('Cryptojacking', CrimeCategory.malwareSystemAttacks),
   botnetAttacks('Botnet Attacks', CrimeCategory.malwareSystemAttacks),
-  
+
   // 👥 HARASSMENT & EXPLOITATION - Cyber Crime Against Women and Children
   cyberstalking('Cyberstalking', CrimeCategory.harassmentExploitation),
   onlineHarassment('Online Harassment', CrimeCategory.harassmentExploitation),
   cyberbullying('Cyberbullying', CrimeCategory.harassmentExploitation),
   revengePorn('Revenge Porn', CrimeCategory.harassmentExploitation),
   sextortion('Sextortion', CrimeCategory.harassmentExploitation),
-  onlinePredatoryBehavior('Online Predatory Behavior', CrimeCategory.harassmentExploitation),
+  onlinePredatoryBehavior(
+      'Online Predatory Behavior', CrimeCategory.harassmentExploitation),
   doxxing('Doxxing', CrimeCategory.harassmentExploitation),
   hateSpeech('Hate Speech', CrimeCategory.harassmentExploitation),
-  
+
   // 🚫 CONTENT-RELATED CRIMES - Special Investigation Team
-  childSexualAbuseMaterial('Child Sexual Abuse Material', CrimeCategory.contentRelated),
-  illegalContentDistribution('Illegal Content Distribution', CrimeCategory.contentRelated),
+  childSexualAbuseMaterial(
+      'Child Sexual Abuse Material', CrimeCategory.contentRelated),
+  illegalContentDistribution(
+      'Illegal Content Distribution', CrimeCategory.contentRelated),
   copyrightInfringement('Copyright Infringement', CrimeCategory.contentRelated),
   softwarePiracy('Software Piracy', CrimeCategory.contentRelated),
-  illegalOnlineGambling('Illegal Online Gambling', CrimeCategory.contentRelated),
-  onlineDrugTrafficking('Online Drug Trafficking', CrimeCategory.contentRelated),
+  illegalOnlineGambling(
+      'Illegal Online Gambling', CrimeCategory.contentRelated),
+  onlineDrugTrafficking(
+      'Online Drug Trafficking', CrimeCategory.contentRelated),
   illegalWeaponsSales('Illegal Weapons Sales', CrimeCategory.contentRelated),
   humanTrafficking('Human Trafficking', CrimeCategory.contentRelated),
-  
+
   // ⚡ SYSTEM DISRUPTION & SABOTAGE - Critical Infrastructure Protection Unit
-  denialOfServiceAttacks('Denial of Service Attacks', CrimeCategory.systemDisruption),
+  denialOfServiceAttacks(
+      'Denial of Service Attacks', CrimeCategory.systemDisruption),
   websiteDefacement('Website Defacement', CrimeCategory.systemDisruption),
   systemSabotage('System Sabotage', CrimeCategory.systemDisruption),
   networkIntrusion('Network Intrusion', CrimeCategory.systemDisruption),
   sqlInjection('SQL Injection', CrimeCategory.systemDisruption),
   crossSiteScripting('Cross-Site Scripting', CrimeCategory.systemDisruption),
-  manInTheMiddleAttacks('Man-in-the-Middle Attacks', CrimeCategory.systemDisruption),
-  
+  manInTheMiddleAttacks(
+      'Man-in-the-Middle Attacks', CrimeCategory.systemDisruption),
+
   // 🏛️ GOVERNMENT & TERRORISM - National Security Cyber Division
   cyberterrorism('Cyberterrorism', CrimeCategory.governmentTerrorism),
   cyberWarfare('Cyber Warfare', CrimeCategory.governmentTerrorism),
-  governmentSystemHacking('Government System Hacking', CrimeCategory.governmentTerrorism),
-  electionInterference('Election Interference', CrimeCategory.governmentTerrorism),
-  criticalInfrastructureAttacks('Critical Infrastructure Attacks', CrimeCategory.governmentTerrorism),
-  propagandaDistribution('Propaganda Distribution', CrimeCategory.governmentTerrorism),
-  stateSponsoredAttacks('State-Sponsored Attacks', CrimeCategory.governmentTerrorism),
-  
+  governmentSystemHacking(
+      'Government System Hacking', CrimeCategory.governmentTerrorism),
+  electionInterference(
+      'Election Interference', CrimeCategory.governmentTerrorism),
+  criticalInfrastructureAttacks(
+      'Critical Infrastructure Attacks', CrimeCategory.governmentTerrorism),
+  propagandaDistribution(
+      'Propaganda Distribution', CrimeCategory.governmentTerrorism),
+  stateSponsoredAttacks(
+      'State-Sponsored Attacks', CrimeCategory.governmentTerrorism),
+
   // 🔍 TECHNICAL EXPLOITATION - Advanced Cyber Forensics Unit
   zeroDayExploits('Zero-Day Exploits', CrimeCategory.technicalExploitation),
-  vulnerabilityExploitation('Vulnerability Exploitation', CrimeCategory.technicalExploitation),
+  vulnerabilityExploitation(
+      'Vulnerability Exploitation', CrimeCategory.technicalExploitation),
   backdoorCreation('Backdoor Creation', CrimeCategory.technicalExploitation),
-  privilegeEscalation('Privilege Escalation', CrimeCategory.technicalExploitation),
+  privilegeEscalation(
+      'Privilege Escalation', CrimeCategory.technicalExploitation),
   codeInjection('Code Injection', CrimeCategory.technicalExploitation),
-  bufferOverflowAttacks('Buffer Overflow Attacks', CrimeCategory.technicalExploitation),
-  
+  bufferOverflowAttacks(
+      'Buffer Overflow Attacks', CrimeCategory.technicalExploitation),
+
   // 🎯 TARGETED ATTACKS - Special Cyber Operations Unit
-  advancedPersistentThreats('Advanced Persistent Threats', CrimeCategory.targetedAttacks),
+  advancedPersistentThreats(
+      'Advanced Persistent Threats', CrimeCategory.targetedAttacks),
   spearPhishing('Spear Phishing', CrimeCategory.targetedAttacks),
   ceoFraud('CEO Fraud', CrimeCategory.targetedAttacks),
   supplyChainAttacks('Supply Chain Attacks', CrimeCategory.targetedAttacks),
@@ -101,7 +123,7 @@ enum CrimeType {
   const CrimeType(this.displayName, this.category);
   final String displayName;
   final CrimeCategory category;
-  
+
   String get assignedUnit {
     switch (category) {
       case CrimeCategory.communicationSocialMedia:
@@ -126,7 +148,7 @@ enum CrimeType {
         return 'Special Cyber Operations Unit';
     }
   }
-  
+
   String get categoryIcon {
     switch (category) {
       case CrimeCategory.communicationSocialMedia:
@@ -151,7 +173,7 @@ enum CrimeType {
         return '🎯';
     }
   }
-  
+
   String get categoryName {
     switch (category) {
       case CrimeCategory.communicationSocialMedia:
@@ -176,7 +198,7 @@ enum CrimeType {
         return 'Targeted Attacks';
     }
   }
-  
+
   // Integration with dynamic field system
   List<String> get applicableFieldCategories {
     return [categoryName];
@@ -198,10 +220,12 @@ enum CrimeCategory {
 
 enum ComplaintStatus {
   pending('Pending', 'Your complaint has been received and is being reviewed'),
-  underInvestigation('Under Investigation', 'PNP officers are actively investigating your complaint'),
+  underInvestigation('Under Investigation',
+      'PNP officers are actively investigating your complaint'),
   resolved('Resolved', 'Your complaint has been resolved'),
   dismissed('Dismissed', 'Your complaint has been dismissed'),
-  requiresMoreInfo('Requires More Information', 'Additional information is needed to proceed');
+  requiresMoreInfo('Requires More Information',
+      'Additional information is needed to proceed');
 
   const ComplaintStatus(this.displayName, this.description);
   final String displayName;
@@ -231,7 +255,7 @@ class EvidenceFile {
     final fileName = file.path.split('/').last;
     final fileSize = file.lengthSync();
     final fileType = fileName.split('.').last.toLowerCase();
-    
+
     return EvidenceFile(
       fileName: fileName,
       filePath: file.path,
@@ -266,7 +290,7 @@ class EvidenceFile {
   }
 
   String get fileExtension => fileType.toUpperCase();
-  
+
   String get fileSizeFormatted {
     if (fileSize < 1024) {
       return '${fileSize}B';
@@ -277,9 +301,12 @@ class EvidenceFile {
     }
   }
 
-  bool get isImage => ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].contains(fileType);
-  bool get isVideo => ['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv'].contains(fileType);
-  bool get isDocument => ['pdf', 'doc', 'docx', 'txt', 'rtf'].contains(fileType);
+  bool get isImage =>
+      ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].contains(fileType);
+  bool get isVideo =>
+      ['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv'].contains(fileType);
+  bool get isDocument =>
+      ['pdf', 'doc', 'docx', 'txt', 'rtf'].contains(fileType);
 }
 
 class Complaint {
@@ -306,7 +333,7 @@ class Complaint {
   final String? assignedOfficerId; // Added for proper officer tracking
   final String? remarks;
   final List<StatusUpdate> statusHistory;
-  
+
   // AI Assessment Fields
   final String? aiPriority; // AI-recommended priority
   final int? aiRiskScore; // AI-calculated risk score (0-100)
@@ -316,7 +343,7 @@ class Complaint {
   final DateTime? lastAiAssessment; // Timestamp of last AI evaluation
   final String? aiReasoning; // AI explanation/reasoning
   final AIRiskAssessment? aiAssessment; // Full AI assessment object
-  
+
   // Dynamic fields from database
   final String? platformWebsite;
   final String? accountReference;
@@ -396,11 +423,11 @@ class Complaint {
     double? estimatedFinancialLoss,
   }) {
     final now = DateTime.now();
-    
+
     // Calculate priority and risk score based on crime type and financial loss
     final priority = _calculatePriority(crimeType, estimatedFinancialLoss);
     final riskScore = _calculateRiskScore(crimeType, estimatedFinancialLoss);
-    
+
     return Complaint(
       userId: userId,
       crimeType: crimeType,
@@ -578,19 +605,22 @@ class Complaint {
     return Complaint(
       id: json['id'],
       userId: json['userId'],
-      crimeType: CrimeType.values.firstWhere((e) => e.name == json['crimeType']),
+      crimeType:
+          CrimeType.values.firstWhere((e) => e.name == json['crimeType']),
       title: json['title'],
       description: json['description'],
       evidenceFiles: (json['evidenceFiles'] as List<dynamic>?)
-          ?.map((file) => EvidenceFile.fromJson(file))
-          .toList() ?? [],
+              ?.map((file) => EvidenceFile.fromJson(file))
+              .toList() ??
+          [],
       fullName: json['fullName'],
       email: json['email'],
       phoneNumber: json['phoneNumber'],
       incidentDateTime: DateTime.parse(json['incidentDateTime']),
       incidentLocation: json['incidentLocation'],
       estimatedFinancialLoss: json['estimatedFinancialLoss']?.toDouble(),
-      status: ComplaintStatus.values.firstWhere((e) => e.name == json['status']),
+      status:
+          ComplaintStatus.values.firstWhere((e) => e.name == json['status']),
       priority: json['priority'] ?? 'low',
       riskScore: json['riskScore'] ?? 30,
       assignedUnit: json['assignedUnit'],
@@ -601,16 +631,17 @@ class Complaint {
       assignedOfficerId: json['assignedOfficerId'],
       remarks: json['remarks'],
       statusHistory: (json['statusHistory'] as List<dynamic>?)
-          ?.map((update) => StatusUpdate.fromJson(update))
-          .toList() ?? [],
+              ?.map((update) => StatusUpdate.fromJson(update))
+              .toList() ??
+          [],
       // AI Assessment Fields
       aiPriority: json['aiPriority'],
       aiRiskScore: json['aiRiskScore'],
       aiConfidenceScore: json['aiConfidenceScore'],
       riskFactors: List<String>.from(json['riskFactors'] ?? []),
       urgencyIndicators: List<String>.from(json['urgencyIndicators'] ?? []),
-      lastAiAssessment: json['lastAiAssessment'] != null 
-          ? DateTime.parse(json['lastAiAssessment']) 
+      lastAiAssessment: json['lastAiAssessment'] != null
+          ? DateTime.parse(json['lastAiAssessment'])
           : null,
       aiReasoning: json['aiReasoning'],
       // Dynamic fields
@@ -692,7 +723,8 @@ class Complaint {
       phoneNumber: phoneNumber ?? this.phoneNumber,
       incidentDateTime: incidentDateTime ?? this.incidentDateTime,
       incidentLocation: incidentLocation ?? this.incidentLocation,
-      estimatedFinancialLoss: estimatedFinancialLoss ?? this.estimatedFinancialLoss,
+      estimatedFinancialLoss:
+          estimatedFinancialLoss ?? this.estimatedFinancialLoss,
       status: status ?? this.status,
       priority: priority ?? this.priority,
       riskScore: riskScore ?? this.riskScore,
@@ -731,24 +763,25 @@ class Complaint {
     );
   }
 
-  bool get hasContactInfo => fullName != null || email != null || phoneNumber != null;
+  bool get hasContactInfo =>
+      fullName != null || email != null || phoneNumber != null;
   bool get hasEvidence => evidenceFiles.isNotEmpty;
-  
+
   String get statusDisplay => status.displayName;
   String get crimeTypeDisplay => crimeType.displayName;
-  
+
   Duration get timeSinceCreated => DateTime.now().difference(createdAt);
   Duration get timeSinceUpdated => DateTime.now().difference(updatedAt);
-  
+
   // AI Assessment Helper Methods
   bool get hasAIAssessment => aiRiskScore != null && aiPriority != null;
-  
+
   String get effectivePriority => aiPriority ?? priority;
   int get effectiveRiskScore => aiRiskScore ?? riskScore;
-  
+
   String get prioritySource => aiPriority != null ? 'AI' : 'Rule-based';
   String get riskScoreSource => aiRiskScore != null ? 'AI' : 'Rule-based';
-  
+
   Color get effectivePriorityColor {
     switch (effectivePriority.toLowerCase()) {
       case 'critical':
@@ -763,7 +796,7 @@ class Complaint {
         return const Color(0xFF6B7280); // Gray-500
     }
   }
-  
+
   Color get effectiveRiskScoreColor {
     final score = effectiveRiskScore;
     if (score >= 80) return const Color(0xFFDC2626); // Red
@@ -771,7 +804,7 @@ class Complaint {
     if (score >= 40) return const Color(0xFF3B82F6); // Blue
     return const Color(0xFF10B981); // Green
   }
-  
+
   String get aiConfidenceLevel {
     if (aiConfidenceScore == null) return 'N/A';
     final confidence = aiConfidenceScore!;
@@ -781,31 +814,36 @@ class Complaint {
     if (confidence >= 60) return 'Moderate';
     return 'Low';
   }
-  
+
   String get formattedRiskFactors {
     if (riskFactors.isEmpty) return 'None identified';
     return riskFactors.map((factor) {
-      return factor.replaceAll('_', ' ').split(' ')
+      return factor
+          .replaceAll('_', ' ')
+          .split(' ')
           .map((word) => word[0].toUpperCase() + word.substring(1))
           .join(' ');
     }).join(', ');
   }
-  
+
   String get formattedUrgencyIndicators {
     if (urgencyIndicators.isEmpty) return 'None identified';
     return urgencyIndicators.map((indicator) {
-      return indicator.replaceAll('_', ' ').split(' ')
+      return indicator
+          .replaceAll('_', ' ')
+          .split(' ')
           .map((word) => word[0].toUpperCase() + word.substring(1))
           .join(' ');
     }).join(', ');
   }
-  
+
   bool get needsAIReassessment {
     if (lastAiAssessment == null) return true;
-    final daysSinceAssessment = DateTime.now().difference(lastAiAssessment!).inDays;
+    final daysSinceAssessment =
+        DateTime.now().difference(lastAiAssessment!).inDays;
     return daysSinceAssessment > 7; // Reassess if older than 7 days
   }
-  
+
   /// Create updated complaint with AI assessment
   Complaint withAIAssessment(AIRiskAssessment assessment) {
     return copyWith(
@@ -900,8 +938,9 @@ class CredibilityScore {
     return CredibilityScore(
       overallScore: json['overallScore'] ?? 50,
       factors: (json['factors'] as List<dynamic>?)
-          ?.map((f) => CredibilityFactor.fromJson(f))
-          .toList() ?? [],
+              ?.map((f) => CredibilityFactor.fromJson(f))
+              .toList() ??
+          [],
       suggestions: List<String>.from(json['suggestions'] ?? []),
       strengthLevel: json['strengthLevel'] ?? 'Moderate',
     );
@@ -1055,7 +1094,8 @@ class StatusUpdate {
 
   factory StatusUpdate.fromJson(Map<String, dynamic> json) {
     return StatusUpdate(
-      status: ComplaintStatus.values.firstWhere((e) => e.name == json['status']),
+      status:
+          ComplaintStatus.values.firstWhere((e) => e.name == json['status']),
       timestamp: DateTime.parse(json['timestamp']),
       updatedBy: json['updatedBy'],
       remarks: json['remarks'],

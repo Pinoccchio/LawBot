@@ -5,6 +5,7 @@ import 'dart:io';
 import '../models/complaint_model.dart';
 import '../providers/theme_provider.dart';
 import '../utils/philippine_time.dart';
+import '../services/complaint_service.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final Complaint complaint;
@@ -16,6 +17,65 @@ class ReportDetailScreen extends StatefulWidget {
 }
 
 class _ReportDetailScreenState extends State<ReportDetailScreen> {
+  final ComplaintService _complaintService = ComplaintService();
+  Complaint? _completeComplaint;
+  bool _isLoadingDetails = false;
+  String? _loadingError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCompleteComplaintDetails();
+  }
+
+  Future<void> _loadCompleteComplaintDetails() async {
+    setState(() {
+      _isLoadingDetails = true;
+      _loadingError = null;
+    });
+
+    try {
+      final complaintId = widget.complaint.id;
+      if (complaintId == null) {
+        setState(() {
+          _completeComplaint = widget.complaint; // Fallback to original
+          _isLoadingDetails = false;
+          _loadingError = 'Complaint ID is missing';
+        });
+        return;
+      }
+
+      print('🔄 Loading complete complaint details with status history for: $complaintId');
+      
+      final completeComplaint = await _complaintService.getComplaintWithDetails(complaintId);
+      
+      if (completeComplaint != null) {
+        setState(() {
+          _completeComplaint = completeComplaint;
+          _isLoadingDetails = false;
+        });
+        print('✅ Successfully loaded complaint with ${completeComplaint.statusHistory.length} status updates');
+      } else {
+        setState(() {
+          _completeComplaint = displayComplaint; // Fallback to original
+          _isLoadingDetails = false;
+          _loadingError = 'Could not load complete details';
+        });
+        print('⚠️ Could not load complete complaint details, using original data');
+      }
+    } catch (e) {
+      print('❌ Error loading complete complaint details: $e');
+      setState(() {
+        _completeComplaint = displayComplaint; // Fallback to original
+        _isLoadingDetails = false;
+        _loadingError = 'Error loading details: $e';
+      });
+    }
+  }
+
+  // Get the complaint to display (complete or fallback to original)
+  Complaint get displayComplaint => _completeComplaint ?? widget.complaint;
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();
@@ -37,13 +97,43 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           color: isDark ? Colors.white : const Color(0xFF2563EB),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Enhanced Header Card with Priority & Risk
-            _buildEnhancedHeaderCard(isDark),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Loading Error Banner
+                if (_loadingError != null) 
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.warning_amber, color: Colors.amber, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _loadingError!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.amber[700],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                
+                // Enhanced Header Card with Priority & Risk
+                _buildEnhancedHeaderCard(isDark),
             
             const SizedBox(height: 16),
             
@@ -69,13 +159,13 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ..._buildDynamicFieldsCards(isDark),
             
             // Evidence Card
-            if (widget.complaint.hasEvidence) ...[
+            if (displayComplaint.hasEvidence) ...[
               const SizedBox(height: 16),
               _buildEvidenceCard(isDark),
             ],
             
             // Contact Information Card
-            if (widget.complaint.hasContactInfo) ...[
+            if (displayComplaint.hasContactInfo) ...[
               const SizedBox(height: 16),
               _buildContactCard(isDark),
             ],
@@ -88,15 +178,36 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ],
         ),
       ),
+      
+      // Loading Overlay
+      if (_isLoadingDetails)
+        Container(
+          color: isDark ? Colors.black.withOpacity(0.7) : Colors.white.withOpacity(0.7),
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  'Loading complete details...',
+                  style: TextStyle(fontSize: 16),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+      ),
     );
   }
 
   Widget _buildEnhancedHeaderCard(bool isDark) {
-    final statusColor = _getStatusColor(widget.complaint.status);
+    final statusColor = _getStatusColor(displayComplaint.status);
     // Use AI priority if available, fallback to regular priority
-    final effectivePriority = widget.complaint.aiPriority ?? widget.complaint.priority;
+    final effectivePriority = displayComplaint.aiPriority ?? displayComplaint.priority;
     final priorityColor = _getPriorityColor(effectivePriority);
-    final isAiAssessed = widget.complaint.aiPriority != null;
+    final isAiAssessed = displayComplaint.aiPriority != null;
     
     return Container(
       width: double.infinity,
@@ -131,12 +242,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      widget.complaint.crimeType.categoryIcon,
+                      displayComplaint.crimeType.categoryIcon,
                       style: const TextStyle(fontSize: 12),
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      widget.complaint.crimeTypeDisplay,
+                      displayComplaint.crimeTypeDisplay,
                       style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFF2563EB),
@@ -213,7 +324,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      widget.complaint.statusDisplay,
+                      displayComplaint.statusDisplay,
                       style: TextStyle(
                         fontSize: 12,
                         color: statusColor,
@@ -229,7 +340,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           const SizedBox(height: 16),
           
           // Complaint Number
-          if (widget.complaint.complaintNumber != null) ...[
+          if (displayComplaint.complaintNumber != null) ...[
             Text(
               'Complaint Number',
               style: TextStyle(
@@ -240,7 +351,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              widget.complaint.complaintNumber!,
+              displayComplaint.complaintNumber!,
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -267,7 +378,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     const SizedBox(height: 2),
                     Text(
                       PhilippineTime.formatDateTime(
-                        PhilippineTime.fromUtc(widget.complaint.createdAt)
+                        PhilippineTime.fromUtc(displayComplaint.createdAt)
                       ),
                       style: TextStyle(
                         fontSize: 14,
@@ -292,7 +403,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     const SizedBox(height: 2),
                     Text(
                       PhilippineTime.formatDateTime(
-                        PhilippineTime.fromUtc(widget.complaint.updatedAt)
+                        PhilippineTime.fromUtc(displayComplaint.updatedAt)
                       ),
                       style: TextStyle(
                         fontSize: 14,
@@ -311,7 +422,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildHeaderCard(bool isDark) {
-    final statusColor = _getStatusColor(widget.complaint.status);
+    final statusColor = _getStatusColor(displayComplaint.status);
     
     return Container(
       width: double.infinity,
@@ -342,7 +453,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  widget.complaint.crimeTypeDisplay,
+                  displayComplaint.crimeTypeDisplay,
                   style: const TextStyle(
                     fontSize: 12,
                     color: Color(0xFF2563EB),
@@ -370,7 +481,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      widget.complaint.statusDisplay,
+                      displayComplaint.statusDisplay,
                       style: TextStyle(
                         fontSize: 12,
                         color: statusColor,
@@ -386,7 +497,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           const SizedBox(height: 16),
           
           // Complaint Number
-          if (widget.complaint.complaintNumber != null) ...[
+          if (displayComplaint.complaintNumber != null) ...[
             Text(
               'Complaint Number',
               style: TextStyle(
@@ -397,7 +508,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              widget.complaint.complaintNumber!,
+              displayComplaint.complaintNumber!,
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -424,7 +535,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     const SizedBox(height: 2),
                     Text(
                       PhilippineTime.formatDateTime(
-                        PhilippineTime.fromUtc(widget.complaint.createdAt)
+                        PhilippineTime.fromUtc(displayComplaint.createdAt)
                       ),
                       style: TextStyle(
                         fontSize: 14,
@@ -449,7 +560,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     const SizedBox(height: 2),
                     Text(
                       PhilippineTime.formatDateTime(
-                        PhilippineTime.fromUtc(widget.complaint.updatedAt)
+                        PhilippineTime.fromUtc(displayComplaint.updatedAt)
                       ),
                       style: TextStyle(
                         fontSize: 14,
@@ -514,7 +625,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            widget.complaint.description,
+            displayComplaint.description,
             style: TextStyle(
               fontSize: 16,
               color: isDark ? Colors.grey[200] : const Color(0xFF374151),
@@ -571,7 +682,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               ),
               const Spacer(),
               Text(
-                '${widget.complaint.evidenceFiles.length} file${widget.complaint.evidenceFiles.length != 1 ? 's' : ''}',
+                '${displayComplaint.evidenceFiles.length} file${displayComplaint.evidenceFiles.length != 1 ? 's' : ''}',
                 style: TextStyle(
                   fontSize: 14,
                   color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -583,9 +694,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: widget.complaint.evidenceFiles.length,
+            itemCount: displayComplaint.evidenceFiles.length,
             itemBuilder: (context, index) {
-              final file = widget.complaint.evidenceFiles[index];
+              final file = displayComplaint.evidenceFiles[index];
               return _buildEvidenceFileItem(file, isDark);
             },
           ),
@@ -708,28 +819,28 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          if (widget.complaint.fullName != null) ...[
+          if (displayComplaint.fullName != null) ...[
             _buildContactItem(
               label: 'Full Name',
-              value: widget.complaint.fullName!,
+              value: displayComplaint.fullName!,
               icon: Icons.person,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
-          if (widget.complaint.email != null) ...[
+          if (displayComplaint.email != null) ...[
             _buildContactItem(
               label: 'Email Address',
-              value: widget.complaint.email!,
+              value: displayComplaint.email!,
               icon: Icons.email,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
-          if (widget.complaint.phoneNumber != null) ...[
+          if (displayComplaint.phoneNumber != null) ...[
             _buildContactItem(
               label: 'Phone Number',
-              value: widget.complaint.phoneNumber!,
+              value: displayComplaint.phoneNumber!,
               icon: Icons.phone,
               isDark: isDark,
             ),
@@ -823,10 +934,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: widget.complaint.statusHistory.length,
+            itemCount: displayComplaint.statusHistory.length,
             itemBuilder: (context, index) {
-              final statusUpdate = widget.complaint.statusHistory[index];
-              final isLast = index == widget.complaint.statusHistory.length - 1;
+              final statusUpdate = displayComplaint.statusHistory[index];
+              final isLast = index == displayComplaint.statusHistory.length - 1;
               return _buildTimelineItem(statusUpdate, isLast, isDark);
             },
           ),
@@ -1367,9 +1478,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   // New methods for enhanced functionality
   bool _hasInvestigationInfo() {
-    return widget.complaint.assignedUnit != null ||
-           widget.complaint.assignedOfficer != null ||
-           widget.complaint.assignedOfficerId != null;
+    return displayComplaint.assignedUnit != null ||
+           displayComplaint.assignedOfficer != null ||
+           displayComplaint.assignedOfficerId != null;
   }
 
   Widget _buildInvestigationTeamCard(bool isDark) {
@@ -1420,33 +1531,33 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           const SizedBox(height: 16),
           
           // Assigned Unit
-          if (widget.complaint.assignedUnit != null) ...[
+          if (displayComplaint.assignedUnit != null) ...[
             _buildInfoRow(
               icon: Icons.security,
               label: 'PNP Unit',
-              value: widget.complaint.assignedUnit!,
+              value: displayComplaint.assignedUnit!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
           // Assigned Officer
-          if (widget.complaint.assignedOfficer != null) ...[
+          if (displayComplaint.assignedOfficer != null) ...[
             _buildInfoRow(
               icon: Icons.person_2,
               label: 'Assigned Officer',
-              value: widget.complaint.assignedOfficer!,
+              value: displayComplaint.assignedOfficer!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
           // Officer ID
-          if (widget.complaint.assignedOfficerId != null) ...[
+          if (displayComplaint.assignedOfficerId != null) ...[
             _buildInfoRow(
               icon: Icons.badge,
               label: 'Officer ID',
-              value: widget.complaint.assignedOfficerId!,
+              value: displayComplaint.assignedOfficerId!,
               isDark: isDark,
             ),
           ],
@@ -1486,31 +1597,31 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   bool _hasFinancialFields() {
-    return widget.complaint.estimatedFinancialLoss != null ||
-           widget.complaint.accountReference != null;
+    return displayComplaint.estimatedFinancialLoss != null ||
+           displayComplaint.accountReference != null;
   }
 
   bool _hasSuspectFields() {
-    return widget.complaint.suspectName != null ||
-           widget.complaint.suspectRelationship != null ||
-           widget.complaint.suspectContact != null ||
-           widget.complaint.suspectDetails != null;
+    return displayComplaint.suspectName != null ||
+           displayComplaint.suspectRelationship != null ||
+           displayComplaint.suspectContact != null ||
+           displayComplaint.suspectDetails != null;
   }
 
   bool _hasTechnicalFields() {
-    return widget.complaint.systemDetails != null ||
-           widget.complaint.technicalInfo != null ||
-           widget.complaint.vulnerabilityDetails != null ||
-           widget.complaint.attackVector != null ||
-           widget.complaint.securityLevel != null;
+    return displayComplaint.systemDetails != null ||
+           displayComplaint.technicalInfo != null ||
+           displayComplaint.vulnerabilityDetails != null ||
+           displayComplaint.attackVector != null ||
+           displayComplaint.securityLevel != null;
   }
 
   bool _hasLocationPlatformFields() {
-    return widget.complaint.incidentLocation != null ||
-           widget.complaint.platformWebsite != null ||
-           widget.complaint.targetInfo != null ||
-           widget.complaint.contentDescription != null ||
-           widget.complaint.impactAssessment != null;
+    return displayComplaint.incidentLocation != null ||
+           displayComplaint.platformWebsite != null ||
+           displayComplaint.targetInfo != null ||
+           displayComplaint.contentDescription != null ||
+           displayComplaint.impactAssessment != null;
   }
 
   Widget _buildFinancialCard(bool isDark) {
@@ -1560,21 +1671,21 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           
-          if (widget.complaint.estimatedFinancialLoss != null) ...[
+          if (displayComplaint.estimatedFinancialLoss != null) ...[
             _buildInfoRow(
               icon: Icons.money_off,
               label: 'Financial Loss',
-              value: '₱${widget.complaint.estimatedFinancialLoss!.toStringAsFixed(2)}',
+              value: '₱${displayComplaint.estimatedFinancialLoss!.toStringAsFixed(2)}',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.accountReference != null) ...[
+          if (displayComplaint.accountReference != null) ...[
             _buildInfoRow(
               icon: Icons.account_balance,
               label: 'Account/Reference',
-              value: widget.complaint.accountReference!,
+              value: displayComplaint.accountReference!,
               isDark: isDark,
             ),
           ],
@@ -1630,41 +1741,41 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           
-          if (widget.complaint.suspectName != null) ...[
+          if (displayComplaint.suspectName != null) ...[
             _buildInfoRow(
               icon: Icons.person,
               label: 'Suspect Name',
-              value: widget.complaint.suspectName!,
+              value: displayComplaint.suspectName!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.suspectRelationship != null) ...[
+          if (displayComplaint.suspectRelationship != null) ...[
             _buildInfoRow(
               icon: Icons.family_restroom,
               label: 'Relationship',
-              value: widget.complaint.suspectRelationship!,
+              value: displayComplaint.suspectRelationship!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.suspectContact != null) ...[
+          if (displayComplaint.suspectContact != null) ...[
             _buildInfoRow(
               icon: Icons.contact_phone,
               label: 'Contact Info',
-              value: widget.complaint.suspectContact!,
+              value: displayComplaint.suspectContact!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.suspectDetails != null) ...[
+          if (displayComplaint.suspectDetails != null) ...[
             _buildInfoRow(
               icon: Icons.info,
               label: 'Additional Details',
-              value: widget.complaint.suspectDetails!,
+              value: displayComplaint.suspectDetails!,
               isDark: isDark,
             ),
           ],
@@ -1720,51 +1831,51 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           
-          if (widget.complaint.systemDetails != null) ...[
+          if (displayComplaint.systemDetails != null) ...[
             _buildInfoRow(
               icon: Icons.devices,
               label: 'System Details',
-              value: widget.complaint.systemDetails!,
+              value: displayComplaint.systemDetails!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.technicalInfo != null) ...[
+          if (displayComplaint.technicalInfo != null) ...[
             _buildInfoRow(
               icon: Icons.code,
               label: 'Technical Info',
-              value: widget.complaint.technicalInfo!,
+              value: displayComplaint.technicalInfo!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.vulnerabilityDetails != null) ...[
+          if (displayComplaint.vulnerabilityDetails != null) ...[
             _buildInfoRow(
               icon: Icons.security,
               label: 'Vulnerability',
-              value: widget.complaint.vulnerabilityDetails!,
+              value: displayComplaint.vulnerabilityDetails!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.attackVector != null) ...[
+          if (displayComplaint.attackVector != null) ...[
             _buildInfoRow(
               icon: Icons.gps_fixed,
               label: 'Attack Vector',
-              value: widget.complaint.attackVector!,
+              value: displayComplaint.attackVector!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.securityLevel != null) ...[
+          if (displayComplaint.securityLevel != null) ...[
             _buildInfoRow(
               icon: Icons.verified_user,
               label: 'Security Level',
-              value: widget.complaint.securityLevel!,
+              value: displayComplaint.securityLevel!,
               isDark: isDark,
             ),
           ],
@@ -1820,51 +1931,51 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           
-          if (widget.complaint.incidentLocation != null) ...[
+          if (displayComplaint.incidentLocation != null) ...[
             _buildInfoRow(
               icon: Icons.place,
               label: 'Incident Location',
-              value: widget.complaint.incidentLocation!,
+              value: displayComplaint.incidentLocation!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.platformWebsite != null) ...[
+          if (displayComplaint.platformWebsite != null) ...[
             _buildInfoRow(
               icon: Icons.web,
               label: 'Platform/Website',
-              value: widget.complaint.platformWebsite!,
+              value: displayComplaint.platformWebsite!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.targetInfo != null) ...[
+          if (displayComplaint.targetInfo != null) ...[
             _buildInfoRow(
               icon: Icons.my_location,
               label: 'Target Information',
-              value: widget.complaint.targetInfo!,
+              value: displayComplaint.targetInfo!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.contentDescription != null) ...[
+          if (displayComplaint.contentDescription != null) ...[
             _buildInfoRow(
               icon: Icons.content_copy,
               label: 'Content Description',
-              value: widget.complaint.contentDescription!,
+              value: displayComplaint.contentDescription!,
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (widget.complaint.impactAssessment != null) ...[
+          if (displayComplaint.impactAssessment != null) ...[
             _buildInfoRow(
               icon: Icons.assessment,
               label: 'Impact Assessment',
-              value: widget.complaint.impactAssessment!,
+              value: displayComplaint.impactAssessment!,
               isDark: isDark,
             ),
           ],
@@ -1939,10 +2050,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   // Enhanced Risk Card with AI indication
   Widget _buildEnhancedRiskCard() {
     // Use AI risk score if available, fallback to regular risk score
-    final effectiveRiskScore = widget.complaint.aiRiskScore ?? widget.complaint.riskScore;
-    final isAiAssessed = widget.complaint.aiRiskScore != null;
+    final effectiveRiskScore = displayComplaint.aiRiskScore ?? displayComplaint.riskScore;
+    final isAiAssessed = displayComplaint.aiRiskScore != null;
     final riskColor = _getRiskColor(effectiveRiskScore);
-    final hasHighConfidence = widget.complaint.aiConfidenceScore != null && widget.complaint.aiConfidenceScore! >= 80;
+    final hasHighConfidence = displayComplaint.aiConfidenceScore != null && displayComplaint.aiConfidenceScore! >= 80;
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1985,12 +2096,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   // Check if complaint has AI assessment data
   bool _hasAiAssessment() {
-    return widget.complaint.aiPriority != null ||
-           widget.complaint.aiRiskScore != null ||
-           widget.complaint.aiConfidenceScore != null ||
-           widget.complaint.riskFactors != null ||
-           widget.complaint.urgencyIndicators != null ||
-           widget.complaint.aiReasoning != null;
+    return displayComplaint.aiPriority != null ||
+           displayComplaint.aiRiskScore != null ||
+           displayComplaint.aiConfidenceScore != null ||
+           displayComplaint.riskFactors != null ||
+           displayComplaint.urgencyIndicators != null ||
+           displayComplaint.aiReasoning != null;
   }
 
   // AI Assessment Card
@@ -2060,9 +2171,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   ],
                 ),
               ),
-              if (widget.complaint.lastAiAssessment != null)
+              if (displayComplaint.lastAiAssessment != null)
                 Text(
-                  'Updated ${_formatTimeAgo(widget.complaint.lastAiAssessment!)}',
+                  'Updated ${_formatTimeAgo(displayComplaint.lastAiAssessment!)}',
                   style: TextStyle(
                     fontSize: 10,
                     color: isDark ? Colors.grey[500] : Colors.grey[500],
@@ -2077,12 +2188,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           Row(
             children: [
               // AI Priority
-              if (widget.complaint.aiPriority != null) ...[
+              if (displayComplaint.aiPriority != null) ...[
                 Expanded(
                   child: _buildAiMetricCard(
                     title: 'AI Priority',
-                    value: widget.complaint.aiPriority!.toUpperCase(),
-                    color: _getPriorityColor(widget.complaint.aiPriority!),
+                    value: displayComplaint.aiPriority!.toUpperCase(),
+                    color: _getPriorityColor(displayComplaint.aiPriority!),
                     icon: Icons.priority_high,
                     isDark: isDark,
                   ),
@@ -2091,12 +2202,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               ],
               
               // AI Risk Score
-              if (widget.complaint.aiRiskScore != null) ...[
+              if (displayComplaint.aiRiskScore != null) ...[
                 Expanded(
                   child: _buildAiMetricCard(
                     title: 'Risk Score',
-                    value: '${widget.complaint.aiRiskScore}%',
-                    color: _getRiskColor(widget.complaint.aiRiskScore!),
+                    value: '${displayComplaint.aiRiskScore}%',
+                    color: _getRiskColor(displayComplaint.aiRiskScore!),
                     icon: Icons.trending_up,
                     isDark: isDark,
                   ),
@@ -2105,12 +2216,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               ],
               
               // AI Confidence
-              if (widget.complaint.aiConfidenceScore != null) ...[
+              if (displayComplaint.aiConfidenceScore != null) ...[
                 Expanded(
                   child: _buildAiMetricCard(
                     title: 'Confidence',
-                    value: '${widget.complaint.aiConfidenceScore}%',
-                    color: _getConfidenceColor(widget.complaint.aiConfidenceScore!),
+                    value: '${displayComplaint.aiConfidenceScore}%',
+                    color: _getConfidenceColor(displayComplaint.aiConfidenceScore!),
                     icon: Icons.verified,
                     isDark: isDark,
                   ),
@@ -2120,19 +2231,19 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           
           // Risk Factors
-          if (widget.complaint.riskFactors != null && widget.complaint.riskFactors!.isNotEmpty) ...[
+          if (displayComplaint.riskFactors != null && displayComplaint.riskFactors!.isNotEmpty) ...[
             const SizedBox(height: 20),
             _buildRiskFactorsSection(isDark),
           ],
           
           // Urgency Indicators
-          if (widget.complaint.urgencyIndicators != null && widget.complaint.urgencyIndicators!.isNotEmpty) ...[
+          if (displayComplaint.urgencyIndicators != null && displayComplaint.urgencyIndicators!.isNotEmpty) ...[
             const SizedBox(height: 16),
             _buildUrgencyIndicatorsSection(isDark),
           ],
           
           // AI Reasoning
-          if (widget.complaint.aiReasoning != null && widget.complaint.aiReasoning!.isNotEmpty) ...[
+          if (displayComplaint.aiReasoning != null && displayComplaint.aiReasoning!.isNotEmpty) ...[
             const SizedBox(height: 20),
             _buildAiReasoningSection(isDark),
           ],
@@ -2191,7 +2302,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   // Risk Factors Section
   Widget _buildRiskFactorsSection(bool isDark) {
-    List<String> factors = widget.complaint.riskFactors;
+    List<String> factors = displayComplaint.riskFactors;
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2244,7 +2355,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   // Urgency Indicators Section
   Widget _buildUrgencyIndicatorsSection(bool isDark) {
-    List<String> indicators = widget.complaint.urgencyIndicators;
+    List<String> indicators = displayComplaint.urgencyIndicators;
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2331,7 +2442,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ),
           ),
           child: Text(
-            widget.complaint.aiReasoning!,
+            displayComplaint.aiReasoning!,
             style: TextStyle(
               fontSize: 13,
               color: isDark ? Colors.grey[200] : Colors.grey[700],
