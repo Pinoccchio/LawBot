@@ -1,99 +1,127 @@
-# LawBot - AI Legal Assistant for Philippine Cybercrime Law
+# LawBot - AI-Powered Cybercrime Reporting Platform
 
 ## Overview
 
-LawBot is a mobile application designed to be a personal legal assistant, providing accessible information and guidance on cybercrime laws in the Philippines. It leverages AI to help users understand complex legal topics, connect with resources, and get answers to their questions in a conversational manner.
+LawBot is a comprehensive AI-powered cybercrime reporting and investigation platform designed for the Philippines. It consists of a Flutter mobile app for citizens to report cybercrimes and a Next.js web application for PNP officers and administrators to manage investigations.
 
-## Key Features
+## Project Components
 
--   **🤖 AI Legal Chat Assistant**: Get answers to your legal questions about Philippine cybercrime laws from an AI-powered chatbot using Google's Generative AI.
--   **📚 Legal Resources**: Access a database of cybercrime laws, government agency contacts, and educational materials on digital safety.
--   **📊 Chat History**: Review and search your past conversations with the legal assistant.
--   **👤 User Profiles**: Create and manage a personal account with a customizable profile picture.
--   **🔐 Secure Authentication**: Secure sign-up and sign-in using Firebase Authentication.
+### 1. Flutter Mobile App (✅ Fully Functional)
+Public-facing cybercrime reporting system with AI-enhanced features:
+- **AI-Powered Reporting**: 10 crime categories with 67+ specific crime types
+- **Smart Evidence Suggestions**: AI-generated contextual recommendations
+- **Report Credibility Meter**: Real-time completeness scoring
+- **Pattern Detection**: Cross-report scammer identification
+- **Dynamic Forms**: 32 configurable fields that adapt by crime type
+- **Evidence Upload**: Support for images, videos, documents (max 5 files, 25MB)
+- **Real-time Updates**: Live case status tracking
 
-## Technologies Used
+### 2. Next.js Web Application (✅ Interface Complete, 🔧 Database Integration Pending)
+Administrative and investigative dashboard for law enforcement:
+- **Dual-Role Interface**: Separate dashboards for Admins and PNP Officers
+- **AI Case Management**: Priority-based case handling
+- **Evidence Viewer**: Secure evidence management with chain of custody
+- **Advanced Analytics**: Performance metrics and case statistics
+- **Officer Assignment**: Workload management and case distribution
 
--   **Framework**: Flutter/Dart
--   **Backend & Authentication**: Firebase
--   **Database & Storage**: Supabase
--   **AI Chat**: Google Generative AI (`google_generative_ai`)
--   **State Management**: Provider (`provider`)
--   **Key Packages**:
-    -   `image_picker`: For selecting profile pictures.
-    -   `cached_network_image`: For efficient image caching.
-    -   `url_launcher`: For opening external links to legal resources.
-    -   `shared_preferences`: For local data persistence.
-    -   `share_plus`: For sharing content from the app.
+## Tech Stack
 
-## Installation
+### Mobile App
+- **Framework**: Flutter 3.0+ with Dart
+- **Authentication**: Firebase Auth
+- **Database**: Supabase (PostgreSQL)
+- **AI Integration**: Google Gemini 2.0 Flash
+- **State Management**: Provider pattern
+- **Key Features**: AI caching system with 20-40x performance improvement
 
-### Prerequisites
+### Web App
+- **Framework**: Next.js 15.4.4 with React 19.1.0
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS with custom design system
+- **UI Components**: Radix UI primitives
+- **Authentication**: Firebase Auth (ready for integration)
 
--   Flutter SDK (3.0.0 or higher)
--   Dart SDK (3.0.0 or higher)
--   Android Studio / VS Code with Flutter extensions
--   A Firebase project
--   A Supabase project
+## Quick Start
 
-### Setup Instructions
+### Mobile App Setup
+```bash
+# Clone the repository
+git clone [repository-url]
+cd LawBot
 
-1.  **Clone the repository**
+# Install dependencies
+flutter pub get
 
-    ```bash
-    git clone https://github.com/yourusername/lawbot.git
-    cd lawbot
-    ```
-
-2.  **Install dependencies**
-
-    ```bash
-    flutter pub get
-    ```
-
-3.  **Configure Firebase**
-    -   Create a Firebase project.
-    -   Add your Android/iOS app to the project.
-    -   Download `google-services.json` (for Android) or `GoogleService-Info.plist` (for iOS) and place it in the appropriate directory.
-    -   Enable Email/Password authentication in the Firebase console.
-
-4.  **Configure Supabase**
-    -   Create a Supabase project.
-    -   Set up the necessary tables (e.g., `user_profiles`, `chat_history`).
-    -   Add your Supabase URL and anon key to the app's configuration file.
-
-5.  **Run the app**
-
-    ```bash
-    flutter run
-    ```
-
-## Project Structure
-
-```
-lib/
-├── assets/                 # Images and other static assets
-├── config/                 # Configuration files (e.g., Supabase)
-├── providers/              # State management (Provider)
-├── screens/                # UI screens for different app features
-├── services/               # Business logic (Firebase, Supabase, etc.)
-├── utils/                  # Utility functions and helpers
-├── widgets/                # Reusable UI components
-├── firebase_options.dart   # Firebase configuration
-└── main.dart               # App entry point
+# Run the app
+flutter run
 ```
 
-## Usage
+### Web App Setup
+```bash
+# Navigate to web app
+cd nextjs_web/LawbotWeb
 
--   **Authentication**: Sign up, log in, or reset your password.
--   **Chat**: Ask legal questions and receive AI-generated answers.
--   **Resources**: Browse and search for laws and articles.
--   **Profile**: Update your profile information and picture.
+# Install dependencies
+npm install
+
+# Run development server
+npm run dev
+```
+
+## Key Documentation
+
+- **`CLAUDE.md`** - Complete project documentation and AI integration guide
+- **`CURRENT_DATABASE_SCHEMA.md`** - Database schema reference (15 tables)
+- **`nextjs_web/LawbotWeb/CLAUDE.md`** - Web app specific documentation
+- **`nextjs_web/LawbotWeb/ENVIRONMENT_SETUP.md`** - Web app environment configuration
+
+## Database Setup
+
+1. Create a Supabase project
+2. Run the SQL scripts from `CURRENT_DATABASE_SCHEMA.md`
+3. Configure authentication with Firebase
+4. Set up Supabase Storage bucket for evidence files
+
+## Environment Configuration
+
+### Mobile App
+- Add `google-services.json` to `android/app/`
+- Configure iOS in `ios/Runner/GoogleService-Info.plist`
+- Update Supabase credentials in `lib/config/supabase_config.dart`
+- Add Gemini API key for AI features
+
+### Web App
+- Configure Firebase in `src/lib/firebase.ts`
+- Set up Supabase client in `src/lib/supabase.ts`
+- Update environment variables as per `ENVIRONMENT_SETUP.md`
+
+## AI Features
+
+The platform includes sophisticated AI capabilities:
+- **Risk Assessment**: Automatic case prioritization (0-100 score)
+- **Evidence Guidance**: Context-aware evidence suggestions
+- **Pattern Detection**: Identifies potential scammers across reports
+- **Credibility Scoring**: Report quality assessment
+- **Smart Caching**: Reduces API costs with intelligent caching
+
+## Development Status
+
+### ✅ Completed
+- Mobile app with all AI features
+- Web app user interface
+- Database schema with 15 tables
+- AI integration with caching
+- Authentication setup
+
+### 🔧 In Progress
+- Web app database integration
+- Real-time synchronization
+- Production deployment configuration
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a pull request.
+Please read `CLAUDE.md` for detailed development guidelines and architecture information.
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+[License information to be added]

@@ -152,7 +152,12 @@ Uses Provider pattern with these key providers:
 - `AIDatabaseService`: AI caching and performance optimization
 - `ComplaintService`: Core complaint management
 - `AuthService`: Firebase authentication operations
-- `DatabaseService`: Supabase data operations
+- `DatabaseService`: Supabase data operations with notifications support
+- `RealtimeService`: Real-time database subscriptions
+- `ConnectivityService`: Network status monitoring
+- `DynamicFieldService`: Dynamic form field configuration
+- `PNPUnitsService`: Police unit management
+- `GeminiService`: Direct Gemini AI integration
 
 #### Web App Services (✅ Interface Complete, 🔧 Data Integration Pending)
 - `ComplaintService`: Case management operations (ready for live data)
@@ -175,7 +180,7 @@ Uses Provider pattern with these key providers:
 ### Supabase Configuration (Both Apps)
 - **Mobile App**: Database credentials in `lib/config/supabase_config.dart`
 - **Web App**: Supabase client configured in `src/lib/supabase.ts`
-- **Database Schema**: Enhanced with AI tables and audit trails
+- **Database Schema**: See `CURRENT_DATABASE_SCHEMA.md` for complete reference
 - **Performance**: AI caching reduces API costs and improves response times
 
 ### API Keys and Environment
@@ -189,7 +194,7 @@ Uses Provider pattern with these key providers:
 - Flutter SDK 3.0.0 or higher
 - Android Studio / Xcode for platform-specific builds
 - Firebase project with authentication enabled
-- Supabase project with AI-enhanced database schema
+- Supabase project with database schema from `CURRENT_DATABASE_SCHEMA.md`
 - Gemini API access for AI features
 
 #### Web App

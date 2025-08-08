@@ -343,7 +343,37 @@ class ComplaintService {
         type: 'success',
         priority: 'normal',
         category: 'complaint_status',
+        relatedComplaintId: complaintId,
       );
+
+      // Create notification for assigned officer if exists
+      if (complaint.assignedOfficerId != null && complaint.assignedOfficerId!.isNotEmpty) {
+        try {
+          // Determine priority based on risk score
+          final notificationPriority = _getNotificationPriority(complaint.riskScore ?? 50);
+          
+          await _databaseService.saveNotificationForUser(
+            userId: complaint.assignedOfficerId!,
+            title: 'New Case Assignment',
+            message: 'You have been assigned to case ${complaint.complaintNumber ?? complaintId} - ${complaint.crimeType.displayName}',
+            type: 'case_assignment',
+            priority: notificationPriority,
+            category: 'officer_assignment',
+            relatedComplaintId: complaintId,
+            senderName: 'Case Management System',
+            additionalData: {
+              'crime_type': complaint.crimeType.name,
+              'risk_score': complaint.riskScore,
+              'priority': complaint.priority,
+              'complainant_name': complaint.fullName,
+            },
+          );
+          print('✅ Officer notification sent to: ${complaint.assignedOfficer}');
+        } catch (e) {
+          print('⚠️ Failed to send officer notification: $e');
+          // Don't fail the processing if officer notification fails
+        }
+      }
 
       // Log analytics event
       await _databaseService.saveUserAnalytics(
@@ -354,12 +384,21 @@ class ComplaintService {
           'priority': complaint.priority,
           'risk_score': complaint.riskScore,
           'evidence_count': complaint.evidenceFiles.length,
+          'has_assigned_officer': complaint.assignedOfficerId != null,
         },
       );
     } catch (e) {
       print('Error in post-submission processing: $e');
       // Don't throw error as submission was successful
     }
+  }
+
+  /// Get notification priority based on risk score
+  String _getNotificationPriority(int riskScore) {
+    if (riskScore >= 80) return 'urgent';
+    if (riskScore >= 60) return 'high';
+    if (riskScore >= 40) return 'normal';
+    return 'low';
   }
 
   /// Convert database map to Complaint object
@@ -425,10 +464,24 @@ class ComplaintService {
         createdAt: DateTime.parse(data['created_at']),
         updatedAt: DateTime.parse(data['updated_at']),
         complaintNumber: data['complaint_number'],
-        assignedOfficer: assignedOfficer,
-        assignedOfficerId: assignedOfficerId,
+        assignedOfficer: assignedOfficer ?? data['assigned_officer'],
+        assignedOfficerId: assignedOfficerId ?? data['assigned_officer_id'],
         remarks: data['remarks'],
         statusHistory: [], // Status history loaded separately when needed
+        // AI Assessment Fields
+        aiPriority: data['ai_priority'],
+        aiRiskScore: data['ai_risk_score']?.toInt(),
+        aiConfidenceScore: data['ai_confidence_score']?.toInt(),
+        riskFactors: data['risk_factors'] != null 
+            ? List<String>.from(data['risk_factors']) 
+            : [],
+        urgencyIndicators: data['urgency_indicators'] != null 
+            ? List<String>.from(data['urgency_indicators']) 
+            : [],
+        lastAiAssessment: data['last_ai_assessment'] != null 
+            ? DateTime.parse(data['last_ai_assessment']) 
+            : null,
+        aiReasoning: data['ai_reasoning'],
       );
     } catch (e) {
       print('Error converting database data to Complaint: $e');

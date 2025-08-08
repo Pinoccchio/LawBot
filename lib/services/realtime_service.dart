@@ -22,17 +22,21 @@ class RealtimeService {
       StreamController<List<Complaint>>.broadcast();
   final StreamController<Map<String, dynamic>> _notificationsController = 
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _officerAssignmentController = 
+      StreamController<Map<String, dynamic>>.broadcast();
 
   // Subscription references
   RealtimeChannel? _complaintsChannel;
   RealtimeChannel? _statusHistoryChannel;
   RealtimeChannel? _notificationsChannel;
+  RealtimeChannel? _caseAssignmentsChannel;
 
   // Getters for streams
   Stream<ComplaintStatusUpdate> get statusUpdates => _statusUpdatesController.stream;
   Stream<List<Complaint>> get activeComplaints => _activeComplaintsController.stream;
   Stream<List<Complaint>> get completedComplaints => _completedComplaintsController.stream;
   Stream<Map<String, dynamic>> get notifications => _notificationsController.stream;
+  Stream<Map<String, dynamic>> get officerAssignments => _officerAssignmentController.stream;
 
   /// Initialize real-time subscriptions
   Future<void> initialize() async {
@@ -45,6 +49,7 @@ class RealtimeService {
       await _subscribeToComplaints();
       await _subscribeToStatusHistory();
       await _subscribeToNotifications();
+      await _subscribeToCaseAssignments();
       print('✅ Realtime subscriptions initialized');
     } catch (e) {
       print('❌ Error initializing realtime subscriptions: $e');
@@ -56,11 +61,13 @@ class RealtimeService {
     _complaintsChannel?.unsubscribe();
     _statusHistoryChannel?.unsubscribe();
     _notificationsChannel?.unsubscribe();
+    _caseAssignmentsChannel?.unsubscribe();
     
     _statusUpdatesController.close();
     _activeComplaintsController.close();
     _completedComplaintsController.close();
     _notificationsController.close();
+    _officerAssignmentController.close();
     
     print('✅ Realtime service disposed');
   }
@@ -337,6 +344,121 @@ class RealtimeService {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
+    }
+  }
+
+  /// Subscribe to case assignment changes (for officers)
+  Future<void> _subscribeToCaseAssignments() async {
+    if (currentUserId == null) return;
+
+    _caseAssignmentsChannel = _supabase.channel('case_assignments_$currentUserId')
+      .onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'case_assignments',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'officer_id',
+          value: currentUserId!,
+        ),
+        callback: _handleCaseAssignmentChange,
+      )
+      .subscribe();
+  }
+
+  /// Handle case assignment changes (for officer notifications)
+  void _handleCaseAssignmentChange(PostgresChangePayload payload) {
+    try {
+      print('👮 Case assignment change detected: ${payload.eventType}');
+      
+      switch (payload.eventType) {
+        case PostgresChangeEvent.insert:
+          _handleNewCaseAssignment(payload.newRecord);
+          break;
+        case PostgresChangeEvent.update:
+          _handleCaseAssignmentUpdate(payload.oldRecord, payload.newRecord);
+          break;
+        case PostgresChangeEvent.delete:
+          _handleCaseAssignmentRemoval(payload.oldRecord);
+          break;
+        default:
+          break;
+      }
+    } catch (e) {
+      print('Error handling case assignment change: $e');
+    }
+  }
+
+  /// Handle new case assignment
+  void _handleNewCaseAssignment(Map<String, dynamic>? record) {
+    if (record == null) return;
+    
+    print('🚨 New case assigned: ${record['complaint_id']}');
+    
+    // Notify the officer assignment stream
+    _officerAssignmentController.add({
+      'type': 'new_assignment',
+      'complaint_id': record['complaint_id'],
+      'officer_id': record['officer_id'],
+      'assigned_at': record['assigned_at'],
+      'status': record['status'],
+    });
+
+    // Create notification for the officer
+    _createOfficerAssignmentNotification(record);
+  }
+
+  /// Handle case assignment updates
+  void _handleCaseAssignmentUpdate(Map<String, dynamic>? oldRecord, Map<String, dynamic>? newRecord) {
+    if (oldRecord == null || newRecord == null) return;
+    
+    print('🔄 Case assignment updated: ${newRecord['complaint_id']}');
+    
+    _officerAssignmentController.add({
+      'type': 'assignment_update',
+      'complaint_id': newRecord['complaint_id'],
+      'old_status': oldRecord['status'],
+      'new_status': newRecord['status'],
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Handle case assignment removal
+  void _handleCaseAssignmentRemoval(Map<String, dynamic>? record) {
+    if (record == null) return;
+    
+    print('🗑️ Case assignment removed: ${record['complaint_id']}');
+    
+    _officerAssignmentController.add({
+      'type': 'assignment_removed',
+      'complaint_id': record['complaint_id'],
+      'officer_id': record['officer_id'],
+      'removed_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Create notification for officer assignment
+  Future<void> _createOfficerAssignmentNotification(Map<String, dynamic> assignmentRecord) async {
+    try {
+      // Get complaint details
+      final complaintData = await _supabase
+          .from('complaints')
+          .select('complaint_number, crime_type, title, priority')
+          .eq('id', assignmentRecord['complaint_id'])
+          .single();
+
+      await _databaseService.saveNotification(
+        title: '🚨 New Case Assignment',
+        message: 'You have been assigned to case ${complaintData['complaint_number']}: ${complaintData['title']}',
+        type: 'case_assignment',
+        priority: complaintData['priority'] ?? 'medium',
+        category: 'officer_assignment',
+        actionUrl: '/case/${assignmentRecord['complaint_id']}',
+      );
+
+      print('✅ Officer assignment notification created');
+    } catch (e) {
+      print('❌ Error creating officer assignment notification: $e');
     }
   }
 

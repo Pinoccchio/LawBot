@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:convert';
 import '../utils/philippine_time.dart';
 import '../models/complaint_model.dart';
 import 'ai_risk_assessment_service.dart';
@@ -327,7 +328,7 @@ class DatabaseService {
     }
   }
 
-  // Save notification
+  // Save notification for current user
   Future<bool> saveNotification({
     required String title,
     required String message,
@@ -335,22 +336,69 @@ class DatabaseService {
     String priority = 'normal',
     String category = 'system',
     String? actionUrl,
+    Map<String, dynamic>? additionalData,
+    String? relatedComplaintId,
   }) async {
     try {
       if (currentUserId == null) return false;
-      await _supabase.from('notifications').insert({
-        'user_id': currentUserId!,
+      return await saveNotificationForUser(
+        userId: currentUserId!,
+        title: title,
+        message: message,
+        type: type,
+        priority: priority,
+        category: category,
+        actionUrl: actionUrl,
+        additionalData: additionalData,
+        relatedComplaintId: relatedComplaintId,
+      );
+    } catch (e) {
+      print('Error saving notification: $e');
+      return false;
+    }
+  }
+
+  // Save notification for specific user (NEW METHOD)
+  Future<bool> saveNotificationForUser({
+    required String userId,
+    required String title,
+    required String message,
+    String type = 'info',
+    String priority = 'normal',
+    String category = 'system',
+    String? actionUrl,
+    Map<String, dynamic>? additionalData,
+    String? relatedComplaintId,
+    String senderName = 'System',
+  }) async {
+    try {
+      final notificationData = {
+        'user_id': userId,
         'title': title,
         'message': message,
         'type': type,
         'priority': priority,
         'notification_category': category,
         'action_url': actionUrl,
+        'sender_name': senderName,
         'created_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
-      });
+      };
+
+      // Add optional fields if provided
+      if (additionalData != null) {
+        // Convert Map to JSON for JSONB field
+        notificationData['additional_data'] = jsonEncode(additionalData);
+      }
+      if (relatedComplaintId != null) {
+        notificationData['related_complaint_id'] = relatedComplaintId;
+      }
+
+      await _supabase.from('notifications').insert(notificationData);
+      
+      print('✅ Notification saved for user: $userId');
       return true;
     } catch (e) {
-      print('Error saving notification: $e');
+      print('❌ Error saving notification for user $userId: $e');
       return false;
     }
   }
@@ -509,6 +557,26 @@ class DatabaseService {
         'System',
         'Complaint submitted successfully',
       );
+
+      // Create notification for assigned officer if exists
+      if (complaint.assignedOfficerId != null && complaint.assignedOfficerId!.isNotEmpty) {
+        try {
+          await saveNotificationForUser(
+            userId: complaint.assignedOfficerId!,
+            title: 'New Case Assignment',
+            message: 'You have been assigned to case $complaintNumber - ${complaint.crimeType.displayName}',
+            type: 'case_assignment',
+            priority: _getPriorityFromScore(complaint.riskScore ?? 50),
+            category: 'officer_assignment',
+            relatedComplaintId: complaintId,
+            senderName: 'Case Assignment System',
+          );
+          print('✅ Notification sent to assigned officer: ${complaint.assignedOfficer}');
+        } catch (e) {
+          print('⚠️ Failed to send notification to officer: $e');
+          // Don't fail the submission if notification fails
+        }
+      }
 
       print('✅ Complaint submitted successfully: $complaintNumber');
       return complaintId;
@@ -915,6 +983,30 @@ class DatabaseService {
     }
   }
 
+  // Convert risk score to notification priority
+  String _getPriorityFromScore(int riskScore) {
+    if (riskScore >= 80) return 'urgent';
+    if (riskScore >= 60) return 'high';
+    if (riskScore >= 40) return 'normal';
+    return 'low';
+  }
+
+  // Convert AI priority to notification priority
+  String _getNotificationPriorityFromAI(String aiPriority) {
+    switch (aiPriority.toLowerCase()) {
+      case 'urgent':
+      case 'critical':
+        return 'urgent';
+      case 'high':
+        return 'high';
+      case 'medium':
+        return 'normal';
+      case 'low':
+      default:
+        return 'low';
+    }
+  }
+
   // Helper: Generate complaint title based on crime type and description
   String _generateComplaintTitle(CrimeType crimeType, String description) {
     final words = description.split(' ').take(8);
@@ -1196,6 +1288,36 @@ class DatabaseService {
         'System',
         'Complaint submitted successfully with ${aiAssessment != null ? 'AI' : 'rule-based'} assessment',
       );
+
+      // Create notification for assigned officer if exists
+      if (complaint.assignedOfficerId != null && complaint.assignedOfficerId!.isNotEmpty) {
+        try {
+          // Use AI priority if available, otherwise use rule-based priority
+          final notificationPriority = aiPriorityScoring?.aiPriority != null 
+              ? _getNotificationPriorityFromAI(aiPriorityScoring!.aiPriority!) 
+              : _getPriorityFromScore(aiPriorityScoring?.riskScore ?? complaint.riskScore ?? 50);
+          
+          await saveNotificationForUser(
+            userId: complaint.assignedOfficerId!,
+            title: 'New Case Assignment',
+            message: 'You have been assigned to case $complaintNumber - ${complaint.crimeType.displayName}. Risk Level: ${aiPriorityScoring?.aiPriority ?? aiPriorityScoring?.priority ?? "medium"}',
+            type: 'case_assignment',
+            priority: notificationPriority,
+            category: 'officer_assignment',
+            relatedComplaintId: complaintId,
+            senderName: 'AI Case Assignment System',
+            additionalData: {
+              'ai_risk_score': aiPriorityScoring?.aiRiskScore ?? aiAssessment?.aiRiskScore,
+              'ai_priority': aiPriorityScoring?.aiPriority ?? aiAssessment?.aiPriority,
+              'crime_type': complaint.crimeType.name,
+            },
+          );
+          print('✅ Notification sent to assigned officer: ${complaint.assignedOfficer}');
+        } catch (e) {
+          print('⚠️ Failed to send notification to officer: $e');
+          // Don't fail the submission if notification fails
+        }
+      }
 
       print('✅ Complaint submitted successfully: $complaintNumber');
       return complaintId;
