@@ -395,20 +395,20 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION track_complaint_update()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Update the total_updates counter
-  NEW.total_updates = COALESCE(OLD.total_updates, 0) + 1;
+  -- Only update general complaint timestamp
+  -- DO NOT automatically set citizen update fields here
+  -- Citizen update fields (last_citizen_update, total_updates) should ONLY be set 
+  -- by the apply_complaint_update() function when citizens actually update complaints
   
-  -- Update last_citizen_update if it's a citizen update
-  IF TG_OP = 'UPDATE' AND NEW.status = 'Requires More Information' THEN
-    NEW.last_citizen_update = TIMEZONE('utc', NOW());
-  END IF;
+  -- Update general updated_at timestamp
+  NEW.updated_at = TIMEZONE('utc', NOW());
   
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 ```
 **Used by**: Database triggers
-**Purpose**: Automatically track complaint updates and citizen update timestamps
+**Purpose**: Track general complaint updates (citizen-specific tracking handled separately by apply_complaint_update function)
 
 ### 4. **get_complaint_with_updates()** - Get Complaint with Edit History
 ```sql
@@ -549,6 +549,13 @@ BEGIN
     USING (v_value #>> '{}'), p_complaint_id;
   END LOOP;
   
+  -- Update citizen update tracking fields (ONLY when citizen actually updates)
+  UPDATE complaints SET 
+    last_citizen_update = TIMEZONE('utc', NOW()),
+    total_updates = COALESCE(total_updates, 0) + 1,
+    updated_at = TIMEZONE('utc', NOW())
+  WHERE id = p_complaint_id;
+  
   -- Return success response
   RETURN jsonb_build_object(
     'success', true,
@@ -592,24 +599,30 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ### Flutter Mobile App
 - ✅ User registration and profile management
 - ✅ Complaint submission with AI assessment
-- ✅ Evidence file upload
+- ✅ Evidence file upload with proper MIME type detection
 - ✅ Real-time notifications
 - ✅ Status tracking and history
 - ✅ AI-powered features (risk assessment, evidence guidance, pattern detection)
 - ✅ Analytics tracking
-- ✅ **Complaint editing** (citizens can update complaints when status = "Requires More Information")
-- ✅ **Field-level change tracking** with complete audit trail
-- ✅ **AI re-assessment** after complaint updates
+- ✅ **Complete complaint editing system** (citizens can update complaints when status = "Requires More Information")
+- ✅ **Field-level change tracking** with complete audit trail and update history
+- ✅ **Visual update indicators** with green badges and detailed info panels in Reports tab
+- ✅ **Evidence upload during updates** with correct MIME types (image/jpeg, video/mp4, etc.) 
+- ✅ **AI re-assessment** automatically triggered after complaint updates
+- ✅ **Modern UI components** with blue/emerald gradient design and responsive layouts
 
 ### Next.js Web App
 - ✅ Admin and officer authentication
-- ✅ Case management dashboard
+- ✅ Case management dashboard with AI-powered prioritization
 - ✅ Officer assignment system
 - ✅ Status updates with templates
-- ✅ Evidence viewing
+- ✅ Evidence viewing with secure file handling
 - ✅ Unit management
-- ✅ **Complaint editing** (officers can update complaint information)
-- ✅ **Update history view** with detailed change logs
+- ✅ **PNP My Cases interface** with visual indicators for citizen updates
+- ✅ **Complaint update indicators** (green badges, "NEEDS REVIEW" alerts, update timestamps)
+- ✅ **Case Detail modal** with comprehensive update information display
+- ✅ **Officer request messages** showing what additional information was requested
+- ✅ **Update history tracking** with detailed change logs and field-level audit trail
 - ❌ Real-time updates (planned)
 
 ## 📝 Important Notes
@@ -624,16 +637,20 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ## 🔄 Recent Changes
 
 1. **Simplified Officer Assignment**: Removed complex notification system
-2. **Fixed Foreign Keys**: Updated to use firebase_uid instead of UUID references
+2. **Fixed Foreign Keys**: Updated to use firebase_uid instead of UUID references  
 3. **Enhanced AI Fields**: Added comprehensive AI assessment fields to complaints table
 4. **Extended Notifications**: Added new types for case management
-5. **Complaint Editing System**: Added complete complaint editing functionality
-   - ✅ `complaint_updates` table for field-level change tracking
-   - ✅ `track_complaint_update()` trigger for automatic tracking
-   - ✅ `get_complaint_with_updates()` function for retrieving edit history
-   - ✅ `apply_complaint_update()` function for secure citizen updates
-   - ✅ `complaint_update_history` view for audit trail visualization
-   - ✅ Additional fields in complaints table: `last_citizen_update`, `update_request_message`, `total_updates`
-   - ✅ Full integration in both Flutter and Next.js applications
+5. **Complete Complaint Editing System** (January 2025): Full citizen complaint editing functionality
+   - ✅ **complaint_updates table**: Field-level change tracking with audit trail
+   - ✅ **apply_complaint_update() function**: Secure citizen updates with proper citizen tracking fields
+   - ✅ **track_complaint_update() trigger**: Fixed to prevent false citizen update indicators
+   - ✅ **get_complaint_with_updates() function**: Retrieve edit history with permissions
+   - ✅ **Database constraints**: Removed suspect_relationship CHECK constraint for app-level validation
+   - ✅ **Additional complaint fields**: `last_citizen_update`, `update_request_message`, `total_updates`
+   - ✅ **Cross-platform integration**: Full Flutter mobile app and Next.js web app support
+   - ✅ **Visual indicators**: Update badges and info panels in both mobile and web interfaces
+   - ✅ **Evidence upload fix**: Proper MIME type detection for complaint updates (image/jpeg, video/mp4, etc.)
+   - ✅ **AI re-assessment**: Automatic AI risk assessment after citizen updates
+   - ✅ **Fixed false citizen indicators**: Officer status changes no longer trigger false "Case Updated by Citizen" indicators
 
 This schema represents the current production state of the LawBot platform as of January 2025.

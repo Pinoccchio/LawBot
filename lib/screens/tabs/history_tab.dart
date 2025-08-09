@@ -131,6 +131,12 @@ class _HistoryTabState extends State<HistoryTab> {
         assignedOfficer: assignedOfficer,
         remarks: data['remarks'],
         statusHistory: [], // Status history would be loaded separately if needed
+        // Citizen update fields for complaint editing
+        lastCitizenUpdate: data['last_citizen_update'] != null 
+            ? DateTime.parse(data['last_citizen_update']) 
+            : null,
+        updateRequestMessage: data['update_request_message'],
+        totalUpdates: data['total_updates'] ?? 0,
       );
     } catch (e) {
       print('Error converting database data to Complaint: $e');

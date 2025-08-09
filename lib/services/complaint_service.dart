@@ -716,18 +716,92 @@ class ComplaintService {
           .from('evidence-files')
           .getPublicUrl(filePath);
 
+      // Get proper MIME type from file extension (matching original complaint submission)
+      final properMimeType = _getMimeTypeFromExtension(file.name);
+
       // Save file metadata
       await _supabase.from('evidence_files').insert({
         'complaint_id': complaintId,
         'file_name': fileName,
         'file_path': filePath,
-        'file_type': file.mimeType ?? 'application/octet-stream',
+        'file_type': properMimeType,
         'file_size': fileBytes.length,
         'download_url': downloadUrl,
       });
     } catch (e) {
       print('Error uploading evidence file: $e');
       throw 'Failed to upload evidence file: ${e.toString()}';
+    }
+  }
+
+  /// Get proper MIME type from file extension (matches EvidenceFile.fromFile logic)
+  String _getMimeTypeFromExtension(String fileName) {
+    final extension = fileName.split('.').last.toLowerCase();
+    
+    switch (extension) {
+      // Image formats
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'bmp':
+        return 'image/bmp';
+      case 'svg':
+        return 'image/svg+xml';
+      
+      // Video formats
+      case 'mp4':
+        return 'video/mp4';
+      case 'mov':
+        return 'video/quicktime';
+      case 'avi':
+        return 'video/x-msvideo';
+      case 'mkv':
+        return 'video/x-matroska';
+      case 'webm':
+        return 'video/webm';
+      case '3gp':
+        return 'video/3gpp';
+      
+      // Audio formats
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'wav':
+        return 'audio/wav';
+      case 'aac':
+        return 'audio/aac';
+      case 'm4a':
+        return 'audio/mp4';
+      
+      // Document formats
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'txt':
+        return 'text/plain';
+      case 'rtf':
+        return 'application/rtf';
+      
+      // Archive formats
+      case 'zip':
+        return 'application/zip';
+      case 'rar':
+        return 'application/x-rar-compressed';
+      case '7z':
+        return 'application/x-7z-compressed';
+      
+      // Default fallback
+      default:
+        print('⚠️ Unknown file extension: $extension, using application/octet-stream');
+        return 'application/octet-stream';
     }
   }
 
