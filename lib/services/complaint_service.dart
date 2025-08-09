@@ -1,8 +1,10 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/complaint_model.dart';
 import '../utils/philippine_time.dart';
 import 'database_service.dart';
+import 'ai_risk_assessment_service.dart';
 
 /// Specialized service for advanced complaint operations
 /// Built on top of DatabaseService for enhanced functionality
@@ -497,6 +499,12 @@ class ComplaintService {
         targetInfo: data['target_info'],
         impactAssessment: data['impact_assessment'],
         contentDescription: data['content_description'],
+        // Complaint Editing Fields - mapping from snake_case to camelCase
+        lastCitizenUpdate: data['last_citizen_update'] != null 
+            ? DateTime.parse(data['last_citizen_update']) 
+            : null,
+        updateRequestMessage: data['update_request_message'],
+        totalUpdates: data['total_updates'] ?? 0,
       );
     } catch (e) {
       print('Error converting database data to Complaint: $e');
@@ -587,5 +595,209 @@ class ComplaintService {
     });
 
     return complaints;
+  }
+
+  // =============================================
+  // COMPLAINT UPDATE OPERATIONS
+  // =============================================
+
+  /// Update complaint when status is "Requires More Information"
+  Future<Map<String, dynamic>> updateComplaint({
+    required String complaintId,
+    required Map<String, dynamic> updates,
+    List<XFile>? newEvidenceFiles,
+    String? updateReason,
+    Map<String, dynamic>? deviceInfo,
+  }) async {
+    try {
+      // Validate user can update this complaint
+      final complaint = await getComplaintWithDetails(complaintId);
+      if (complaint == null) {
+        throw 'Complaint not found';
+      }
+
+      if (complaint.userId != currentUserId) {
+        throw 'Unauthorized: You can only update your own complaints';
+      }
+
+      if (complaint.status != ComplaintStatus.requiresMoreInfo) {
+        throw 'Complaint can only be updated when status is "Requires More Information"';
+      }
+
+      // Use the database function to apply updates
+      final result = await _supabase.rpc('apply_complaint_update', params: {
+        'p_complaint_id': complaintId,
+        'p_firebase_uid': currentUserId,  // Pass Firebase UID
+        'p_updates': updates,
+        'p_update_reason': updateReason,
+        'p_update_notes': 'Updated via mobile app',
+        'p_device_info': deviceInfo,
+      });
+
+      if (result == null || result['success'] != true) {
+        throw result?['error'] ?? 'Failed to update complaint';
+      }
+
+      // Upload new evidence files if provided
+      if (newEvidenceFiles != null && newEvidenceFiles.isNotEmpty) {
+        for (final file in newEvidenceFiles) {
+          await _uploadEvidenceFile(complaintId, file);
+        }
+      }
+
+      // Create notification for user
+      await _databaseService.saveNotification(
+        title: 'Complaint Updated Successfully',
+        message: 'Your complaint ${complaint.complaintNumber} has been updated with the requested information.',
+        type: 'success',
+        priority: 'normal',
+        category: 'complaint_status',
+        relatedComplaintId: complaintId,
+      );
+
+      // Trigger AI re-assessment
+      await _triggerAiReassessment(complaintId);
+
+      // Log analytics event
+      await _databaseService.saveUserAnalytics(
+        metricName: 'complaint_updated',
+        metricValue: {
+          'complaint_id': complaintId,
+          'fields_updated': updates.keys.toList(),
+          'update_count': updates.length,
+          'new_evidence_count': newEvidenceFiles?.length ?? 0,
+        },
+      );
+
+      return {
+        'success': true,
+        'update_id': result['update_id'],
+        'message': 'Complaint updated successfully',
+      };
+    } catch (e) {
+      print('Error updating complaint: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
+  /// Get complaint update history
+  Future<List<Map<String, dynamic>>> getComplaintUpdateHistory(String complaintId) async {
+    try {
+      final result = await _supabase
+          .from('complaint_update_history')
+          .select('*')
+          .eq('complaint_id', complaintId)
+          .order('created_at', ascending: false);
+
+      return List<Map<String, dynamic>>.from(result);
+    } catch (e) {
+      print('Error getting update history: $e');
+      return [];
+    }
+  }
+
+  /// Upload evidence file for complaint update
+  Future<void> _uploadEvidenceFile(String complaintId, XFile file) async {
+    try {
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+      final filePath = '$complaintId/$fileName';
+      
+      // Upload to storage
+      final fileBytes = await file.readAsBytes();
+      await _supabase.storage
+          .from('evidence-files')
+          .uploadBinary(filePath, fileBytes);
+
+      // Get download URL
+      final downloadUrl = _supabase.storage
+          .from('evidence-files')
+          .getPublicUrl(filePath);
+
+      // Save file metadata
+      await _supabase.from('evidence_files').insert({
+        'complaint_id': complaintId,
+        'file_name': fileName,
+        'file_path': filePath,
+        'file_type': file.mimeType ?? 'application/octet-stream',
+        'file_size': fileBytes.length,
+        'download_url': downloadUrl,
+      });
+    } catch (e) {
+      print('Error uploading evidence file: $e');
+      throw 'Failed to upload evidence file: ${e.toString()}';
+    }
+  }
+
+  /// Trigger AI re-assessment after complaint update
+  Future<void> _triggerAiReassessment(String complaintId) async {
+    try {
+      print('🤖 Triggering AI re-assessment for updated complaint: $complaintId');
+      
+      // Get the updated complaint data
+      final complaint = await getComplaintWithDetails(complaintId);
+      if (complaint == null) {
+        throw 'Complaint not found for re-assessment';
+      }
+      
+      // Prepare suspect info for AI assessment
+      final suspectInfo = {
+        'name': complaint.suspectName,
+        'relationship': complaint.suspectRelationship,
+        'contact': complaint.suspectContact,
+        'details': complaint.suspectDetails,
+      };
+      
+      // Perform AI risk assessment with updated data
+      final assessment = await AIRiskAssessmentService.assessComplaint(
+        description: complaint.description,
+        crimeType: complaint.crimeType,
+        evidenceFiles: complaint.evidenceFiles,
+        financialLoss: complaint.estimatedFinancialLoss,
+        suspectInfo: suspectInfo,
+        incidentDate: complaint.incidentDateTime,
+        incidentLocation: complaint.incidentLocation,
+        complaintId: complaintId,
+      );
+      
+      // Update complaint with new AI assessment results
+      await _supabase
+          .from('complaints')
+          .update({
+            'ai_priority': assessment.aiPriority,
+            'ai_risk_score': assessment.aiRiskScore,
+            'ai_confidence_score': assessment.confidenceScore,
+            'risk_factors': assessment.riskFactors,
+            'urgency_indicators': assessment.urgencyIndicators,
+            'ai_reasoning': assessment.reasoning,
+            'last_ai_assessment': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', complaintId);
+      
+      // Mark AI reassessment as completed in updates table
+      await _supabase
+          .from('complaint_updates')
+          .update({'ai_reassessment_completed': true})
+          .eq('complaint_id', complaintId)
+          .eq('ai_reassessment_completed', false);
+      
+      print('✅ AI re-assessment completed successfully');
+      
+      // Create notification about AI re-assessment
+      await _databaseService.saveNotification(
+        title: 'AI Assessment Updated',
+        message: 'Your complaint has been re-analyzed with updated information. Risk score: ${assessment.aiRiskScore}%',
+        type: 'info',
+        priority: 'normal',
+        category: 'complaint_status',
+        relatedComplaintId: complaintId,
+      );
+      
+    } catch (e) {
+      print('❌ Error triggering AI reassessment: $e');
+      // Don't throw error as this is not critical for the update process
+    }
   }
 }

@@ -196,6 +196,12 @@ class _ReportsTabState extends State<ReportsTab> {
         targetInfo: data['target_info'],
         impactAssessment: data['impact_assessment'],
         contentDescription: data['content_description'],
+        // Complaint Editing Fields - mapping from snake_case to camelCase
+        lastCitizenUpdate: data['last_citizen_update'] != null 
+            ? DateTime.parse(data['last_citizen_update']) 
+            : null,
+        updateRequestMessage: data['update_request_message'],
+        totalUpdates: data['total_updates'] ?? 0,
       );
     } catch (e) {
       print('Error converting database data to Complaint: $e');
@@ -733,61 +739,87 @@ class _ReportsTabState extends State<ReportsTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Enhanced Header Row with Priority and Risk
-                Row(
+                // Enhanced Header Row with Priority and Risk - Split into two rows to prevent overflow
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Crime Type
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2563EB).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        complaint.crimeTypeDisplay,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF2563EB),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Enhanced Priority Badge with AI indicator
-                    _buildEnhancedPriorityBadge(complaint),
-                    const Spacer(),
-                    // Enhanced Risk Score with AI indicator
-                    _buildEnhancedRiskBadge(complaint),
-                    const SizedBox(width: 8),
-                    // Status
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
+                    // First row: Crime Type and main badges
+                    Row(
+                      children: [
+                        // Crime Type - More flexible space
+                        Expanded(
+                          flex: 5,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: statusColor,
-                              shape: BoxShape.circle,
+                              color: const Color(0xFF2563EB).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              complaint.crimeTypeDisplay,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFF2563EB),
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            complaint.statusDisplay,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: statusColor,
-                              fontWeight: FontWeight.w600,
+                        ),
+                        const SizedBox(width: 6),
+                        // Enhanced Priority Badge with AI indicator
+                        _buildEnhancedPriorityBadge(complaint),
+                        const SizedBox(width: 6),
+                        // Enhanced Risk Score with AI indicator
+                        _buildEnhancedRiskBadge(complaint),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Second row: Status and Update Indicator
+                    Row(
+                      children: [
+                        // Status
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: statusColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    complaint.statusDisplay,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: statusColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                        ),
+                        // Add visual indicators for updated complaints
+                        if (complaint.requiresMoreInfoAndUpdated) ...[
+                          const SizedBox(width: 8),
+                          _buildUpdateIndicator(complaint),
                         ],
-                      ),
+                      ],
                     ),
                   ],
                 ),
@@ -818,6 +850,12 @@ class _ReportsTabState extends State<ReportsTab> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+                
+                // Show detailed update information for updated complaints
+                if (complaint.hasBeenUpdatedByCitizen) ...[
+                  const SizedBox(height: 8),
+                  _buildDetailedUpdateInfo(complaint, isDark),
+                ],
                 
                 const SizedBox(height: 12),
                 
@@ -1249,6 +1287,136 @@ class _ReportsTabState extends State<ReportsTab> {
           ),
         ),
       ],
+    );
+  }
+
+  // Build update indicator for complaints that have been updated by citizens
+  Widget _buildUpdateIndicator(Complaint complaint) {
+    if (!complaint.hasBeenUpdatedByCitizen) return const SizedBox.shrink();
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.green.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: Colors.green.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.update,
+            size: 10,
+            color: Colors.green,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            'Updated',
+            style: const TextStyle(
+              fontSize: 8,
+              color: Colors.green,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (complaint.totalUpdates > 1) ...[
+            const SizedBox(width: 2),
+            Text(
+              '(${complaint.totalUpdates})',
+              style: const TextStyle(
+                fontSize: 7,
+                color: Colors.green,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // Build detailed update information for updated complaints
+  Widget _buildDetailedUpdateInfo(Complaint complaint, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.green.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.green.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.check_circle,
+              size: 14,
+              color: Colors.green,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Citizen has provided updates',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green[700],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${complaint.updateStatusText} • Updated ${complaint.timeSinceLastUpdate}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.green[600],
+                  ),
+                ),
+                if (complaint.updateRequestMessage?.isNotEmpty == true) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Requested: ${complaint.updateRequestMessage}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              'NEEDS REVIEW',
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+                color: Colors.orange[700],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -10,6 +10,7 @@ import '../providers/theme_provider.dart';
 import '../utils/philippine_time.dart';
 import '../services/complaint_service.dart';
 import '../services/file_download_service.dart';
+import 'edit_complaint_screen.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final Complaint complaint;
@@ -26,6 +27,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   Complaint? _completeComplaint;
   bool _isLoadingDetails = false;
   String? _loadingError;
+  List<Map<String, dynamic>> _updateHistory = [];
 
   @override
   void initState() {
@@ -61,11 +63,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       final completeComplaint = await _complaintService.getComplaintWithDetails(complaintId);
       
       if (completeComplaint != null) {
+        // Load update history
+        final updateHistory = await _complaintService.getComplaintUpdateHistory(complaintId);
+        
         setState(() {
           _completeComplaint = completeComplaint;
+          _updateHistory = updateHistory;
           _isLoadingDetails = false;
         });
-        print('✅ Successfully loaded complaint with ${completeComplaint.statusHistory.length} status updates');
+        print('✅ Successfully loaded complaint with ${completeComplaint.statusHistory.length} status updates and ${updateHistory.length} field updates');
       } else {
         setState(() {
           _completeComplaint = displayComplaint; // Fallback to original
@@ -184,6 +190,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             // Status Timeline Card
             const SizedBox(height: 16),
             _buildStatusTimelineCard(isDark),
+            
+            // Update History Card (if complaint has been updated)
+            if (_hasUpdateHistory()) ...[
+              const SizedBox(height: 16),
+              _buildUpdateHistoryCard(isDark),
+            ],
             
             const SizedBox(height: 32),
           ],
@@ -427,6 +439,42 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               ),
             ],
           ),
+          
+          // Update Information Button when status is "Requires More Information"
+          if (displayComplaint.status == ComplaintStatus.requiresMoreInfo) ...[
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  // Import the edit screen at the top of the file
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EditComplaintScreen(
+                        complaint: displayComplaint,
+                      ),
+                    ),
+                  );
+                  
+                  // Refresh the complaint details if updated
+                  if (result == true) {
+                    _loadCompleteComplaintDetails();
+                  }
+                },
+                icon: const Icon(Icons.edit_note),
+                label: const Text('Update Information'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -3016,6 +3064,217 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     if (difference.inHours < 24) return '${difference.inHours}h ago';
     if (difference.inDays < 7) return '${difference.inDays}d ago';
     return '${(difference.inDays / 7).floor()}w ago';
+  }
+
+  // Check if complaint has update history
+  bool _hasUpdateHistory() {
+    return _updateHistory.isNotEmpty;
+  }
+
+  // Build update history card
+  Widget _buildUpdateHistoryCard(bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withOpacity(0.3)
+                : Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.history,
+                  color: Colors.orange,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Update History',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_updateHistory.length} Update${_updateHistory.length > 1 ? 's' : ''}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          
+          // Update entries
+          ..._updateHistory.map((update) {
+            final createdAt = DateTime.parse(update['created_at']);
+            final fieldsUpdated = List<String>.from(update['fields_updated'] ?? []);
+            final updaterName = update['updater_name'] ?? 'Unknown';
+            final updateType = update['update_type'] ?? 'citizen_update';
+            final updateNotes = update['update_notes'] ?? '';
+            
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark 
+                    ? Colors.black.withOpacity(0.2)
+                    : Colors.grey.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.1)
+                      : Colors.grey.withOpacity(0.2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        updateType == 'citizen_update' 
+                            ? Icons.person 
+                            : Icons.security,
+                        size: 16,
+                        color: updateType == 'citizen_update'
+                            ? Colors.blue
+                            : Colors.green,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          updaterName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white : Colors.black,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _formatTimeAgo(createdAt),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  
+                  // Fields updated
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: fieldsUpdated.map((field) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _formatFieldName(field),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  
+                  if (updateNotes.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      updateNotes,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.grey[300] : Colors.grey[700],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                  
+                  // AI reassessment indicator
+                  if (update['requires_ai_reassessment'] == true) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          update['ai_reassessment_completed'] == true
+                              ? Icons.check_circle
+                              : Icons.pending,
+                          size: 14,
+                          color: update['ai_reassessment_completed'] == true
+                              ? Colors.green
+                              : Colors.amber,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          update['ai_reassessment_completed'] == true
+                              ? 'AI re-assessment completed'
+                              : 'AI re-assessment pending',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: update['ai_reassessment_completed'] == true
+                                ? Colors.green
+                                : Colors.amber,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+
+  // Format field names for display
+  String _formatFieldName(String field) {
+    // Convert snake_case to Title Case
+    return field
+        .split('_')
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
   }
 }
 

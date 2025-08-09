@@ -360,6 +360,11 @@ class Complaint {
   final String? impactAssessment;
   final String? contentDescription;
 
+  // Complaint Editing Fields
+  final DateTime? lastCitizenUpdate;
+  final String? updateRequestMessage;
+  final int totalUpdates;
+
   Complaint({
     this.id,
     required this.userId,
@@ -408,6 +413,10 @@ class Complaint {
     this.targetInfo,
     this.impactAssessment,
     this.contentDescription,
+    // Complaint Editing Fields
+    this.lastCitizenUpdate,
+    this.updateRequestMessage,
+    this.totalUpdates = 0,
   });
 
   factory Complaint.create({
@@ -659,6 +668,12 @@ class Complaint {
       targetInfo: json['targetInfo'],
       impactAssessment: json['impactAssessment'],
       contentDescription: json['contentDescription'],
+      // Complaint Editing Fields
+      lastCitizenUpdate: json['lastCitizenUpdate'] != null
+          ? DateTime.parse(json['lastCitizenUpdate'])
+          : null,
+      updateRequestMessage: json['updateRequestMessage'],
+      totalUpdates: json['totalUpdates'] ?? 0,
     );
   }
 
@@ -710,6 +725,10 @@ class Complaint {
     String? targetInfo,
     String? impactAssessment,
     String? contentDescription,
+    // Complaint Editing Fields
+    DateTime? lastCitizenUpdate,
+    String? updateRequestMessage,
+    int? totalUpdates,
   }) {
     return Complaint(
       id: id ?? this.id,
@@ -760,6 +779,10 @@ class Complaint {
       targetInfo: targetInfo ?? this.targetInfo,
       impactAssessment: impactAssessment ?? this.impactAssessment,
       contentDescription: contentDescription ?? this.contentDescription,
+      // Complaint Editing Fields
+      lastCitizenUpdate: lastCitizenUpdate ?? this.lastCitizenUpdate,
+      updateRequestMessage: updateRequestMessage ?? this.updateRequestMessage,
+      totalUpdates: totalUpdates ?? this.totalUpdates,
     );
   }
 
@@ -778,6 +801,30 @@ class Complaint {
 
   String get effectivePriority => aiPriority ?? priority;
   int get effectiveRiskScore => aiRiskScore ?? riskScore;
+
+  // Complaint Editing Helper Methods
+  bool get hasBeenUpdatedByCitizen => lastCitizenUpdate != null;
+  bool get requiresMoreInfoAndUpdated => status == ComplaintStatus.requiresMoreInfo && hasBeenUpdatedByCitizen;
+  
+  String get updateStatusText {
+    if (!hasBeenUpdatedByCitizen) return '';
+    if (totalUpdates == 1) return '1 update';
+    return '$totalUpdates updates';
+  }
+  
+  String get timeSinceLastUpdate {
+    if (lastCitizenUpdate == null) return '';
+    final difference = DateTime.now().difference(lastCitizenUpdate!);
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
+  }
 
   String get prioritySource => aiPriority != null ? 'AI' : 'Rule-based';
   String get riskScoreSource => aiRiskScore != null ? 'AI' : 'Rule-based';

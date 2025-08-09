@@ -787,9 +787,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           final XFile? video = await picker.pickVideo(source: ImageSource.gallery);
           if (video != null) files = [video];
           break;
-        case 'documents':
-          files = await picker.pickMultiImage();
-          break;
       }
 
       if (files != null && files.isNotEmpty) {
@@ -858,12 +855,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             title: 'Video',
             subtitle: 'Select video evidence',
             onTap: () => Navigator.pop(context, 'video'),
-          ),
-          _buildFileOption(
-            icon: Icons.insert_drive_file,
-            title: 'Documents',
-            subtitle: 'PDF, DOC, TXT files',
-            onTap: () => Navigator.pop(context, 'documents'),
           ),
         ],
       ),
@@ -2167,7 +2158,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Accepted formats: images, videos, documents (max 5 files, 25MB total)',
+                            'Accepted formats: images and videos (max 5 files, 25MB total)',
                             style: TextStyle(
                               fontSize: 12,
                               color: isDark ? Colors.grey[400] : Colors.grey[600],
