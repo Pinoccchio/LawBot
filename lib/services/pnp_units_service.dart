@@ -415,6 +415,20 @@ class PNPUnit {
         return '🚨';
     }
   }
+
+  // Implement equality and hashCode for proper dropdown functionality
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! PNPUnit) return false;
+    
+    return id == other.id && 
+           unitName == other.unitName &&
+           unitCode == other.unitCode;
+  }
+
+  @override
+  int get hashCode => Object.hash(id, unitName, unitCode);
 }
 
 class PNPOfficer {
@@ -542,6 +556,20 @@ class PNPOfficer {
         return false;
     }
   }
+
+  // Implement equality and hashCode for proper dropdown functionality
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! PNPOfficer) return false;
+    
+    return id == other.id && 
+           firebaseUid == other.firebaseUid &&
+           badgeNumber == other.badgeNumber;
+  }
+
+  @override
+  int get hashCode => Object.hash(id, firebaseUid, badgeNumber);
 }
 
 class CrimeTypeWithUnit {

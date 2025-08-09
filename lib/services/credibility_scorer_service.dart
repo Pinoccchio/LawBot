@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/complaint_model.dart';
+import '../models/dynamic_field_config.dart';
+import '../services/dynamic_field_service.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -66,8 +68,8 @@ class CredibilityScorer {
   static Future<CredibilityScore> _getAICredibilityScore(Map<String, dynamic> formData, CrimeType crimeType) async {
     _debugLog('🎯 Building AI credibility assessment prompt');
     
-    // Prepare form data summary
-    final formSummary = _buildFormDataSummary(formData);
+    // Prepare form data summary (category-aware)
+    final formSummary = _buildFormDataSummary(formData, crimeType);
     
     final prompt = '''
 You are an expert cybercrime investigator for the Philippine National Police. Analyze the credibility and completeness of this cybercrime report and provide a detailed assessment.
@@ -80,13 +82,20 @@ You are an expert cybercrime investigator for the Philippine National Police. An
 **FORM DATA ANALYSIS:**
 $formSummary
 
+**IMPORTANT SCORING INSTRUCTIONS:**
+🔍 **CRITICAL**: Only evaluate fields that are RELEVANT to the "${crimeType.categoryName}" category.
+- DO NOT penalize missing fields that are not applicable to ${crimeType.displayName}
+- FOCUS ONLY on fields marked as "Relevant for ${crimeType.displayName}" in the analysis above
+- IGNORE fields not listed under "CATEGORY-SPECIFIC FIELDS" section
+- CORE FIELDS (name, email, phone, description, date, evidence) are always required
+
 **ASSESSMENT TASK:**
 Analyze this report's credibility and completeness across these key factors:
 
-1. **Information Completeness** - Are required fields filled out adequately?
-2. **Evidence Quality** - Is there sufficient evidence for investigation?
-3. **Report Consistency** - Are the details logical and consistent?
-4. **Urgency Indicators** - Are there signs this needs immediate attention?
+1. **Information Completeness** - Are the RELEVANT fields for ${crimeType.categoryName} filled adequately?
+2. **Evidence Quality** - Is there sufficient evidence for investigating ${crimeType.displayName}?
+3. **Report Consistency** - Are the details logical for this specific crime type?
+4. **Category Relevance** - Does the provided information match what's needed for ${crimeType.displayName}?
 
 **RESPONSE FORMAT:**
 Respond with a JSON object in this exact format:
@@ -97,32 +106,42 @@ Respond with a JSON object in this exact format:
     {
       "name": "Information Completeness",
       "score": 90,
-      "description": "Detailed assessment in Filipino/English mix",
-      "suggestions": ["Suggestion 1", "Suggestion 2"]
+      "description": "Assessment focusing only on relevant fields for ${crimeType.categoryName}",
+      "suggestions": ["Specific suggestions for ${crimeType.displayName}"]
+    },
+    {
+      "name": "Category Relevance", 
+      "score": 85,
+      "description": "How well the information fits ${crimeType.displayName} requirements",
+      "suggestions": ["Category-specific improvements"]
     }
   ],
   "key_suggestions": [
-    "Priority improvement 1",
-    "Priority improvement 2"
+    "Priority improvements specific to ${crimeType.displayName}",
+    "Focus on relevant evidence for this crime type"
   ],
   "confidence_level": 85
 }
 
-**SCORING GUIDELINES:**
-- 90-100: Excellent - Complete, credible, ready for investigation
-- 70-89: Good - Minor improvements needed
-- 50-69: Fair - Moderate improvements needed  
-- 30-49: Poor - Major improvements needed
-- 0-29: Critical - Significant issues, needs major revision
+**SCORING GUIDELINES FOR ${crimeType.categoryName.toUpperCase()}:**
+- 90-100: Excellent - All relevant fields complete, ready for ${crimeType.assignedUnit}
+- 70-89: Good - Most relevant fields complete, minor gaps
+- 50-69: Fair - Some relevant fields missing, needs improvement
+- 30-49: Poor - Many relevant fields incomplete for ${crimeType.displayName}
+- 0-29: Critical - Insufficient information for this crime type
 
 **REQUIREMENTS:**
 - Use Filipino/English mix naturally
-- Focus on practical investigation needs
-- Consider Philippine cybercrime context
-- Prioritize evidence that helps PNP investigators
-- Be specific about what's missing or needed
+- Focus ONLY on fields relevant to ${crimeType.categoryName}
+- Consider what ${crimeType.assignedUnit} needs for investigation
+- Be specific about missing RELEVANT information only
+- Acknowledge that irrelevant fields should be ignored
 
-Analyze this cybercrime report now:''';
+**EXAMPLE:**
+If this is Cyberbullying (Harassment & Exploitation), focus on suspect information, platform details, and harassment specifics.
+Do NOT penalize for missing financial loss amounts or technical system details - those are irrelevant.
+
+Analyze this ${crimeType.displayName} report now:''';
 
     _debugLog('📤 Sending credibility assessment prompt to Gemini AI (${prompt.length} characters)');
     
@@ -139,28 +158,34 @@ Analyze this cybercrime report now:''';
     return _parseAICredibilityResponse(aiResponse, crimeType);
   }
 
-  // Build a summary of form data for AI analysis
-  static String _buildFormDataSummary(Map<String, dynamic> formData) {
+  // Build a summary of form data for AI analysis (category-aware)
+  static String _buildFormDataSummary(Map<String, dynamic> formData, CrimeType crimeType) {
     final List<String> summary = [];
+    final categoryName = crimeType.categoryName;
     
-    // Basic Information
+    // Get visible fields for this crime category
+    final visibleFields = DynamicFieldConfig.getFieldsForCategory(categoryName);
+    
+    _debugLog('🎯 Analyzing ${visibleFields.length} visible fields for category: $categoryName');
+    
+    // Basic Information (always included)
     summary.add('**BASIC INFORMATION:**');
     summary.add('- Full Name: ${_getFieldStatus(formData['fullName'])}');
     summary.add('- Email: ${_getFieldStatus(formData['email'])}');
     summary.add('- Phone: ${_getFieldStatus(formData['phoneNumber'])}');
     summary.add('- Incident Date: ${_getFieldStatus(formData['incidentDateTime']?.toString())}');
     
-    // Description
+    // Description (always included)
     summary.add('\n**DESCRIPTION:**');
     final description = formData['description'] ?? '';
     if (description.isNotEmpty) {
       summary.add('- Length: ${description.length} characters');
       summary.add('- Content: "${description.length > 200 ? '${description.substring(0, 200)}...' : description}"');
     } else {
-      summary.add('- Status: Empty/Missing');
+      summary.add('- Status: Empty/Missing (CRITICAL - Always Required)');
     }
     
-    // Evidence Files
+    // Evidence Files (always included)
     summary.add('\n**EVIDENCE:**');
     final evidenceFiles = formData['evidenceFiles'] ?? [];
     if (evidenceFiles is List && evidenceFiles.isNotEmpty) {
@@ -169,24 +194,85 @@ Analyze this cybercrime report now:''';
       summary.add('- Files: No evidence files attached');
     }
     
-    // Financial Information
-    if (formData['estimatedFinancialLoss'] != null) {
-      summary.add('\n**FINANCIAL IMPACT:**');
-      summary.add('- Loss Amount: ₱${formData['estimatedFinancialLoss']}');
+    // Category-specific fields analysis
+    summary.add('\n**CATEGORY-SPECIFIC FIELDS FOR ${categoryName.toUpperCase()}:**');
+    
+    // Financial Information (only if visible for this category)
+    if (visibleFields.contains(ComplaintField.financialLoss)) {
+      if (formData['estimatedFinancialLoss'] != null) {
+        summary.add('- Financial Loss: ₱${formData['estimatedFinancialLoss']} (Provided - Important for this crime type)');
+      } else {
+        summary.add('- Financial Loss: Not provided (Missing - Important for ${crimeType.displayName})');
+      }
     }
     
-    // Suspect Information
-    summary.add('\n**SUSPECT DETAILS:**');
-    summary.add('- Name: ${_getFieldStatus(formData['suspectName'])}');
-    summary.add('- Contact: ${_getFieldStatus(formData['suspectContact'])}');
-    summary.add('- Relationship: ${formData['suspectRelationship'] ?? 'Unknown'}');
+    // Location (only if visible)
+    if (visibleFields.contains(ComplaintField.incidentLocation)) {
+      summary.add('- Location: ${_getFieldStatus(formData['incidentLocation'])}');
+    }
     
-    // Platform/Technical Details
-    if (formData['platformWebsite'] != null && formData['platformWebsite'].isNotEmpty) {
-      summary.add('\n**PLATFORM/TECHNICAL:**');
-      summary.add('- Platform: ${formData['platformWebsite']}');
+    // Platform/Website (only if visible)
+    if (visibleFields.contains(ComplaintField.platformWebsite)) {
+      summary.add('- Platform/Website: ${_getFieldStatus(formData['platformWebsite'])}');
+    }
+    
+    // Account Reference (only if visible)
+    if (visibleFields.contains(ComplaintField.accountReference)) {
       summary.add('- Account Reference: ${_getFieldStatus(formData['accountReference'])}');
     }
+    
+    // Suspect Information (only if visible for this category)
+    if (visibleFields.contains(ComplaintField.suspectName) || 
+        visibleFields.contains(ComplaintField.suspectContact) || 
+        visibleFields.contains(ComplaintField.suspectRelationship)) {
+      summary.add('\n**SUSPECT INFORMATION (Relevant for ${crimeType.displayName}):**');
+      
+      if (visibleFields.contains(ComplaintField.suspectName)) {
+        summary.add('- Name: ${_getFieldStatus(formData['suspectName'])}');
+      }
+      if (visibleFields.contains(ComplaintField.suspectContact)) {
+        summary.add('- Contact: ${_getFieldStatus(formData['suspectContact'])}');
+      }
+      if (visibleFields.contains(ComplaintField.suspectRelationship)) {
+        summary.add('- Relationship: ${formData['suspectRelationship'] ?? 'Not specified'}');
+      }
+      if (visibleFields.contains(ComplaintField.suspectDetails)) {
+        summary.add('- Additional Details: ${_getFieldStatus(formData['suspectDetails'])}');
+      }
+    }
+    
+    // Technical Fields (only if visible)
+    if (visibleFields.contains(ComplaintField.systemDetails) ||
+        visibleFields.contains(ComplaintField.technicalInfo) ||
+        visibleFields.contains(ComplaintField.attackVector)) {
+      summary.add('\n**TECHNICAL INFORMATION (Relevant for ${crimeType.displayName}):**');
+      
+      if (visibleFields.contains(ComplaintField.systemDetails)) {
+        summary.add('- System Details: ${_getFieldStatus(formData['systemDetails'])}');
+      }
+      if (visibleFields.contains(ComplaintField.technicalInfo)) {
+        summary.add('- Technical Info: ${_getFieldStatus(formData['technicalInfo'])}');
+      }
+      if (visibleFields.contains(ComplaintField.attackVector)) {
+        summary.add('- Attack Vector: ${_getFieldStatus(formData['attackVector'])}');
+      }
+    }
+    
+    // Additional category-specific fields
+    if (visibleFields.contains(ComplaintField.contentDescription)) {
+      summary.add('\n**CONTENT DETAILS:**');
+      summary.add('- Content Description: ${_getFieldStatus(formData['contentDescription'])}');
+    }
+    
+    if (visibleFields.contains(ComplaintField.impactAssessment)) {
+      summary.add('- Impact Assessment: ${_getFieldStatus(formData['impactAssessment'])}');
+    }
+    
+    // Add field relevance context
+    summary.add('\n**FIELD ANALYSIS CONTEXT:**');
+    summary.add('- Crime Category: ${categoryName}');
+    summary.add('- Expected Fields: ${visibleFields.length} fields relevant for this crime type');
+    summary.add('- Note: Only fields relevant to ${crimeType.displayName} should be considered for completeness scoring');
     
     return summary.join('\n');
   }
@@ -270,49 +356,127 @@ Analyze this cybercrime report now:''';
     }
   }
 
-  // Fallback credibility scoring when AI fails
+  // Fallback credibility scoring when AI fails (category-aware)
   static CredibilityScore _getFallbackCredibilityScore(Map<String, dynamic> formData, CrimeType crimeType) {
-    _debugLog('🔄 Generating fallback credibility score');
+    _debugLog('🔄 Generating fallback credibility score for ${crimeType.displayName}');
+    
+    final categoryName = crimeType.categoryName;
+    final visibleFields = DynamicFieldConfig.getFieldsForCategory(categoryName);
+    
+    _debugLog('🎯 Fallback scoring using ${visibleFields.length} relevant fields for $categoryName');
     
     int score = 0;
     List<CredibilityFactor> factors = [];
     List<String> suggestions = [];
     
-    // Basic completeness check
-    int completedFields = 0;
-    int totalFields = 6;
+    // Core fields completeness (always required)
+    int completedCoreFields = 0;
+    int totalCoreFields = 6; // fullName, email, phone, description, incidentDateTime, crimeType
     
-    if (formData['fullName']?.isNotEmpty == true) completedFields++;
-    if (formData['email']?.isNotEmpty == true) completedFields++;
-    if (formData['phoneNumber']?.isNotEmpty == true) completedFields++;
-    if (formData['description']?.isNotEmpty == true) completedFields++;
-    if (formData['incidentDateTime'] != null) completedFields++;
-    if (formData['crimeType'] != null) completedFields++;
+    if (formData['fullName']?.isNotEmpty == true) completedCoreFields++;
+    if (formData['email']?.isNotEmpty == true) completedCoreFields++;
+    if (formData['phoneNumber']?.isNotEmpty == true) completedCoreFields++;
+    if (formData['description']?.isNotEmpty == true) completedCoreFields++;
+    if (formData['incidentDateTime'] != null) completedCoreFields++;
+    if (formData['crimeType'] != null) completedCoreFields++;
     
-    final completeness = completedFields / totalFields;
-    score = (completeness * 100).round();
+    // Category-specific fields completeness
+    int completedCategoryFields = 0;
+    int totalCategoryFields = 0;
+    List<String> missingCategoryFields = [];
     
+    // Check each category-specific field
+    final Map<ComplaintField, String> fieldFormMapping = {
+      ComplaintField.incidentLocation: 'incidentLocation',
+      ComplaintField.platformWebsite: 'platformWebsite',
+      ComplaintField.accountReference: 'accountReference',
+      ComplaintField.financialLoss: 'estimatedFinancialLoss',
+      ComplaintField.suspectName: 'suspectName',
+      ComplaintField.suspectRelationship: 'suspectRelationship',
+      ComplaintField.suspectContact: 'suspectContact',
+      ComplaintField.suspectDetails: 'suspectDetails',
+      ComplaintField.systemDetails: 'systemDetails',
+      ComplaintField.technicalInfo: 'technicalInfo',
+      ComplaintField.vulnerabilityDetails: 'vulnerabilityDetails',
+      ComplaintField.securityLevel: 'securityLevel',
+      ComplaintField.targetInfo: 'targetInfo',
+      ComplaintField.attackVector: 'attackVector',
+      ComplaintField.contentDescription: 'contentDescription',
+      ComplaintField.impactAssessment: 'impactAssessment',
+    };
+    
+    for (final field in visibleFields) {
+      if (fieldFormMapping.containsKey(field)) {
+        totalCategoryFields++;
+        final formKey = fieldFormMapping[field]!;
+        final value = formData[formKey];
+        
+        if (value != null && value.toString().trim().isNotEmpty) {
+          completedCategoryFields++;
+        } else {
+          final config = DynamicFieldConfig.getFieldConfig(field);
+          missingCategoryFields.add(config?.label ?? field.name);
+        }
+      }
+    }
+    
+    // Calculate core completeness (70% weight)
+    final coreCompleteness = completedCoreFields / totalCoreFields;
+    final coreScore = (coreCompleteness * 70).round();
+    
+    // Calculate category completeness (30% weight)
+    final categoryCompleteness = totalCategoryFields > 0 ? completedCategoryFields / totalCategoryFields : 1.0;
+    final categoryScore = (categoryCompleteness * 30).round();
+    
+    score = coreScore + categoryScore;
+    
+    // Core fields factor
     factors.add(CredibilityFactor(
-      name: 'Basic Information',
-      score: completeness,
-      description: 'Completed $completedFields out of $totalFields required fields',
-      suggestions: completedFields < totalFields ? ['Complete all required fields'] : [],
+      name: 'Core Information',
+      score: coreCompleteness,
+      description: 'Completed $completedCoreFields out of $totalCoreFields essential fields',
+      suggestions: completedCoreFields < totalCoreFields ? ['Complete all required personal and incident details'] : [],
     ));
     
-    if (completedFields < totalFields) {
-      suggestions.add('Complete all required information fields');
+    // Category-specific fields factor
+    if (totalCategoryFields > 0) {
+      factors.add(CredibilityFactor(
+        name: '${crimeType.categoryName} Specific Fields',
+        score: categoryCompleteness,
+        description: 'Completed $completedCategoryFields out of $totalCategoryFields relevant fields for ${crimeType.displayName}',
+        suggestions: missingCategoryFields.isNotEmpty 
+          ? ['Add relevant details: ${missingCategoryFields.take(3).join(', ')}${missingCategoryFields.length > 3 ? ' and ${missingCategoryFields.length - 3} more' : ''}']
+          : [],
+      ));
     }
     
+    // Evidence assessment
     final evidenceFiles = formData['evidenceFiles'] ?? [];
     if (evidenceFiles is List && evidenceFiles.isEmpty) {
-      suggestions.add('Add evidence files to support your report');
-      score = math.max(30, score - 20); // Reduce score if no evidence
+      suggestions.add('Add evidence files to support your ${crimeType.displayName} report');
+      score = math.max(30, score - 15); // Reduce score if no evidence, but less penalty than before
+    } else if (evidenceFiles is List && evidenceFiles.isNotEmpty) {
+      // Bonus for having evidence
+      score = math.min(100, score + 5);
     }
     
-    String strengthLevel = 'Weak';
-    if (score >= 80) strengthLevel = 'Strong';
-    else if (score >= 60) strengthLevel = 'Moderate';
-    else if (score >= 40) strengthLevel = 'Fair';
+    // Overall suggestions based on crime type
+    if (completedCoreFields < totalCoreFields) {
+      suggestions.add('Complete all required personal information');
+    }
+    
+    if (missingCategoryFields.isNotEmpty) {
+      suggestions.add('Provide ${crimeType.displayName}-specific details to help investigators');
+    }
+    
+    // Determine strength level
+    String strengthLevel = 'Critical';
+    if (score >= 85) strengthLevel = 'Strong';
+    else if (score >= 70) strengthLevel = 'Moderate';
+    else if (score >= 50) strengthLevel = 'Fair';
+    else if (score >= 30) strengthLevel = 'Weak';
+    
+    _debugLog('📊 Fallback score: $score% (Core: $coreScore%, Category: $categoryScore%, Level: $strengthLevel)');
     
     return CredibilityScore(
       overallScore: score,

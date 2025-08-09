@@ -361,7 +361,7 @@ class ComplaintService {
             type: 'case_assignment',
             priority: notificationPriority,
             category: 'officer_assignment',
-            relatedComplaintId: complaintId,
+                relatedComplaintId: complaintId,
             senderName: 'Case Management System',
             additionalData: {
               'crime_type': complaint.crimeType.name,

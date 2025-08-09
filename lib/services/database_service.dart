@@ -578,6 +578,24 @@ class DatabaseService {
         }
       }
 
+      // Create notification for the citizen about successful submission
+      try {
+        await saveNotificationForUser(
+          userId: currentUserId!,
+          title: 'Report Successfully Submitted',
+          message: 'Your cybercrime report #$complaintNumber has been received and is pending initial review by our team.',
+          type: 'success',
+          priority: 'normal',
+          category: 'case_submitted',
+          relatedComplaintId: complaintId,
+          senderName: 'PNP Cybercrime Unit',
+        );
+        print('✅ Submission confirmation notification sent to citizen');
+      } catch (e) {
+        print('⚠️ Failed to send confirmation notification to citizen: $e');
+        // Don't fail the submission if notification fails
+      }
+
       print('✅ Complaint submitted successfully: $complaintNumber');
       return complaintId;
 
@@ -1317,6 +1335,29 @@ class DatabaseService {
           print('⚠️ Failed to send notification to officer: $e');
           // Don't fail the submission if notification fails
         }
+      }
+
+      // Create notification for the citizen about successful AI-enhanced submission
+      try {
+        final riskLevel = aiPriorityScoring?.aiPriority?.toUpperCase() ?? aiAssessment?.aiPriority?.toUpperCase() ?? 'NORMAL';
+        await saveNotificationForUser(
+          userId: currentUserId!,
+          title: 'Report Successfully Submitted',
+          message: 'Your cybercrime report #$complaintNumber has been received and AI-assessed with $riskLevel priority. It is now pending initial review by our specialized team.',
+          type: 'success',
+          priority: _getNotificationPriorityFromAI(aiPriorityScoring?.aiPriority ?? aiAssessment?.aiPriority ?? 'normal'),
+          category: 'case_submitted',
+          relatedComplaintId: complaintId,
+          senderName: 'PNP Cybercrime AI System',
+          additionalData: {
+            'ai_risk_score': aiPriorityScoring?.aiRiskScore ?? aiAssessment?.aiRiskScore,
+            'ai_priority': aiPriorityScoring?.aiPriority ?? aiAssessment?.aiPriority,
+          },
+        );
+        print('✅ AI-enhanced submission confirmation notification sent to citizen');
+      } catch (e) {
+        print('⚠️ Failed to send AI confirmation notification to citizen: $e');
+        // Don't fail the submission if notification fails
       }
 
       print('✅ Complaint submitted successfully: $complaintNumber');

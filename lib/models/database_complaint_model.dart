@@ -43,6 +43,31 @@ class DatabaseCrimeType {
     availableOfficers.sort((a, b) => (a.activeCases ?? 0).compareTo(b.activeCases ?? 0));
     return availableOfficers.first;
   }
+
+  // Create a copy with updated officers list while preserving object identity
+  DatabaseCrimeType copyWithOfficers(List<PNPOfficer> newOfficers) {
+    return DatabaseCrimeType(
+      name: name,
+      category: category,
+      categoryIcon: categoryIcon,
+      assignedUnit: assignedUnit,
+      availableOfficers: newOfficers,
+    );
+  }
+
+  // Implement equality and hashCode for proper dropdown functionality
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! DatabaseCrimeType) return false;
+    
+    return name == other.name && 
+           category == other.category &&
+           assignedUnit.id == other.assignedUnit.id;
+  }
+
+  @override
+  int get hashCode => Object.hash(name, category, assignedUnit.id);
 }
 
 enum ComplaintStatus {

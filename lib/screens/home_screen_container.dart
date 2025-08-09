@@ -11,6 +11,7 @@ import 'tabs/profile_tab.dart';
 import 'tabs/settings_tab.dart';
 import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
+import '../providers/realtime_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgresChangeFilter, PostgresChangeEvent, PostgresChangeFilterType;
 
@@ -32,6 +33,7 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
     // FIXED: Use post-frame callback to avoid setState during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _subscribeToUserProfile();
+      _initializeRealtimeProvider();
       // _subscribeToNotifications(); // Removed for frontend-only notifications
     });
   }
@@ -73,6 +75,24 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
         ..subscribe();
     } catch (e) {
       print('Error subscribing to user profile changes: $e');
+    }
+  }
+
+  // Initialize real-time provider for live notifications
+  void _initializeRealtimeProvider() async {
+    try {
+      final realtimeProvider = Provider.of<RealtimeProvider>(context, listen: false);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      if (authProvider.user != null) {
+        print('🔄 Initializing real-time provider for user: ${authProvider.user!.uid}');
+        await realtimeProvider.initialize();
+        print('✅ Real-time provider initialized successfully');
+      } else {
+        print('⚠️ Cannot initialize real-time provider: User not authenticated');
+      }
+    } catch (e) {
+      print('❌ Error initializing real-time provider: $e');
     }
   }
 

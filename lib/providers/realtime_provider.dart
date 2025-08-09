@@ -2,10 +2,12 @@ import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../models/complaint_model.dart';
 import '../services/realtime_service.dart';
+import 'notification_provider.dart';
 
 /// Provider for managing real-time updates throughout the app
 class RealtimeProvider with ChangeNotifier {
   final RealtimeService _realtimeService = RealtimeService();
+  NotificationProvider? _notificationProvider;
   
   // Subscription references
   StreamSubscription<ComplaintStatusUpdate>? _statusUpdatesSubscription;
@@ -28,6 +30,12 @@ class RealtimeProvider with ChangeNotifier {
   List<Map<String, dynamic>> get recentNotifications => _recentNotifications;
   bool get isConnected => _isConnected;
   String? get connectionError => _connectionError;
+
+  /// Set notification provider for integration
+  void setNotificationProvider(NotificationProvider notificationProvider) {
+    _notificationProvider = notificationProvider;
+    print('🔗 NotificationProvider linked to RealtimeProvider');
+  }
 
   /// Initialize real-time connections
   Future<void> initialize() async {
@@ -138,6 +146,14 @@ class RealtimeProvider with ChangeNotifier {
     _recentNotifications.insert(0, notification);
     if (_recentNotifications.length > 50) {
       _recentNotifications = _recentNotifications.take(50).toList();
+    }
+    
+    // Forward to NotificationProvider if available
+    if (_notificationProvider != null) {
+      print('🔄 Forwarding notification to NotificationProvider');
+      _notificationProvider!.handleRealtimeNotificationUpdate(notification);
+    } else {
+      print('⚠️ NotificationProvider not set, notification not forwarded');
     }
     
     notifyListeners();

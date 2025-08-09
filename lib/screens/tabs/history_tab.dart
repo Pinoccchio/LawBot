@@ -744,53 +744,61 @@ class _HistoryTabState extends State<HistoryTab> {
 
   Widget _buildEmptyState(bool isDark) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [const Color(0xFF374151), const Color(0xFF1F2937)]
-                    : [const Color(0xFFF3F4F6), const Color(0xFFE5E7EB)],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isDark
+                      ? [const Color(0xFF374151), const Color(0xFF1F2937)]
+                      : [const Color(0xFFF3F4F6), const Color(0xFFE5E7EB)],
+                ),
+                borderRadius: BorderRadius.circular(60),
               ),
-              borderRadius: BorderRadius.circular(60),
+              child: Icon(
+                Icons.history_outlined,
+                size: 48,
+                color: isDark ? Colors.grey[500] : Colors.grey[400],
+              ),
             ),
-            child: Icon(
-              Icons.history_outlined,
-              size: 48,
-              color: isDark ? Colors.grey[500] : Colors.grey[400],
+            const SizedBox(height: 24),
+            Text(
+              _completedReports.isEmpty
+                  ? 'No completed reports yet'
+                  : 'No reports match your filter',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.grey[300] : Colors.grey[700],
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            _completedReports.isEmpty
-                ? 'No completed reports yet'
-                : 'No reports match your filter',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.grey[300] : Colors.grey[700],
+            const SizedBox(height: 8),
+            Text(
+              _completedReports.isEmpty
+                  ? 'Completed cybercrime reports will appear here once resolved or dismissed'
+                  : 'Try selecting a different status filter',
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.grey[400] : Colors.grey[500],
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _completedReports.isEmpty
-                ? 'Completed cybercrime reports will appear here once resolved or dismissed'
-                : 'Try selecting a different status filter',
-            style: TextStyle(
-              fontSize: 14,
-              color: isDark ? Colors.grey[400] : Colors.grey[500],
-              height: 1.4,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -10,12 +10,14 @@ import 'providers/language_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/connectivity_provider.dart';
+import 'providers/realtime_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/auth/sign_in_screen.dart';
 import 'screens/auth/sign_up_screen.dart';
 import 'screens/home_screen_container.dart';
 import 'screens/auth/forgot_password_screen.dart';
+import 'screens/report_detail_by_id_screen.dart';
 import 'widgets/connectivity_wrapper.dart';
 
 void main() async {
@@ -48,6 +50,14 @@ class LawBotApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ConnectivityProvider()),
+        ChangeNotifierProvider(create: (_) => RealtimeProvider()),
+        // Set up provider dependencies
+        ProxyProvider2<NotificationProvider, RealtimeProvider, RealtimeProvider>(
+          update: (context, notificationProvider, realtimeProvider, previous) {
+            realtimeProvider.setNotificationProvider(notificationProvider);
+            return realtimeProvider;
+          },
+        ),
       ],
       child: Consumer2<ThemeProvider, LanguageProvider>(
         builder: (context, themeProvider, languageProvider, child) {
@@ -78,6 +88,33 @@ class LawBotApp extends StatelessWidget {
               '/home': (context) => ConnectivityWrapper(
                 child: HomeScreenContainer(),
               ),
+            },
+            onGenerateRoute: (settings) {
+              // Handle complaint detail routes (both /complaint/ and /case/ patterns)
+              if (settings.name?.startsWith('/complaint/') == true || 
+                  settings.name?.startsWith('/case/') == true) {
+                final uri = Uri.parse(settings.name!);
+                final complaintId = uri.pathSegments.last;
+                
+                return MaterialPageRoute(
+                  builder: (context) => ConnectivityWrapper(
+                    child: ReportDetailByIdScreen(
+                      complaintId: complaintId,
+                    ),
+                  ),
+                  settings: settings,
+                );
+              }
+              
+              return null;
+            },
+            onUnknownRoute: (settings) {
+              // Fallback for unknown routes
+              return MaterialPageRoute(
+                builder: (context) => ConnectivityWrapper(
+                  child: HomeScreenContainer(),
+                ),
+              );
             },
           );
         },

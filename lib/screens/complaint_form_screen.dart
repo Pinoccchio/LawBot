@@ -94,6 +94,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Financial loss change timer (for urgency-based officer reload)
   Timer? _financialLossTimer;
   
+  // Track urgency state to prevent unnecessary officer reloads
+  bool? _lastUrgencyState;
+  
   // AI Loading states
   bool _isLoadingCredibilityScore = false;
   bool _isLoadingEvidenceGuidance = false;
@@ -127,6 +130,16 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     print('🔄 Checking if officer reload needed due to urgency change...');
     final currentUrgency = _determineIfUrgentCase();
     
+    // Check if urgency actually changed to avoid unnecessary reloads
+    if (_lastUrgencyState != null && _lastUrgencyState == currentUrgency) {
+      print('📋 Urgency unchanged (${currentUrgency ? "URGENT" : "NORMAL"}), skipping officer reload');
+      return;
+    }
+    
+    // Store current officers and selected officer to compare
+    final currentOfficers = _selectedCrimeType!.availableOfficers;
+    final previouslySelectedOfficer = _selectedOfficer;
+    
     try {
       // Get officers for current crime type with updated urgency
       final updatedOfficers = await _pnpUnitsService.getAvailableOfficersForCrimeType(
@@ -134,28 +147,67 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         isUrgent: currentUrgency,
       );
       
-      // Update the available officers for the selected crime type
-      setState(() {
-        _selectedCrimeType = DatabaseCrimeType(
-          name: _selectedCrimeType!.name,
-          category: _selectedCrimeType!.category,
-          categoryIcon: _selectedCrimeType!.categoryIcon,
-          assignedUnit: _selectedCrimeType!.assignedUnit,
-          availableOfficers: updatedOfficers,
-        );
+      // Check if officer list actually changed to avoid unnecessary updates
+      final officersChanged = !_officerListsEqual(currentOfficers, updatedOfficers);
+      
+      if (!officersChanged) {
+        print('📋 Officer list unchanged, skipping update');
+        return;
+      }
+      
+      // If user had selected an officer, try to preserve it
+      PNPOfficer? preservedOfficer = previouslySelectedOfficer;
+      if (previouslySelectedOfficer != null) {
+        // Check if the previously selected officer is still in the updated list
+        final stillAvailable = updatedOfficers.any((o) => o.id == previouslySelectedOfficer.id);
         
-        // Reset officer selection if current officer is no longer available
-        if (_selectedOfficer != null && !updatedOfficers.any((o) => o.id == _selectedOfficer!.id)) {
-          _selectedOfficer = null;
-          print('⚠️ Previously selected officer no longer available due to availability change');
+        if (!stillAvailable) {
+          // If not in updated list, check if we should include them anyway (for user experience)
+          // For urgent cases, include previously selected officers even if they're "busy"
+          if (currentUrgency && previouslySelectedOfficer.availabilityStatus == 'busy') {
+            print('🚨 Keeping previously selected busy officer for urgent case: ${previouslySelectedOfficer.displayName}');
+            updatedOfficers.insert(0, previouslySelectedOfficer); // Add to beginning of list
+          } else if (previouslySelectedOfficer.availabilityStatus == 'available') {
+            print('🔄 Re-adding available officer that was filtered out: ${previouslySelectedOfficer.displayName}');
+            updatedOfficers.insert(0, previouslySelectedOfficer); // Add to beginning of list  
+          } else {
+            print('⚠️ Previously selected officer no longer available: ${previouslySelectedOfficer.displayName} (${previouslySelectedOfficer.availabilityStatus})');
+            preservedOfficer = null;
+          }
+        } else {
+          print('✅ Previously selected officer still available: ${previouslySelectedOfficer.displayName}');
         }
+      }
+      
+      // Update the available officers using copyWithOfficers to preserve object identity
+      setState(() {
+        _selectedCrimeType = _selectedCrimeType!.copyWithOfficers(updatedOfficers);
+        _selectedOfficer = preservedOfficer;
       });
       
       print('✅ Officers reloaded based on urgency: ${currentUrgency ? "URGENT" : "NORMAL"} (${updatedOfficers.length} available)');
       
+      if (preservedOfficer != null) {
+        print('👮 Preserved officer selection: ${preservedOfficer.displayName}');
+      }
+      
+      // Update urgency state to prevent unnecessary future reloads
+      _lastUrgencyState = currentUrgency;
+      
     } catch (e) {
       print('❌ Error reloading officers: $e');
+      // Keep current state on error - don't clear officers
     }
+  }
+  
+  // Helper method to compare officer lists
+  bool _officerListsEqual(List<PNPOfficer> list1, List<PNPOfficer> list2) {
+    if (list1.length != list2.length) return false;
+    
+    final ids1 = list1.map((o) => o.id).toSet();
+    final ids2 = list2.map((o) => o.id).toSet();
+    
+    return ids1.containsAll(ids2) && ids2.containsAll(ids1);
   }
 
   // Handle financial loss changes (affects urgency)
@@ -301,6 +353,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       setState(() {
         _availableCrimeTypes = dynamicCrimeTypes;
         _isLoadingCrimeTypes = false;
+        // Initialize urgency state
+        _lastUrgencyState = isUrgentCase;
       });
     } catch (e) {
       print('❌ Error loading crime types: $e');
@@ -430,14 +484,20 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   }
 
 
-  // Get current form data for analysis
+  // Get current form data for analysis (enhanced with category context)
   Map<String, dynamic> _getFormData() {
-    return {
+    final formData = {
+      // Core fields (always included)
       'fullName': _fullNameController.text,
       'email': _emailController.text,
       'phoneNumber': _phoneController.text,
       'description': _descriptionController.text,
       'incidentDateTime': _selectedIncidentDateTime,
+      'evidenceFiles': _evidenceFiles,
+      'crimeType': _selectedCrimeType?.name,
+      
+      // Category-specific fields (included for analysis but relevance determined by DynamicFieldService)
+      'incidentLocation': _incidentLocationController.text,
       'estimatedFinancialLoss': double.tryParse(_financialLossController.text),
       'platformWebsite': _platformWebsiteController.text,
       'accountReference': _accountReferenceController.text,
@@ -445,9 +505,24 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       'suspectContact': _suspectContactController.text,
       'suspectDetails': _suspectDetailsController.text,
       'suspectRelationship': _selectedSuspectRelationship,
-      'evidenceFiles': _evidenceFiles,
-      'crimeType': _selectedCrimeType?.name,
+      'systemDetails': _systemDetailsController.text,
+      'technicalInfo': _technicalInfoController.text,
+      'vulnerabilityDetails': _vulnerabilityDetailsController.text,
+      'securityLevel': _securityLevelController.text,
+      'targetInfo': _targetInfoController.text,
+      'attackVector': _attackVectorController.text,
+      'contentDescription': _contentDescriptionController.text,
+      'impactAssessment': _impactAssessmentController.text,
+      
+      // Category context for intelligent scoring
+      'categoryContext': {
+        'crimeCategory': _selectedCrimeType?.categoryForFields,
+        'categoryDisplayName': _selectedCrimeType?.category,
+        'assignedUnit': _selectedCrimeType?.assignedUnitName,
+      },
     };
+    
+    return formData;
   }
 
   // =============================================
@@ -721,6 +796,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       _previousCrimeType = _selectedCrimeType;
       _selectedCrimeType = crimeType;
       _selectedOfficer = null; // Reset officer selection when crime type changes
+      _lastUrgencyState = null; // Reset urgency state for new crime type
       
       // Update evidence guidance for new crime type
       if (crimeType != null) {

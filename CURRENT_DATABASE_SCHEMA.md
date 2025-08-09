@@ -189,7 +189,7 @@ CREATE TABLE notifications (
   message TEXT NOT NULL,
   type TEXT DEFAULT 'info' CHECK (type IN ('info', 'warning', 'error', 'success', 'case_assignment', 'case_update', 'case_submitted')),
   priority TEXT DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
-  notification_category TEXT DEFAULT 'system' CHECK (notification_category IN ('system', 'complaint', 'security', 'update', 'officer_assignment', 'complaint_status', 'case_management')),
+  notification_category TEXT DEFAULT 'complaint_status' CHECK (notification_category IN ('complaint_status', 'officer_assignment')),
   action_url TEXT,
   is_read BOOLEAN DEFAULT FALSE,
   read_at TIMESTAMP WITH TIME ZONE,
@@ -200,7 +200,7 @@ CREATE TABLE notifications (
 );
 ```
 **Used by**: Flutter Mobile App
-**Purpose**: In-app notifications for users and officers
+**Purpose**: Simplified in-app notifications focused on complaint-related updates. Categories simplified to 'complaint_status' (citizen updates) and 'officer_assignment' (officer notifications only). Notifications are primarily informational - clicking marks as read rather than navigating.
 
 ### 9. **case_assignments** - Officer-Case Relationships
 ```sql

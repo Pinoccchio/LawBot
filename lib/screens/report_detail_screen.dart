@@ -93,6 +93,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   // Get the complaint to display (complete or fallback to original)
   Complaint get displayComplaint => _completeComplaint ?? widget.complaint;
 
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = context.watch<ThemeProvider>();

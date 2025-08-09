@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/database_service.dart';
 
 class NotificationProvider extends ChangeNotifier {
+  final DatabaseService _databaseService = DatabaseService();
+  
   bool _notificationsEnabled = true;
   static const String _notificationKey = 'notifications_enabled';
   
@@ -24,7 +27,7 @@ class NotificationProvider extends ChangeNotifier {
 
   NotificationProvider() {
     _loadNotificationSettings();
-    _loadSampleNotifications();
+    _loadNotifications();
   }
 
   // Load notification settings from SharedPreferences
@@ -65,7 +68,35 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
-  // Load sample notifications for frontend
+  // Load notifications from database
+  Future<void> _loadNotifications() async {
+    try {
+      _notificationsLoading = true;
+      notifyListeners();
+
+      print('📱 Loading notifications from database...');
+      
+      // Get notifications from database (using existing method signature)
+      _notifications = await _databaseService.getNotifications(limit: 100);
+      
+      // Get notification statistics
+      _notificationStats = await _databaseService.getNotificationStats();
+      
+      print('✅ Loaded ${_notifications.length} notifications from database');
+      
+      _notificationsLoading = false;
+      notifyListeners();
+    } catch (e) {
+      print('❌ Error loading notifications: $e');
+      _notificationsLoading = false;
+      
+      // Load sample data as fallback for development
+      _loadSampleNotifications();
+      notifyListeners();
+    }
+  }
+
+  // Load sample notifications for frontend (fallback)
   void _loadSampleNotifications() {
     final now = DateTime.now();
     _notifications = [
@@ -80,7 +111,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'PNP Cybercrime Unit',
         'is_read': false,
         'created_at': now.subtract(const Duration(minutes: 30)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
       {
         'id': '2',
@@ -92,7 +123,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Case Management System',
         'is_read': false,
         'created_at': now.subtract(const Duration(hours: 1)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/728b91cd-4576-5276-9fb1-2ce959892c0a',
       },
 
       // UNDER INVESTIGATION Status Notifications
@@ -106,7 +137,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Santos - Economic Offenses Wing',
         'is_read': false,
         'created_at': now.subtract(const Duration(hours: 2)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/case/839c02de-5687-6387-afg2-3df060893d1b',
       },
       {
         'id': '4',
@@ -118,7 +149,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Digital Forensics Team',
         'is_read': false,
         'created_at': now.subtract(const Duration(hours: 4)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
       {
         'id': '5',
@@ -130,7 +161,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Cruz - Cyber Crime Investigation Cell',
         'is_read': true,
         'created_at': now.subtract(const Duration(hours: 8)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
 
       // REQUIRES MORE INFO Status Notifications
@@ -144,7 +175,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Reyes - Economic Offenses Wing',
         'is_read': false,
         'created_at': now.subtract(const Duration(hours: 3)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
       {
         'id': '7',
@@ -156,7 +187,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Luna - Cyber Crime Against Women and Children',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 1)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
 
       // RESOLVED Status Notifications
@@ -170,7 +201,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Martinez - Cyber Crime Against Women and Children',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 2)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
       {
         'id': '9',
@@ -182,7 +213,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Santos - Economic Offenses Wing',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 3)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
       {
         'id': '10',
@@ -194,7 +225,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Reyes - Cyber Security Division',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 4)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
 
       // DISMISSED Status Notifications
@@ -208,7 +239,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Luna - Cyber Crime Against Women and Children',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 5)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
       {
         'id': '12',
@@ -220,7 +251,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Officer Cruz - Cyber Crime Investigation Cell',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 6)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
 
       // SECURITY & SYSTEM NOTIFICATIONS
@@ -234,7 +265,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Cybersecurity Division',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 1, hours: 6)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
       {
         'id': '14',
@@ -246,7 +277,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'System Administrator',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 7)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
 
       // LEGAL UPDATE NOTIFICATIONS
@@ -260,7 +291,7 @@ class NotificationProvider extends ChangeNotifier {
         'sender_name': 'Legal Affairs Division',
         'is_read': true,
         'created_at': now.subtract(const Duration(days: 10)).toIso8601String(),
-        'action_url': null,
+        'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
     ];
 
@@ -292,30 +323,26 @@ class NotificationProvider extends ChangeNotifier {
   }
 
   Future<void> refreshNotifications() async {
-    _notificationsLoading = true;
-    notifyListeners();
-
-    // Simulate network delay
-    await Future.delayed(const Duration(seconds: 1));
-
-    // Reload sample data
-    _loadSampleNotifications();
-    
-    _notificationsLoading = false;
-    notifyListeners();
+    await _loadNotifications();
   }
 
   Future<bool> markNotificationAsRead(String notificationId) async {
     try {
-      final index = _notifications.indexWhere((n) => n['id'] == notificationId);
-      if (index != -1 && _notifications[index]['is_read'] == false) {
-        _notifications[index]['is_read'] = true;
-        _notifications[index]['read_at'] = DateTime.now().toIso8601String();
-        _updateNotificationStats();
-        notifyListeners();
-        return true;
+      // Update in database
+      final success = await _databaseService.markNotificationAsRead(notificationId);
+      
+      if (success) {
+        // Update local data
+        final index = _notifications.indexWhere((n) => n['id'] == notificationId);
+        if (index != -1 && _notifications[index]['is_read'] == false) {
+          _notifications[index]['is_read'] = true;
+          _notifications[index]['read_at'] = DateTime.now().toIso8601String();
+          _updateNotificationStats();
+          notifyListeners();
+        }
       }
-      return false;
+      
+      return success;
     } catch (e) {
       debugPrint('Error marking notification as read: $e');
       return false;
@@ -324,15 +351,22 @@ class NotificationProvider extends ChangeNotifier {
 
   Future<bool> markAllNotificationsAsRead() async {
     try {
-      for (var notification in _notifications) {
-        if (notification['is_read'] == false) {
-          notification['is_read'] = true;
-          notification['read_at'] = DateTime.now().toIso8601String();
+      // Update in database
+      final success = await _databaseService.markAllNotificationsAsRead();
+      
+      if (success) {
+        // Update local data
+        for (var notification in _notifications) {
+          if (notification['is_read'] == false) {
+            notification['is_read'] = true;
+            notification['read_at'] = DateTime.now().toIso8601String();
+          }
         }
+        _updateNotificationStats();
+        notifyListeners();
       }
-      _updateNotificationStats();
-      notifyListeners();
-      return true;
+      
+      return success;
     } catch (e) {
       debugPrint('Error marking all notifications as read: $e');
       return false;
@@ -341,10 +375,17 @@ class NotificationProvider extends ChangeNotifier {
 
   Future<bool> deleteNotification(String notificationId) async {
     try {
-      _notifications.removeWhere((n) => n['id'] == notificationId);
-      _updateNotificationStats();
-      notifyListeners();
-      return true;
+      // Delete from database
+      final success = await _databaseService.deleteNotification(notificationId);
+      
+      if (success) {
+        // Update local data
+        _notifications.removeWhere((n) => n['id'] == notificationId);
+        _updateNotificationStats();
+        notifyListeners();
+      }
+      
+      return success;
     } catch (e) {
       debugPrint('Error deleting notification: $e');
       return false;
@@ -369,5 +410,59 @@ class NotificationProvider extends ChangeNotifier {
   // Get urgent notifications
   List<Map<String, dynamic>> getUrgentNotifications() {
     return _notifications.where((n) => n['priority'] == 'urgent' && n['is_read'] == false).toList();
+  }
+
+  /// Handle real-time notification update from RealtimeProvider
+  void handleRealtimeNotificationUpdate(Map<String, dynamic> notification) {
+    try {
+      print('🔔 Received real-time notification: ${notification['title']}');
+      
+      // Check if notification already exists (update) or is new (insert)
+      final existingIndex = _notifications.indexWhere((n) => n['id'] == notification['id']);
+      
+      if (existingIndex != -1) {
+        // Update existing notification
+        _notifications[existingIndex] = notification;
+        print('📝 Updated existing notification');
+      } else {
+        // Add new notification at the beginning
+        _notifications.insert(0, notification);
+        print('➕ Added new notification');
+      }
+      
+      // Update statistics
+      _updateNotificationStats();
+      notifyListeners();
+      
+      print('✅ Real-time notification processed successfully');
+    } catch (e) {
+      print('❌ Error handling real-time notification update: $e');
+    }
+  }
+
+  /// Handle real-time notification deletion
+  void handleRealtimeNotificationDelete(String notificationId) {
+    try {
+      print('🗑️ Processing real-time notification deletion: $notificationId');
+      
+      _notifications.removeWhere((n) => n['id'] == notificationId);
+      _updateNotificationStats();
+      notifyListeners();
+      
+      print('✅ Real-time notification deletion processed');
+    } catch (e) {
+      print('❌ Error handling real-time notification deletion: $e');
+    }
+  }
+
+  /// Force refresh notifications from database (for error recovery)
+  Future<void> forceRefreshNotifications() async {
+    try {
+      print('🔄 Force refreshing notifications from database...');
+      await _loadNotifications();
+      print('✅ Force refresh completed');
+    } catch (e) {
+      print('❌ Error in force refresh: $e');
+    }
   }
 }
