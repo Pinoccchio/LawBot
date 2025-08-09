@@ -1,11 +1,15 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 import '../models/complaint_model.dart';
 import '../providers/theme_provider.dart';
 import '../utils/philippine_time.dart';
 import '../services/complaint_service.dart';
+import '../services/file_download_service.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final Complaint complaint;
@@ -18,6 +22,7 @@ class ReportDetailScreen extends StatefulWidget {
 
 class _ReportDetailScreenState extends State<ReportDetailScreen> {
   final ComplaintService _complaintService = ComplaintService();
+  final StreamController<double> _downloadProgressController = StreamController<double>.broadcast();
   Complaint? _completeComplaint;
   bool _isLoadingDetails = false;
   String? _loadingError;
@@ -26,6 +31,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   void initState() {
     super.initState();
     _loadCompleteComplaintDetails();
+  }
+
+  @override
+  void dispose() {
+    _downloadProgressController.close();
+    super.dispose();
   }
 
   Future<void> _loadCompleteComplaintDetails() async {
@@ -351,7 +362,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              displayComplaint.complaintNumber!,
+              displayComplaint.complaintNumber ?? 'N/A',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -508,7 +519,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              displayComplaint.complaintNumber!,
+              displayComplaint.complaintNumber ?? 'N/A',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -720,19 +731,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       ),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: _getFileTypeColor(file.fileType).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              _getFileTypeIcon(file.fileType),
-              color: _getFileTypeColor(file.fileType),
-              size: 20,
-            ),
-          ),
+          // Thumbnail or icon
+          _buildFileThumbnail(file, isDark),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -767,10 +767,160 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               size: 20,
               color: isDark ? Colors.grey[400] : Colors.grey[600],
             ),
+            tooltip: 'View file',
+          ),
+          IconButton(
+            onPressed: () {
+              _downloadFile(file);
+            },
+            icon: Icon(
+              Icons.download,
+              size: 20,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ),
+            tooltip: 'Download file',
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildFileThumbnail(EvidenceFile file, bool isDark) {
+    // For images, show actual thumbnail
+    if (file.isImage) {
+      return Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(7),
+          child: file.downloadUrl != null && file.downloadUrl!.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: file.downloadUrl!,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => Container(
+                    color: _getFileTypeColor(file.fileType).withOpacity(0.1),
+                    child: Icon(
+                      Icons.image,
+                      color: _getFileTypeColor(file.fileType),
+                      size: 20,
+                    ),
+                  ),
+                  errorWidget: (context, url, error) {
+                    // Try local file
+                    if (File(file.filePath).existsSync()) {
+                      return Image.file(
+                        File(file.filePath),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: _getFileTypeColor(file.fileType).withOpacity(0.1),
+                            child: Icon(
+                              Icons.broken_image,
+                              color: _getFileTypeColor(file.fileType),
+                              size: 20,
+                            ),
+                          );
+                        },
+                      );
+                    }
+                    return Container(
+                      color: _getFileTypeColor(file.fileType).withOpacity(0.1),
+                      child: Icon(
+                        Icons.broken_image,
+                        color: _getFileTypeColor(file.fileType),
+                        size: 20,
+                      ),
+                    );
+                  },
+                )
+              : File(file.filePath).existsSync()
+                  ? Image.file(
+                      File(file.filePath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: _getFileTypeColor(file.fileType).withOpacity(0.1),
+                          child: Icon(
+                            Icons.broken_image,
+                            color: _getFileTypeColor(file.fileType),
+                            size: 20,
+                          ),
+                        );
+                      },
+                    )
+                  : Container(
+                      color: _getFileTypeColor(file.fileType).withOpacity(0.1),
+                      child: Icon(
+                        Icons.image,
+                        color: _getFileTypeColor(file.fileType),
+                        size: 20,
+                      ),
+                    ),
+        ),
+      );
+    } 
+    // For videos, show play icon overlay
+    else if (file.isVideo) {
+      return Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: _getFileTypeColor(file.fileType).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.videocam,
+              color: _getFileTypeColor(file.fileType).withOpacity(0.3),
+              size: 30,
+            ),
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: _getFileTypeColor(file.fileType),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_arrow,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    // For other files, show icon
+    else {
+      return Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: _getFileTypeColor(file.fileType).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+          ),
+        ),
+        child: Icon(
+          _getFileTypeIcon(file.fileType),
+          color: _getFileTypeColor(file.fileType),
+          size: 24,
+        ),
+      );
+    }
   }
 
   Widget _buildContactCard(bool isDark) {
@@ -822,7 +972,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           if (displayComplaint.fullName != null) ...[
             _buildContactItem(
               label: 'Full Name',
-              value: displayComplaint.fullName!,
+              value: displayComplaint.fullName ?? 'N/A',
               icon: Icons.person,
               isDark: isDark,
             ),
@@ -831,7 +981,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           if (displayComplaint.email != null) ...[
             _buildContactItem(
               label: 'Email Address',
-              value: displayComplaint.email!,
+              value: displayComplaint.email ?? 'N/A',
               icon: Icons.email,
               isDark: isDark,
             ),
@@ -840,7 +990,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           if (displayComplaint.phoneNumber != null) ...[
             _buildContactItem(
               label: 'Phone Number',
-              value: displayComplaint.phoneNumber!,
+              value: displayComplaint.phoneNumber ?? 'N/A',
               icon: Icons.phone,
               isDark: isDark,
             ),
@@ -1165,39 +1315,70 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildImagePreview(EvidenceFile file, bool isDark) {
-    if (file.downloadUrl != null) {
-      return Center(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.network(
-            file.downloadUrl!,
-            fit: BoxFit.contain,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Center(
-                child: CircularProgressIndicator(
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                      : null,
+    // Try to load from download URL first (Supabase storage)
+    if (file.downloadUrl != null && file.downloadUrl!.isNotEmpty) {
+      return Container(
+        constraints: const BoxConstraints(
+          maxHeight: 400,
+        ),
+        child: Center(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: CachedNetworkImage(
+              imageUrl: file.downloadUrl!,
+              fit: BoxFit.contain,
+              placeholder: (context, url) => Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Loading image...',
+                      style: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            },
-            errorBuilder: (context, error, stackTrace) {
-              return _buildFileError('Could not load image', isDark);
-            },
+              ),
+              errorWidget: (context, url, error) {
+                print('Error loading image from URL: $url');
+                print('Error details: $error');
+                // Try local file as fallback
+                if (File(file.filePath).existsSync()) {
+                  return Image.file(
+                    File(file.filePath),
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return _buildFileError('Could not load image', isDark);
+                    },
+                  );
+                }
+                return _buildFileError('Could not load image from server', isDark);
+              },
+            ),
           ),
         ),
       );
-    } else if (File(file.filePath).existsSync()) {
-      return Center(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.file(
-            File(file.filePath),
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              return _buildFileError('Could not load image', isDark);
-            },
+    } 
+    // Try to load from local file path
+    else if (File(file.filePath).existsSync()) {
+      return Container(
+        constraints: const BoxConstraints(
+          maxHeight: 400,
+        ),
+        child: Center(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(
+              File(file.filePath),
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                return _buildFileError('Could not load image', isDark);
+              },
+            ),
           ),
         ),
       );
@@ -1257,52 +1438,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildVideoPreview(EvidenceFile file, bool isDark) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: _getFileTypeColor(file.fileType).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              Icons.play_circle_outline,
-              color: _getFileTypeColor(file.fileType),
-              size: 40,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            file.fileName,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : Colors.black,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Video preview not available',
-            style: TextStyle(
-              color: isDark ? Colors.grey[400] : Colors.grey[600],
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Tap "Open" to play the video in your default video player',
-            style: TextStyle(
-              fontSize: 12,
-              color: isDark ? Colors.grey[500] : Colors.grey[500],
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
+    return _VideoPlayerWidget(
+      file: file,
+      isDark: isDark,
     );
   }
 
@@ -1390,17 +1528,223 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   void _downloadFile(EvidenceFile file) async {
     try {
-      // For now, show a message about download functionality
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Download functionality for ${file.fileName} will be implemented with backend integration'),
-          backgroundColor: Colors.blue,
-        ),
+      String? localPath;
+      
+      // Show progress dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(0.5),
+        builder: (BuildContext context) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isDark
+                      ? [const Color(0xFF1E293B), const Color(0xFF334155)]
+                      : [Colors.white, const Color(0xFFF8FAFC)],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: isDark
+                        ? Colors.black.withOpacity(0.3)
+                        : const Color(0xFF2563EB).withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Icon with gradient background
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF2563EB), Color(0xFF3B82F6)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.download_rounded,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Title with emoji
+                  Text(
+                    '📥 Downloading File',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // File name with icon
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _getFileTypeIcon(file.fileType),
+                        size: 16,
+                        color: _getFileTypeColor(file.fileType),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          file.fileName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  // Progress indicator with custom color
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        const Color(0xFF2563EB),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Progress details
+                  StreamBuilder<double>(
+                    stream: _downloadProgressController.stream,
+                    builder: (context, snapshot) {
+                      final progress = snapshot.data ?? 0.0;
+                      return Column(
+                        children: [
+                          // Progress bar with gradient
+                          Container(
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.grey[800]
+                                  : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: progress,
+                                backgroundColor: Colors.transparent,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  const Color(0xFF2563EB),
+                                ),
+                                minHeight: 8,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Progress percentage
+                          Text(
+                            '${(progress * 100).toStringAsFixed(0)}%',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF2563EB),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
+
+      // Download from URL if available
+      if (file.downloadUrl != null && file.downloadUrl!.isNotEmpty) {
+        // Extract bucket name and path from the download URL
+        // Format: https://xxx.supabase.co/storage/v1/object/public/evidence-files/complaint_id/filename
+        final uri = Uri.parse(file.downloadUrl!);
+        final pathSegments = uri.pathSegments;
+        
+        if (pathSegments.contains('evidence-files')) {
+          // This is a Supabase storage URL
+          final bucketIndex = pathSegments.indexOf('evidence-files');
+          final filePath = pathSegments.sublist(bucketIndex + 1).join('/');
+          
+          localPath = await FileDownloadService.downloadFromSupabase(
+            bucketName: 'evidence-files',
+            path: filePath,
+            fileName: file.fileName,
+            onProgress: (received, total) {
+              if (total != -1) {
+                _downloadProgressController.add(received / total);
+              }
+            },
+          );
+        } else {
+          // Regular URL download
+          localPath = await FileDownloadService.downloadFile(
+            url: file.downloadUrl!,
+            fileName: file.fileName,
+            onProgress: (received, total) {
+              if (total != -1) {
+                _downloadProgressController.add(received / total);
+              }
+            },
+          );
+        }
+      }
+      // Try local file if no download URL
+      else if (File(file.filePath).existsSync()) {
+        localPath = file.filePath;
+      }
+
+      Navigator.of(context).pop(); // Close progress dialog
+
+      if (localPath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${file.fileName} downloaded successfully'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'Open',
+              textColor: Colors.white,
+              onPressed: () {
+                if (localPath != null) {
+                  FileDownloadService.openFile(localPath);
+                }
+              },
+            ),
+          ),
+        );
+      } else {
+        throw 'Failed to download file';
+      }
     } catch (e) {
+      Navigator.of(context).pop(); // Close progress dialog if still open
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error downloading file: $e'),
+          content: Text('Error downloading file: ${e.toString()}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -1409,11 +1753,180 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   void _openFileExternally(EvidenceFile file) async {
     try {
-      if (file.downloadUrl != null) {
-        final uri = Uri.parse(file.downloadUrl!);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } else {
+      // First check if file exists locally
+      if (File(file.filePath).existsSync()) {
+        final opened = await FileDownloadService.openFile(file.filePath);
+        if (opened) {
+          return;
+        }
+      }
+
+      // If local file doesn't exist, try to download and open
+      if (file.downloadUrl != null && file.downloadUrl!.isNotEmpty) {
+        // Show progress dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          barrierColor: Colors.black.withOpacity(0.5),
+          builder: (BuildContext context) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [const Color(0xFF1E293B), const Color(0xFF334155)]
+                        : [Colors.white, const Color(0xFFF8FAFC)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isDark
+                          ? Colors.black.withOpacity(0.3)
+                          : const Color(0xFF2563EB).withOpacity(0.1),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Icon with gradient background
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF10B981), Color(0xFF34D399)],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        Icons.folder_open_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Title with emoji
+                    Text(
+                      '📂 Opening File',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // File name with icon
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _getFileTypeIcon(file.fileType),
+                          size: 16,
+                          color: _getFileTypeColor(file.fileType),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            file.fileName,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    // Progress indicator with custom color
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          const Color(0xFF10B981),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Progress details
+                    StreamBuilder<double>(
+                      stream: _downloadProgressController.stream,
+                      builder: (context, snapshot) {
+                        final progress = snapshot.data ?? 0.0;
+                        return Column(
+                          children: [
+                            // Progress bar with gradient
+                            Container(
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? Colors.grey[800]
+                                    : Colors.grey[200],
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: progress,
+                                  backgroundColor: Colors.transparent,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    const Color(0xFF10B981),
+                                  ),
+                                  minHeight: 8,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            // Progress percentage
+                            Text(
+                              progress > 0 
+                                  ? '${(progress * 100).toStringAsFixed(0)}%'
+                                  : 'Preparing...',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF10B981),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+
+        final opened = await FileDownloadService.openFileFromUrl(
+          url: file.downloadUrl!,
+          fileName: file.fileName,
+          onProgress: (received, total) {
+            if (total != -1) {
+              _downloadProgressController.add(received / total);
+            }
+          },
+        );
+
+        Navigator.of(context).pop(); // Close progress dialog
+
+        if (!opened) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Could not open file in external application'),
@@ -1424,12 +1937,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('File URL not available'),
+            content: Text('File not available'),
             backgroundColor: Colors.red,
           ),
         );
       }
     } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close progress dialog if still open
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error opening file: $e'),
@@ -1535,7 +2051,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             _buildInfoRow(
               icon: Icons.security,
               label: 'PNP Unit',
-              value: displayComplaint.assignedUnit!,
+              value: displayComplaint.assignedUnit ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
@@ -1546,7 +2062,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             _buildInfoRow(
               icon: Icons.person_2,
               label: 'Assigned Officer',
-              value: displayComplaint.assignedOfficer!,
+              value: displayComplaint.assignedOfficer ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
@@ -1557,7 +2073,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             _buildInfoRow(
               icon: Icons.badge,
               label: 'Officer ID',
-              value: displayComplaint.assignedOfficerId!,
+              value: displayComplaint.assignedOfficerId ?? 'N/A',
               isDark: isDark,
             ),
           ],
@@ -1568,6 +2084,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   List<Widget> _buildDynamicFieldsCards(bool isDark) {
     final List<Widget> cards = [];
+    
+    // Debug logging for dynamic fields
+    print('🔍 Dynamic Fields Debug for complaint ${displayComplaint.complaintNumber ?? 'N/A'}:');
+    print('   Platform Website: "${displayComplaint.platformWebsite}" (${displayComplaint.platformWebsite?.isNotEmpty ?? false})');
+    print('   Suspect Name: "${displayComplaint.suspectName}" (${displayComplaint.suspectName?.isNotEmpty ?? false})');
+    print('   Account Reference: "${displayComplaint.accountReference}" (${displayComplaint.accountReference?.isNotEmpty ?? false})');
+    print('   Incident Location: "${displayComplaint.incidentLocation}" (${displayComplaint.incidentLocation?.isNotEmpty ?? false})');
+    print('   Has Location/Platform Fields: ${_hasLocationPlatformFields()}');
+    print('   Has Financial Fields: ${_hasFinancialFields()}');
+    print('   Has Suspect Fields: ${_hasSuspectFields()}');
+    print('   Has Technical Fields: ${_hasTechnicalFields()}');
     
     // Financial Information Card
     if (_hasFinancialFields()) {
@@ -1597,31 +2124,31 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   bool _hasFinancialFields() {
-    return displayComplaint.estimatedFinancialLoss != null ||
-           displayComplaint.accountReference != null;
+    return (displayComplaint.estimatedFinancialLoss != null && displayComplaint.estimatedFinancialLoss! > 0) ||
+           (displayComplaint.accountReference != null && displayComplaint.accountReference!.isNotEmpty);
   }
 
   bool _hasSuspectFields() {
-    return displayComplaint.suspectName != null ||
-           displayComplaint.suspectRelationship != null ||
-           displayComplaint.suspectContact != null ||
-           displayComplaint.suspectDetails != null;
+    return (displayComplaint.suspectName != null && displayComplaint.suspectName!.isNotEmpty) ||
+           (displayComplaint.suspectRelationship != null && displayComplaint.suspectRelationship!.isNotEmpty) ||
+           (displayComplaint.suspectContact != null && displayComplaint.suspectContact!.isNotEmpty) ||
+           (displayComplaint.suspectDetails != null && displayComplaint.suspectDetails!.isNotEmpty);
   }
 
   bool _hasTechnicalFields() {
-    return displayComplaint.systemDetails != null ||
-           displayComplaint.technicalInfo != null ||
-           displayComplaint.vulnerabilityDetails != null ||
-           displayComplaint.attackVector != null ||
-           displayComplaint.securityLevel != null;
+    return (displayComplaint.systemDetails != null && displayComplaint.systemDetails!.isNotEmpty) ||
+           (displayComplaint.technicalInfo != null && displayComplaint.technicalInfo!.isNotEmpty) ||
+           (displayComplaint.vulnerabilityDetails != null && displayComplaint.vulnerabilityDetails!.isNotEmpty) ||
+           (displayComplaint.attackVector != null && displayComplaint.attackVector!.isNotEmpty) ||
+           (displayComplaint.securityLevel != null && displayComplaint.securityLevel!.isNotEmpty);
   }
 
   bool _hasLocationPlatformFields() {
-    return displayComplaint.incidentLocation != null ||
-           displayComplaint.platformWebsite != null ||
-           displayComplaint.targetInfo != null ||
-           displayComplaint.contentDescription != null ||
-           displayComplaint.impactAssessment != null;
+    return (displayComplaint.incidentLocation != null && displayComplaint.incidentLocation!.isNotEmpty) ||
+           (displayComplaint.platformWebsite != null && displayComplaint.platformWebsite!.isNotEmpty) ||
+           (displayComplaint.targetInfo != null && displayComplaint.targetInfo!.isNotEmpty) ||
+           (displayComplaint.contentDescription != null && displayComplaint.contentDescription!.isNotEmpty) ||
+           (displayComplaint.impactAssessment != null && displayComplaint.impactAssessment!.isNotEmpty);
   }
 
   Widget _buildFinancialCard(bool isDark) {
@@ -1671,21 +2198,21 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           
-          if (displayComplaint.estimatedFinancialLoss != null) ...[
+          if (displayComplaint.estimatedFinancialLoss != null && displayComplaint.estimatedFinancialLoss! > 0) ...[
             _buildInfoRow(
               icon: Icons.money_off,
               label: 'Financial Loss',
-              value: '₱${displayComplaint.estimatedFinancialLoss!.toStringAsFixed(2)}',
+              value: '₱${displayComplaint.estimatedFinancialLoss?.toStringAsFixed(2) ?? '0.00'}',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.accountReference != null) ...[
+          if (displayComplaint.accountReference != null && displayComplaint.accountReference!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.account_balance,
               label: 'Account/Reference',
-              value: displayComplaint.accountReference!,
+              value: displayComplaint.accountReference ?? 'N/A',
               isDark: isDark,
             ),
           ],
@@ -1741,41 +2268,41 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           
-          if (displayComplaint.suspectName != null) ...[
+          if (displayComplaint.suspectName != null && displayComplaint.suspectName!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.person,
               label: 'Suspect Name',
-              value: displayComplaint.suspectName!,
+              value: displayComplaint.suspectName ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.suspectRelationship != null) ...[
+          if (displayComplaint.suspectRelationship != null && displayComplaint.suspectRelationship!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.family_restroom,
               label: 'Relationship',
-              value: displayComplaint.suspectRelationship!,
+              value: displayComplaint.suspectRelationship ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.suspectContact != null) ...[
+          if (displayComplaint.suspectContact != null && displayComplaint.suspectContact!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.contact_phone,
               label: 'Contact Info',
-              value: displayComplaint.suspectContact!,
+              value: displayComplaint.suspectContact ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.suspectDetails != null) ...[
+          if (displayComplaint.suspectDetails != null && displayComplaint.suspectDetails!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.info,
               label: 'Additional Details',
-              value: displayComplaint.suspectDetails!,
+              value: displayComplaint.suspectDetails ?? 'N/A',
               isDark: isDark,
             ),
           ],
@@ -1831,51 +2358,51 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           
-          if (displayComplaint.systemDetails != null) ...[
+          if (displayComplaint.systemDetails != null && displayComplaint.systemDetails!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.devices,
               label: 'System Details',
-              value: displayComplaint.systemDetails!,
+              value: displayComplaint.systemDetails ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.technicalInfo != null) ...[
+          if (displayComplaint.technicalInfo != null && displayComplaint.technicalInfo!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.code,
               label: 'Technical Info',
-              value: displayComplaint.technicalInfo!,
+              value: displayComplaint.technicalInfo ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.vulnerabilityDetails != null) ...[
+          if (displayComplaint.vulnerabilityDetails != null && displayComplaint.vulnerabilityDetails!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.security,
               label: 'Vulnerability',
-              value: displayComplaint.vulnerabilityDetails!,
+              value: displayComplaint.vulnerabilityDetails ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.attackVector != null) ...[
+          if (displayComplaint.attackVector != null && displayComplaint.attackVector!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.gps_fixed,
               label: 'Attack Vector',
-              value: displayComplaint.attackVector!,
+              value: displayComplaint.attackVector ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.securityLevel != null) ...[
+          if (displayComplaint.securityLevel != null && displayComplaint.securityLevel!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.verified_user,
               label: 'Security Level',
-              value: displayComplaint.securityLevel!,
+              value: displayComplaint.securityLevel ?? 'N/A',
               isDark: isDark,
             ),
           ],
@@ -1931,51 +2458,51 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           
-          if (displayComplaint.incidentLocation != null) ...[
+          if (displayComplaint.incidentLocation != null && displayComplaint.incidentLocation!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.place,
               label: 'Incident Location',
-              value: displayComplaint.incidentLocation!,
+              value: displayComplaint.incidentLocation ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.platformWebsite != null) ...[
+          if (displayComplaint.platformWebsite != null && displayComplaint.platformWebsite!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.web,
               label: 'Platform/Website',
-              value: displayComplaint.platformWebsite!,
+              value: displayComplaint.platformWebsite ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.targetInfo != null) ...[
+          if (displayComplaint.targetInfo != null && displayComplaint.targetInfo!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.my_location,
               label: 'Target Information',
-              value: displayComplaint.targetInfo!,
+              value: displayComplaint.targetInfo ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.contentDescription != null) ...[
+          if (displayComplaint.contentDescription != null && displayComplaint.contentDescription!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.content_copy,
               label: 'Content Description',
-              value: displayComplaint.contentDescription!,
+              value: displayComplaint.contentDescription ?? 'N/A',
               isDark: isDark,
             ),
             const SizedBox(height: 12),
           ],
           
-          if (displayComplaint.impactAssessment != null) ...[
+          if (displayComplaint.impactAssessment != null && displayComplaint.impactAssessment!.isNotEmpty) ...[
             _buildInfoRow(
               icon: Icons.assessment,
               label: 'Impact Assessment',
-              value: displayComplaint.impactAssessment!,
+              value: displayComplaint.impactAssessment ?? 'N/A',
               isDark: isDark,
             ),
           ],
@@ -2192,8 +2719,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 Expanded(
                   child: _buildAiMetricCard(
                     title: 'AI Priority',
-                    value: displayComplaint.aiPriority!.toUpperCase(),
-                    color: _getPriorityColor(displayComplaint.aiPriority!),
+                    value: (displayComplaint.aiPriority ?? 'N/A').toUpperCase(),
+                    color: _getPriorityColor(displayComplaint.aiPriority ?? 'low'),
                     icon: Icons.priority_high,
                     isDark: isDark,
                   ),
@@ -2489,5 +3016,247 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     if (difference.inHours < 24) return '${difference.inHours}h ago';
     if (difference.inDays < 7) return '${difference.inDays}d ago';
     return '${(difference.inDays / 7).floor()}w ago';
+  }
+}
+
+// Video Player Widget
+class _VideoPlayerWidget extends StatefulWidget {
+  final EvidenceFile file;
+  final bool isDark;
+
+  const _VideoPlayerWidget({
+    required this.file,
+    required this.isDark,
+  });
+
+  @override
+  State<_VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
+}
+
+class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeVideo();
+  }
+
+  Future<void> _initializeVideo() async {
+    try {
+      // Try to load from URL first
+      if (widget.file.downloadUrl != null && widget.file.downloadUrl!.isNotEmpty) {
+        _controller = VideoPlayerController.networkUrl(
+          Uri.parse(widget.file.downloadUrl!),
+        );
+      } 
+      // Try local file
+      else if (File(widget.file.filePath).existsSync()) {
+        _controller = VideoPlayerController.file(
+          File(widget.file.filePath),
+        );
+      } else {
+        setState(() {
+          _errorMessage = 'Video file not found';
+        });
+        return;
+      }
+
+      await _controller!.initialize();
+      setState(() {
+        _isInitialized = true;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error loading video: $e';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 48,
+              color: Colors.red.withOpacity(0.7),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _errorMessage!,
+              style: TextStyle(
+                color: widget.isDark ? Colors.grey[400] : Colors.grey[600],
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!_isInitialized) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              'Loading video...',
+              style: TextStyle(
+                color: widget.isDark ? Colors.grey[400] : Colors.grey[600],
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      constraints: const BoxConstraints(
+        maxHeight: 400,
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: AspectRatio(
+                aspectRatio: _controller!.value.aspectRatio,
+                child: VideoPlayer(_controller!),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _VideoControls(
+            controller: _controller!,
+            isDark: widget.isDark,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Video Controls Widget
+class _VideoControls extends StatefulWidget {
+  final VideoPlayerController controller;
+  final bool isDark;
+
+  const _VideoControls({
+    required this.controller,
+    required this.isDark,
+  });
+
+  @override
+  State<_VideoControls> createState() => _VideoControlsState();
+}
+
+class _VideoControlsState extends State<_VideoControls> {
+  bool _isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_updateState);
+  }
+
+  void _updateState() {
+    if (mounted) {
+      setState(() {
+        _isPlaying = widget.controller.value.isPlaying;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_updateState);
+    super.dispose();
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return "$minutes:$seconds";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final position = widget.controller.value.position;
+    final duration = widget.controller.value.duration;
+    
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: widget.isDark ? const Color(0xFF374151) : Colors.grey[100],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          // Progress bar
+          VideoProgressIndicator(
+            widget.controller,
+            allowScrubbing: true,
+            colors: VideoProgressColors(
+              playedColor: const Color(0xFF2563EB),
+              bufferedColor: Colors.grey.withOpacity(0.3),
+              backgroundColor: Colors.grey.withOpacity(0.2),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _formatDuration(position),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: widget.isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+              ),
+              const SizedBox(width: 16),
+              IconButton(
+                onPressed: () {
+                  if (_isPlaying) {
+                    widget.controller.pause();
+                  } else {
+                    widget.controller.play();
+                  }
+                },
+                icon: Icon(
+                  _isPlaying ? Icons.pause : Icons.play_arrow,
+                  size: 32,
+                ),
+                color: const Color(0xFF2563EB),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                _formatDuration(duration),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: widget.isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

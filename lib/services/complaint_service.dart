@@ -482,6 +482,21 @@ class ComplaintService {
             ? DateTime.parse(data['last_ai_assessment']) 
             : null,
         aiReasoning: data['ai_reasoning'],
+        // Dynamic fields mapping from snake_case to camelCase
+        platformWebsite: data['platform_website'],
+        accountReference: data['account_reference'],
+        suspectName: data['suspect_name'],
+        suspectRelationship: data['suspect_relationship'],
+        suspectContact: data['suspect_contact'],
+        suspectDetails: data['suspect_details'],
+        systemDetails: data['system_details'],
+        technicalInfo: data['technical_info'],
+        vulnerabilityDetails: data['vulnerability_details'],
+        attackVector: data['attack_vector'],
+        securityLevel: data['security_level'],
+        targetInfo: data['target_info'],
+        impactAssessment: data['impact_assessment'],
+        contentDescription: data['content_description'],
       );
     } catch (e) {
       print('Error converting database data to Complaint: $e');

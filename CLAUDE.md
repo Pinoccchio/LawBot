@@ -466,6 +466,55 @@ Both applications use compatible data structures with AI enhancement:
 4. **Performance Optimization**: Caching, indexing, and query optimization
 5. **Security Implementation**: RLS policies, authentication, and access control
 
+## Field Naming Convention (IMPORTANT)
+
+### Database Schema
+- **Always use snake_case**: `user_id`, `complaint_number`, `platform_website`, `file_name`
+- All table columns follow PostgreSQL snake_case convention
+- Examples: `incident_date_time`, `assigned_officer_id`, `ai_risk_score`
+
+### Flutter App (Mobile)
+- **Internal models use camelCase**: `userId`, `complaintNumber`, `platformWebsite`, `fileName`
+- **Service layer handles conversion**: When fetching/saving data, convert between snake_case ↔ camelCase
+- Conversion happens in:
+  - `complaint_service.dart`: `_complaintFromDatabaseMap()` method
+  - `realtime_service.dart`: When parsing real-time updates
+  - Individual screen files when directly querying database
+
+### Web App (Next.js)
+- **Uses snake_case throughout**: Matches database schema directly
+- No conversion needed as TypeScript interfaces match database fields
+- Mock data and production data both use snake_case
+
+### Field Mapping Examples
+```dart
+// Flutter Service Layer (complaint_service.dart)
+Complaint _complaintFromDatabaseMap(Map<String, dynamic> data) {
+  return Complaint(
+    // Database snake_case → Flutter camelCase
+    platformWebsite: data['platform_website'],
+    suspectName: data['suspect_name'],
+    incidentDateTime: DateTime.parse(data['incident_date_time']),
+    // Evidence files also need mapping
+    evidenceFiles.add(EvidenceFile(
+      fileName: evidenceData['file_name'],  // snake_case → camelCase
+      fileType: evidenceData['file_type'],
+    ));
+  );
+}
+```
+
+### Common Field Mappings
+| Database (snake_case) | Flutter (camelCase) | Web App (snake_case) |
+|-----------------------|---------------------|----------------------|
+| user_id | userId | user_id |
+| complaint_number | complaintNumber | complaint_number |
+| incident_date_time | incidentDateTime | incident_date_time |
+| platform_website | platformWebsite | platform_website |
+| file_name | fileName | file_name |
+| is_read | isRead | is_read |
+| created_at | createdAt | created_at |
+
 ## Current Project Status Summary
 
 **LawBot is a sophisticated, production-ready AI-powered cybercrime reporting platform** with:
