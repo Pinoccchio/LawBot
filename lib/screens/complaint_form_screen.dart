@@ -91,6 +91,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Debounced AI updates timer (for dropdown changes)
   Timer? _debouncedAIUpdatesTimer;
   
+  // Financial loss change timer (for urgency-based officer reload)
+  Timer? _financialLossTimer;
+  
   // AI Loading states
   bool _isLoadingCredibilityScore = false;
   bool _isLoadingEvidenceGuidance = false;
@@ -107,6 +110,63 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     'Complete Stranger',
   ];
 
+  // Helper method to determine if current case is urgent
+  bool _determineIfUrgentCase() {
+    return PNPUnitsService.isUrgentCase(
+      aiRiskScore: _currentAIAssessment?.aiRiskScore,
+      aiPriority: _currentAIAssessment?.aiPriority,
+      financialLoss: double.tryParse(_financialLossController.text),
+      crimeType: _selectedCrimeType?.name,
+    );
+  }
+
+  // Reload officers when urgency changes due to AI assessment
+  Future<void> _reloadOfficersIfUrgencyChanged() async {
+    if (_selectedCrimeType == null) return;
+    
+    print('🔄 Checking if officer reload needed due to urgency change...');
+    final currentUrgency = _determineIfUrgentCase();
+    
+    try {
+      // Get officers for current crime type with updated urgency
+      final updatedOfficers = await _pnpUnitsService.getAvailableOfficersForCrimeType(
+        _selectedCrimeType!.name,
+        isUrgent: currentUrgency,
+      );
+      
+      // Update the available officers for the selected crime type
+      setState(() {
+        _selectedCrimeType = DatabaseCrimeType(
+          name: _selectedCrimeType!.name,
+          category: _selectedCrimeType!.category,
+          categoryIcon: _selectedCrimeType!.categoryIcon,
+          assignedUnit: _selectedCrimeType!.assignedUnit,
+          availableOfficers: updatedOfficers,
+        );
+        
+        // Reset officer selection if current officer is no longer available
+        if (_selectedOfficer != null && !updatedOfficers.any((o) => o.id == _selectedOfficer!.id)) {
+          _selectedOfficer = null;
+          print('⚠️ Previously selected officer no longer available due to availability change');
+        }
+      });
+      
+      print('✅ Officers reloaded based on urgency: ${currentUrgency ? "URGENT" : "NORMAL"} (${updatedOfficers.length} available)');
+      
+    } catch (e) {
+      print('❌ Error reloading officers: $e');
+    }
+  }
+
+  // Handle financial loss changes (affects urgency)
+  void _onFinancialLossChanged() {
+    // Debounce financial loss changes to avoid excessive officer reloads
+    _financialLossTimer?.cancel();
+    _financialLossTimer = Timer(const Duration(milliseconds: 1000), () {
+      _reloadOfficersIfUrgencyChanged();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -120,6 +180,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _phoneController.addListener(_updateCredibilityScore);
     _platformWebsiteController.addListener(_updateCredibilityScore);
     _financialLossController.addListener(_updateCredibilityScore);
+    
+    // Add listener for financial loss changes (affects urgency)
+    _financialLossController.addListener(_onFinancialLossChanged);
     
     // Add missing controller listeners for comprehensive AI updates
     _incidentLocationController.addListener(_updateCredibilityScore);
@@ -192,7 +255,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
 
     try {
       print('📡 Calling PNP Units Service...');
-      final crimeTypesWithUnits = await _pnpUnitsService.getCrimeTypesWithUnits();
+      // Determine if we should load officers for urgent cases based on current AI assessment
+      final isUrgentCase = _determineIfUrgentCase();
+      final crimeTypesWithUnits = await _pnpUnitsService.getCrimeTypesWithUnits(isUrgentCase: isUrgentCase);
       
       print('📊 Received ${crimeTypesWithUnits.length} crime types from service');
       
@@ -472,6 +537,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         });
         
         print('🤖 AI Assessment completed: ${assessment.aiPriority} priority, ${assessment.aiRiskScore}% risk, ${assessment.confidenceScore}% confidence');
+        
+        // Reload officers based on urgency determined by AI assessment
+        await _reloadOfficersIfUrgencyChanged();
       }
     } catch (e) {
       print('⚠️ Quick AI assessment failed: $e');
@@ -1873,24 +1941,33 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                                 menuMaxHeight: 250,
                                 items: _selectedCrimeType!.availableOfficers.map((officer) {
                                   Color workloadColor = _getAvailabilityStatusColor(officer.availabilityStatus);
+                                  final bool isUrgent = _determineIfUrgentCase();
+                                  final bool canSelect = officer.canBeSelected(isUrgentCase: isUrgent);
                                   
                                   return DropdownMenuItem(
-                                    value: officer,
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 32,
-                                          height: 32,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF2563EB).withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(16),
+                                    value: canSelect ? officer : null, // Disable selection for unavailable officers
+                                    enabled: canSelect,
+                                    child: Opacity(
+                                      opacity: canSelect ? 1.0 : 0.5, // Dim disabled officers
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 32,
+                                            height: 32,
+                                            decoration: BoxDecoration(
+                                              color: canSelect 
+                                                  ? const Color(0xFF2563EB).withOpacity(0.1)
+                                                  : Colors.grey.withOpacity(0.1),
+                                              borderRadius: BorderRadius.circular(16),
+                                            ),
+                                            child: Icon(
+                                              Icons.person,
+                                              color: canSelect 
+                                                  ? const Color(0xFF2563EB)
+                                                  : Colors.grey,
+                                              size: 16,
+                                            ),
                                           ),
-                                          child: Icon(
-                                            Icons.person,
-                                            color: const Color(0xFF2563EB),
-                                            size: 16,
-                                          ),
-                                        ),
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Column(
@@ -1902,7 +1979,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.w600,
                                                   fontSize: 13,
-                                                  color: isDark ? Colors.white : Colors.black87,
+                                                  color: canSelect 
+                                                      ? (isDark ? Colors.white : Colors.black87)
+                                                      : Colors.grey,
                                                 ),
                                                 overflow: TextOverflow.ellipsis,
                                               ),
@@ -1919,10 +1998,12 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                                                   const SizedBox(width: 4),
                                                   Expanded(
                                                     child: Text(
-                                                      officer.workloadDescription,
+                                                      canSelect 
+                                                          ? officer.workloadDescription
+                                                          : '${officer.workloadDescription} - Cannot accept ${isUrgent ? "any" : "normal"} cases',
                                                       style: TextStyle(
                                                         fontSize: 11,
-                                                        color: workloadColor,
+                                                        color: canSelect ? workloadColor : Colors.grey,
                                                         fontWeight: FontWeight.w500,
                                                       ),
                                                       overflow: TextOverflow.ellipsis,
@@ -1933,7 +2014,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                                             ],
                                           ),
                                         ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   );
                                 }).toList(),
@@ -1944,6 +2026,60 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                                   }
                                   return null;
                                 },
+                              ),
+                              
+                              // Officer availability explanation
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: isDark 
+                                      ? const Color(0xFF2563EB).withOpacity(0.1)
+                                      : const Color(0xFF3B82F6).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isDark 
+                                        ? const Color(0xFF2563EB).withOpacity(0.3)
+                                        : const Color(0xFF3B82F6).withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Officer Availability Status:',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '🟢 Available officers can accept all cases\n'
+                                            '🟡 Busy officers can only accept urgent cases\n'
+                                            '🔴 Overloaded/Unavailable officers cannot be selected',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: isDark ? Colors.grey[400] : Colors.grey[700],
+                                              height: 1.3,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ] else ...[
                               Container(

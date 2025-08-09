@@ -62,8 +62,8 @@ class PNPUnitsService {
     }
   }
 
-  // Get crime types with their assigned units and officers
-  Future<List<CrimeTypeWithUnit>> getCrimeTypesWithUnits() async {
+  // Get crime types with their assigned units and officers (with urgency support)
+  Future<List<CrimeTypeWithUnit>> getCrimeTypesWithUnits({bool isUrgentCase = false}) async {
     try {
       print('🔍 Fetching crime types with units...');
       
@@ -83,9 +83,9 @@ class PNPUnitsService {
       for (PNPUnit unit in units) {
         print('📋 Processing unit: ${unit.unitName} with ${unit.crimeTypes.length} crime types');
         
-        // Get AVAILABLE officers for this unit (not just active ones)
-        final officers = await getAvailableUnitOfficers(unit.id);
-        print('👮 Found ${officers.length} available officers for ${unit.unitName}');
+        // Get AVAILABLE officers for this unit with urgency consideration
+        final officers = await getAvailableUnitOfficers(unit.id, isUrgent: isUrgentCase);
+        print('👮 Found ${officers.length} officers for ${unit.unitName} (urgent: $isUrgentCase)');
         
         // Create a CrimeTypeWithUnit for each crime type in this unit
         for (String crimeType in unit.crimeTypes) {
@@ -123,19 +123,50 @@ class PNPUnitsService {
     }
   }
 
-  // Get AVAILABLE officers for a specific unit (simplified)
-  Future<List<PNPOfficer>> getAvailableUnitOfficers(String unitId) async {
+  // Get AVAILABLE officers for a specific unit with availability filtering
+  Future<List<PNPOfficer>> getAvailableUnitOfficers(String unitId, {bool isUrgent = false}) async {
     try {
-      final response = await _supabase
+      var query = _supabase
           .from('pnp_officer_profiles')
           .select('*')
           .eq('unit_id', unitId)
-          .eq('status', 'active') // Must be active status
-          .order('full_name'); // Simple alphabetical order
+          .eq('status', 'active'); // Must be active status
+      
+      // Show ALL officers regardless of availability status
+      // Filtering will be handled in the UI based on urgency and availability
+      
+      // Order by availability priority (available first, then busy) and then by name
+      final response = await query.order('availability_status').order('full_name');
 
       final officers = (response as List).map((officer) => PNPOfficer.fromJson(officer)).toList();
       
-      print('👮‍♂️ Unit $unitId: ${officers.length} officers available for assignment');
+      // Sort by availability priority (available first, then busy, then overloaded, then unavailable)
+      officers.sort((a, b) {
+        final aStatus = a.availabilityStatus ?? 'available';
+        final bStatus = b.availabilityStatus ?? 'available';
+        
+        // Priority order: available (1), busy (2), overloaded (3), unavailable (4)
+        int getPriority(String status) {
+          switch (status) {
+            case 'available': return 1;
+            case 'busy': return 2;
+            case 'overloaded': return 3;
+            case 'unavailable': return 4;
+            default: return 5;
+          }
+        }
+        
+        final aPriority = getPriority(aStatus);
+        final bPriority = getPriority(bStatus);
+        
+        if (aPriority != bPriority) {
+          return aPriority.compareTo(bPriority);
+        }
+        return a.fullName.compareTo(b.fullName);
+      });
+      
+      print('👮‍♂️ Unit $unitId: ${officers.length} total officers shown (urgent: $isUrgent)');
+      print('📊 Available: ${officers.where((o) => (o.availabilityStatus ?? 'available') == 'available').length}, Busy: ${officers.where((o) => (o.availabilityStatus ?? 'available') == 'busy').length}, Overloaded: ${officers.where((o) => (o.availabilityStatus ?? 'available') == 'overloaded').length}, Unavailable: ${officers.where((o) => (o.availabilityStatus ?? 'available') == 'unavailable').length}');
       
       return officers;
     } catch (e) {
@@ -144,8 +175,8 @@ class PNPUnitsService {
     }
   }
 
-  // Get available officers for case assignment (simplified)
-  Future<List<PNPOfficer>> getAvailableOfficersForCrimeType(String crimeType) async {
+  // Get available officers for case assignment with availability filtering
+  Future<List<PNPOfficer>> getAvailableOfficersForCrimeType(String crimeType, {bool isUrgent = false}) async {
     try {
       final response = await _supabase
           .from('pnp_unit_crime_types')
@@ -180,23 +211,103 @@ class PNPUnitsService {
       for (var item in response as List) {
         final unit = item['pnp_units'];
         final unitOfficers = (unit['pnp_officer_profiles'] as List? ?? [])
-            .where((officer) => officer['status'] == 'active')
+            .where((officer) {
+              // Must be active status (only filter by employment status)
+              return officer['status'] == 'active';
+            })
             .map((officer) => PNPOfficer.fromJson(officer))
             .toList();
         
         officers.addAll(unitOfficers);
       }
 
-      // Simple sort by name (alphabetical)
-      officers.sort((a, b) => a.fullName.compareTo(b.fullName));
+      // Sort by availability priority first, then by name
+      officers.sort((a, b) {
+        final aStatus = a.availabilityStatus ?? 'available';
+        final bStatus = b.availabilityStatus ?? 'available';
+        
+        // Priority order: available (1), busy (2), overloaded (3), unavailable (4)
+        int getPriority(String status) {
+          switch (status) {
+            case 'available': return 1;
+            case 'busy': return 2;
+            case 'overloaded': return 3;
+            case 'unavailable': return 4;
+            default: return 5;
+          }
+        }
+        
+        final aPriority = getPriority(aStatus);
+        final bPriority = getPriority(bStatus);
+        
+        if (aPriority != bPriority) {
+          return aPriority.compareTo(bPriority);
+        }
+        return a.fullName.compareTo(b.fullName);
+      });
       
-      print('🔍 Found ${officers.length} available officers for $crimeType crime type');
+      print('🔍 Found ${officers.length} total officers for $crimeType crime type (urgent: $isUrgent)');
+      print('📊 Available: ${officers.where((o) => (o.availabilityStatus ?? 'available') == 'available').length}, Busy: ${officers.where((o) => (o.availabilityStatus ?? 'available') == 'busy').length}, Overloaded: ${officers.where((o) => (o.availabilityStatus ?? 'available') == 'overloaded').length}, Unavailable: ${officers.where((o) => (o.availabilityStatus ?? 'available') == 'unavailable').length}');
       
       return officers;
     } catch (e) {
       print('Error fetching available officers: $e');
       return [];
     }
+  }
+
+  // Helper method to determine if case is urgent based on AI risk assessment
+  static bool isUrgentCase({
+    int? aiRiskScore,
+    String? aiPriority,
+    double? financialLoss,
+    String? crimeType,
+  }) {
+    // Priority 1: AI risk assessment results
+    if (aiRiskScore != null && aiRiskScore >= 70) {
+      print('🚨 Case marked as URGENT: AI risk score $aiRiskScore >= 70');
+      return true;
+    }
+    
+    if (aiPriority != null && (aiPriority.toLowerCase() == 'high' || aiPriority.toLowerCase() == 'urgent')) {
+      print('🚨 Case marked as URGENT: AI priority is $aiPriority');
+      return true;
+    }
+    
+    // Priority 2: Financial threshold (high financial loss cases)
+    if (financialLoss != null && financialLoss >= 100000) { // ₱100,000 or more
+      print('🚨 Case marked as URGENT: Financial loss ₱${financialLoss.toStringAsFixed(2)} >= ₱100,000');
+      return true;
+    }
+    
+    // Priority 3: Crime type analysis (high-impact crimes)
+    if (crimeType != null) {
+      final urgentCrimeTypes = [
+        // Financial crimes with high impact
+        'Identity Theft for Financial Gain',
+        'Credit Card Fraud',
+        'Online Banking Fraud',
+        'Investment Scams',
+        'Ransomware Attacks',
+        // Safety-related crimes
+        'Cyberstalking',
+        'Online Threats and Intimidation',
+        'Child Exploitation',
+        'Human Trafficking via Online Platforms',
+        // National security concerns
+        'Government Website Defacement',
+        'Critical Infrastructure Attacks',
+        'Cyber Terrorism',
+      ];
+      
+      if (urgentCrimeTypes.any((urgentType) => crimeType.toLowerCase().contains(urgentType.toLowerCase()))) {
+        print('🚨 Case marked as URGENT: Crime type "$crimeType" is high-impact');
+        return true;
+      }
+    }
+    
+    print('📄 Case marked as NORMAL priority');
+    return false;
   }
 }
 
@@ -412,6 +523,23 @@ class PNPOfficer {
         return '⚫ Unavailable';
       default:
         return '❓ Unknown';
+    }
+  }
+  
+  // Check if officer can be selected based on urgency and availability
+  bool canBeSelected({required bool isUrgentCase}) {
+    final availability = availabilityStatus ?? 'available';
+    
+    switch (availability) {
+      case 'available':
+        return true; // Always selectable
+      case 'busy':
+        return isUrgentCase; // Only selectable for urgent cases
+      case 'overloaded':
+      case 'unavailable':
+        return false; // Never selectable
+      default:
+        return false;
     }
   }
 }

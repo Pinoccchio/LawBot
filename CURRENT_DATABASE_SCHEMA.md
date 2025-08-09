@@ -352,10 +352,11 @@ $$ LANGUAGE plpgsql;
 ```
 **Purpose**: Automatically update timestamps on record changes
 
-### 2. **get_available_officers_with_caseload()** - Officer Assignment
+### 2. **get_available_officers_with_caseload()** - Enhanced Officer Assignment
 ```sql
 CREATE OR REPLACE FUNCTION get_available_officers_with_caseload(
   unit_name TEXT,
+  priority_level TEXT DEFAULT 'normal',
   max_active_cases INTEGER DEFAULT 10
 )
 RETURNS TABLE (
@@ -380,15 +381,30 @@ BEGIN
   LEFT JOIN case_assignments ca ON p.firebase_uid = ca.officer_id
   WHERE u.unit_name = get_available_officers_with_caseload.unit_name
     AND p.status = 'active'
-    AND p.availability_status IN ('available', 'busy')
+    -- Enhanced availability filtering based on priority
+    AND (
+      CASE 
+        WHEN priority_level = 'urgent' THEN p.availability_status IN ('available', 'busy')
+        ELSE p.availability_status = 'available'
+      END
+    )
+    -- Always exclude overloaded and unavailable officers
+    AND p.availability_status NOT IN ('overloaded', 'unavailable')
   GROUP BY p.firebase_uid, p.full_name, p.badge_number, p.rank, p.availability_status
   HAVING COUNT(ca.id) FILTER (WHERE ca.status = 'active') < max_active_cases
-  ORDER BY COUNT(ca.id) FILTER (WHERE ca.status = 'active') ASC;
+  ORDER BY 
+    -- Prioritize available officers first, then busy officers
+    CASE p.availability_status 
+      WHEN 'available' THEN 1 
+      WHEN 'busy' THEN 2 
+      ELSE 3 
+    END,
+    COUNT(ca.id) FILTER (WHERE ca.status = 'active') ASC;
 END;
 $$ LANGUAGE plpgsql;
 ```
 **Used by**: Officer assignment system
-**Purpose**: Find available officers with lowest caseload
+**Purpose**: Find available officers with priority-based availability filtering and lowest caseload
 
 ### 3. **track_complaint_update()** - Update Tracking Trigger
 ```sql
