@@ -1540,7 +1540,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Uploaded: ${PhilippineTime.formatChatHistoryTime(file.uploadedAt.toIso8601String())}',
+            'Uploaded: ${PhilippineTime.formatSpecificTime(file.uploadedAt.toIso8601String())}',
             style: TextStyle(
               fontSize: 12,
               color: isDark ? Colors.grey[500] : Colors.grey[500],

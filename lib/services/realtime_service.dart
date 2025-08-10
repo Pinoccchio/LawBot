@@ -425,7 +425,7 @@ class RealtimeService {
       'complaint_id': newRecord['complaint_id'],
       'old_status': oldRecord['status'],
       'new_status': newRecord['status'],
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
     });
   }
 
@@ -439,7 +439,7 @@ class RealtimeService {
       'type': 'assignment_removed',
       'complaint_id': record['complaint_id'],
       'officer_id': record['officer_id'],
-      'removed_at': DateTime.now().toIso8601String(),
+      'removed_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
     });
   }
 

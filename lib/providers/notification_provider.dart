@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/database_service.dart';
+import '../utils/philippine_time.dart';
 
 class NotificationProvider extends ChangeNotifier {
   final DatabaseService _databaseService = DatabaseService();
@@ -79,10 +80,11 @@ class NotificationProvider extends ChangeNotifier {
       // Get notifications from database (using existing method signature)
       _notifications = await _databaseService.getNotifications(limit: 100);
       
-      // Get notification statistics
+      // Get notification statistics from database (complete stats)
       _notificationStats = await _databaseService.getNotificationStats();
       
       print('✅ Loaded ${_notifications.length} notifications from database');
+      print('📊 Stats: ${_notificationStats}');
       
       _notificationsLoading = false;
       notifyListeners();
@@ -98,7 +100,8 @@ class NotificationProvider extends ChangeNotifier {
 
   // Load sample notifications for frontend (fallback)
   void _loadSampleNotifications() {
-    final now = DateTime.now();
+    // Use Philippines time for consistent sample data
+    final now = PhilippineTime.now();
     _notifications = [
       // PENDING Status Notifications
       {
@@ -110,7 +113,7 @@ class NotificationProvider extends ChangeNotifier {
         'notification_category': 'case_update',
         'sender_name': 'PNP Cybercrime Unit',
         'is_read': false,
-        'created_at': now.subtract(const Duration(minutes: 30)).toIso8601String(),
+        'created_at': PhilippineTime.toUtc(now.subtract(const Duration(minutes: 30))).toIso8601String(),
         'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
       {
@@ -160,7 +163,8 @@ class NotificationProvider extends ChangeNotifier {
         'notification_category': 'case_update',
         'sender_name': 'Officer Cruz - Cyber Crime Investigation Cell',
         'is_read': true,
-        'created_at': now.subtract(const Duration(hours: 8)).toIso8601String(),
+        'read_at': PhilippineTime.toUtc(now.subtract(const Duration(hours: 6))).toIso8601String(),
+        'created_at': PhilippineTime.toUtc(now.subtract(const Duration(hours: 8))).toIso8601String(),
         'action_url': '/complaint/617a89da-3475-4165-8ea0-1bd850891bf9',
       },
 
@@ -299,16 +303,21 @@ class NotificationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Update notification stats locally (used for fallback/sample data)
   void _updateNotificationStats() {
+    // Use Philippines time for consistent calculation
+    final nowPhilippines = PhilippineTime.now();
+    
     final unreadCount = _notifications.where((n) => n['is_read'] == false).length;
     final urgentCount = _notifications.where((n) => n['priority'] == 'urgent' && n['is_read'] == false).length;
     final todayCount = _notifications.where((n) {
       try {
         final createdAt = DateTime.parse(n['created_at']);
-        final today = DateTime.now();
-        return createdAt.year == today.year && 
-               createdAt.month == today.month && 
-               createdAt.day == today.day;
+        // Convert to Philippines time for comparison
+        final createdAtPhilippines = PhilippineTime.fromUtc(createdAt);
+        return createdAtPhilippines.year == nowPhilippines.year && 
+               createdAtPhilippines.month == nowPhilippines.month && 
+               createdAtPhilippines.day == nowPhilippines.day;
       } catch (e) {
         return false;
       }
@@ -336,8 +345,17 @@ class NotificationProvider extends ChangeNotifier {
         final index = _notifications.indexWhere((n) => n['id'] == notificationId);
         if (index != -1 && _notifications[index]['is_read'] == false) {
           _notifications[index]['is_read'] = true;
-          _notifications[index]['read_at'] = DateTime.now().toIso8601String();
-          _updateNotificationStats();
+          _notifications[index]['read_at'] = PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String();
+          
+          // Update stats: decrement unread count, keep others
+          if (_notificationStats.isNotEmpty) {
+            _notificationStats['unread_notifications'] = (_notificationStats['unread_notifications'] ?? 1) - 1;
+            // If it was urgent, also decrement urgent count
+            if (_notifications[index]['priority'] == 'urgent') {
+              _notificationStats['urgent_notifications'] = (_notificationStats['urgent_notifications'] ?? 1) - 1;
+            }
+          }
+          
           notifyListeners();
         }
       }
@@ -356,13 +374,27 @@ class NotificationProvider extends ChangeNotifier {
       
       if (success) {
         // Update local data
+        int markedCount = 0;
+        int urgentMarkedCount = 0;
+        
         for (var notification in _notifications) {
           if (notification['is_read'] == false) {
             notification['is_read'] = true;
-            notification['read_at'] = DateTime.now().toIso8601String();
+            notification['read_at'] = PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String();
+            markedCount++;
+            
+            if (notification['priority'] == 'urgent') {
+              urgentMarkedCount++;
+            }
           }
         }
-        _updateNotificationStats();
+        
+        // Update stats: set unread counts to 0
+        if (_notificationStats.isNotEmpty) {
+          _notificationStats['unread_notifications'] = 0;
+          _notificationStats['urgent_notifications'] = 0;
+        }
+        
         notifyListeners();
       }
       

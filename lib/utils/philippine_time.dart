@@ -91,7 +91,13 @@ class PhilippineTime {
         philippineDateTime.day == yesterday.day;
   }
 
+  /// Get specific time string - always shows full date and time for clarity
+  static String getSpecificTimeString(DateTime philippineDateTime) {
+    return formatDateTime(philippineDateTime);
+  }
+
   /// Get relative time string (e.g., "Today 6:05 PM", "Yesterday 3:30 PM", "June 3, 2025 2:15 PM")
+  /// DEPRECATED: Use getSpecificTimeString() for consistent specific times
   static String getRelativeTimeString(DateTime philippineDateTime) {
     if (isToday(philippineDateTime)) {
       return 'Today ${formatTime(philippineDateTime)}';
@@ -102,7 +108,16 @@ class PhilippineTime {
     }
   }
 
+  /// Format time for specific display - always shows full date and time
+  static String formatSpecificTime(String? utcTimeString) {
+    final philippineTime = parseDatabaseTime(utcTimeString);
+    if (philippineTime == null) return 'Unknown time';
+
+    return getSpecificTimeString(philippineTime);
+  }
+
   /// Format time for chat history display
+  /// DEPRECATED: Use formatSpecificTime() for consistent specific times
   static String formatChatHistoryTime(String? utcTimeString) {
     final philippineTime = parseDatabaseTime(utcTimeString);
     if (philippineTime == null) return 'Unknown time';

@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../services/pnp_units_service.dart';
+import '../utils/philippine_time.dart';
 
 // Crime type that comes from database
 class DatabaseCrimeType {
@@ -111,7 +112,7 @@ class EvidenceFile {
       filePath: file.path,
       fileType: fileType,
       fileSize: fileSize,
-      uploadedAt: DateTime.now(),
+      uploadedAt: PhilippineTime.now(),
     );
   }
 

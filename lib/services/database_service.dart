@@ -253,12 +253,26 @@ class DatabaseService {
     try {
       if (currentUserId == null) return {};
 
+      // Get today's date in Philippines time
+      final nowPhilippines = PhilippineTime.now();
+      final todayStart = DateTime(nowPhilippines.year, nowPhilippines.month, nowPhilippines.day);
+      final todayStartUtc = PhilippineTime.toUtc(todayStart).toIso8601String();
+      final todayEndUtc = PhilippineTime.toUtc(todayStart.add(const Duration(days: 1))).toIso8601String();
+
+      // Get all notifications count
+      final totalResponse = await _supabase
+          .from('notifications')
+          .select('id')
+          .eq('user_id', currentUserId!);
+
+      // Get unread notifications count
       final unreadResponse = await _supabase
           .from('notifications')
           .select('id')
           .eq('user_id', currentUserId!)
           .eq('is_read', false);
 
+      // Get urgent unread notifications count
       final urgentResponse = await _supabase
           .from('notifications')
           .select('id')
@@ -266,13 +280,28 @@ class DatabaseService {
           .eq('is_read', false)
           .eq('priority', 'urgent');
 
+      // Get today's notifications count (using Philippines timezone)
+      final todayResponse = await _supabase
+          .from('notifications')
+          .select('id')
+          .eq('user_id', currentUserId!)
+          .gte('created_at', todayStartUtc)
+          .lt('created_at', todayEndUtc);
+
       return {
+        'total_notifications': totalResponse.length,
         'unread_notifications': unreadResponse.length,
         'urgent_notifications': urgentResponse.length,
+        'notifications_today': todayResponse.length,
       };
     } catch (e) {
       print('Error getting notification stats: $e');
-      return {};
+      return {
+        'total_notifications': 0,
+        'unread_notifications': 0,
+        'urgent_notifications': 0,
+        'notifications_today': 0,
+      };
     }
   }
 

@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import '../models/complaint_model.dart';
+import '../utils/philippine_time.dart';
 import 'ai_risk_assessment_service.dart';
 
 /// Service for integrating AI responses with database for caching and audit
@@ -73,7 +74,7 @@ class AIDatabaseService {
           .eq('input_hash', inputHash)
           .eq('crime_type', crimeType.name)
           .eq('description_hash', descriptionHash)
-          .gt('expires_at', DateTime.now().toIso8601String())
+          .gt('expires_at', PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String())
           .single();
 
       if (response != null) {
@@ -82,7 +83,7 @@ class AIDatabaseService {
             .from('ai_assessment_cache')
             .update({
               'cache_hits': (response['cache_hits'] ?? 0) + 1,
-              'last_used_at': DateTime.now().toIso8601String(),
+              'last_used_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
             })
             .eq('id', response['id']);
 
@@ -223,7 +224,7 @@ class AIDatabaseService {
       final result = await _supabase
           .from('ai_assessment_cache')
           .delete()
-          .lt('expires_at', DateTime.now().toIso8601String());
+          .lt('expires_at', PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String());
 
       final cleanupTime = DateTime.now().difference(startTime).inMilliseconds;
       _debugLog('✅ Cache cleanup completed in ${cleanupTime}ms');
@@ -251,7 +252,7 @@ class AIDatabaseService {
       final activeEntriesResponse = await _supabase
           .from('ai_assessment_cache')
           .select('id')
-          .gt('expires_at', DateTime.now().toIso8601String())
+          .gt('expires_at', PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String())
           .count(CountOption.exact);
 
       final activeCount = activeEntriesResponse.count;
@@ -260,7 +261,7 @@ class AIDatabaseService {
       final hitStats = await _supabase
           .from('ai_assessment_cache')
           .select('cache_hits')
-          .gt('expires_at', DateTime.now().toIso8601String());
+          .gt('expires_at', PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String());
 
       final totalHits = (hitStats as List).fold<int>(0, (sum, item) => sum + ((item['cache_hits'] ?? 0) as num).toInt());
       final avgHits = hitStats.isNotEmpty ? (totalHits / hitStats.length).round() : 0;

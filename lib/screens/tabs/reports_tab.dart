@@ -892,7 +892,7 @@ class _ReportsTabState extends State<ReportsTab> {
                       const SizedBox(width: 12),
                     ],
                     Text(
-                      PhilippineTime.formatChatHistoryTime(complaint.createdAt.toIso8601String()),
+                      PhilippineTime.formatSpecificTime(complaint.createdAt.toIso8601String()),
                       style: TextStyle(
                         fontSize: 12,
                         color: isDark ? Colors.grey[400] : Colors.grey[600],

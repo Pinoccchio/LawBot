@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/philippine_time.dart';
 
 class PatternDetectionService {
   static final SupabaseClient _supabase = Supabase.instance.client;
@@ -443,7 +444,7 @@ class PatternDetectionService {
           'complaint_id': complaintData['id'],
           'identifiers': identifiers,
           'crime_type': complaintData['crimeType'],
-          'reported_at': DateTime.now().toIso8601String(),
+          'reported_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
         });
 
         final dbTime = DateTime.now().difference(startTime).inMilliseconds;

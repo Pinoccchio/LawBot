@@ -846,7 +846,7 @@ class ComplaintService {
             'risk_factors': assessment.riskFactors,
             'urgency_indicators': assessment.urgencyIndicators,
             'ai_reasoning': assessment.reasoning,
-            'last_ai_assessment': DateTime.now().toUtc().toIso8601String(),
+            'last_ai_assessment': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
           })
           .eq('id', complaintId);
       

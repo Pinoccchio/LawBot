@@ -263,7 +263,7 @@ class _ExpandableStatusTimelineState extends State<ExpandableStatusTimeline> {
                       ),
                     ),
                     Text(
-                      PhilippineTime.getRelativeTimeString(statusUpdate.timestamp),
+                      PhilippineTime.getSpecificTimeString(statusUpdate.timestamp),
                       style: TextStyle(
                         color: widget.isDarkMode ? Colors.white60 : const Color(0xFF6B7280),
                         fontSize: 12,

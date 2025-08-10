@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/language_provider.dart';
-import 'package:timeago/timeago.dart' as timeago;
+import '../../utils/philippine_time.dart';
 
 class NotificationsTab extends StatefulWidget {
   const NotificationsTab({super.key});
@@ -14,18 +14,19 @@ class NotificationsTab extends StatefulWidget {
 
 class _NotificationsTabState extends State<NotificationsTab> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  String _selectedCategory = 'All';
+  String _selectedCategory = 'Recent'; // Default to Recent for better UX
   bool _showUnreadOnly = false;
   bool _isLoading = false;
   String _searchQuery = '';
   String _sortOrder = 'newest';
   final TextEditingController _searchController = TextEditingController();
 
-  // Simplified categories - focus on read status rather than types
+  // Smart filtering categories for better UX
   final List<String> _categories = [
-    'All',
-    'Unread',
-    'Read'
+    'Recent',  // Default: shows unread + notifications from last 7 days
+    'Unread',  // Only unread notifications
+    'All',     // Complete notification history
+    'Important' // High/urgent priority notifications regardless of read status
   ];
 
   @override
@@ -74,14 +75,61 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
 
     try {
       final notificationProvider = context.read<NotificationProvider>();
-      await notificationProvider.markNotificationAsRead(notificationId);
+      final success = await notificationProvider.markNotificationAsRead(notificationId);
+      
+      if (success && mounted) {
+        // If user is viewing "Unread" filter and this was the last unread,
+        // provide helpful feedback about where to find the notification
+        if (_selectedCategory == 'Unread') {
+          final unreadCount = notificationProvider.unreadNotificationCount;
+          if (unreadCount == 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'All caught up! Switch to "Recent" to see read notifications.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.blue[600],
+                duration: Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+                action: SnackBarAction(
+                  label: 'Recent',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      _selectedCategory = 'Recent';
+                    });
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      }
     } catch (e) {
       print('Error marking notification as read: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating notification: $e'),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Error updating notification: $e'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red[600],
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -96,10 +144,35 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
       await notificationProvider.markAllNotificationsAsRead();
 
       if (mounted) {
+        // Auto-switch to "Recent" filter to show newly-read notifications
+        setState(() {
+          _selectedCategory = 'Recent';
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All notifications marked as read'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  Icons.check_circle_outline,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'All notifications marked as read. Switched to Recent view.',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green[600],
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
@@ -108,8 +181,20 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating notifications: $e'),
-            backgroundColor: Colors.red,
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Error updating notifications: $e'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red[600],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         );
       }
@@ -251,18 +336,92 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
   }
 
   String _formatCategoryName(String category) {
-    // Simplified categories - just return as-is since they're already user-friendly
+    // Smart categories with user-friendly names
     return category;
   }
 
+  // Helper method to check if notification was recently read (within 24 hours)
+  bool _isRecentlyRead(Map<String, dynamic> notification) {
+    if (notification['is_read'] != true) return false;
+    
+    try {
+      final readAt = notification['read_at'];
+      if (readAt == null) return false;
+      
+      final readTime = DateTime.parse(readAt);
+      final now = DateTime.now();
+      final twentyFourHoursAgo = now.subtract(const Duration(hours: 24));
+      
+      return readTime.isAfter(twentyFourHoursAgo);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Helper method to get notification age category
+  String _getNotificationAgeCategory(Map<String, dynamic> notification) {
+    try {
+      final createdAt = notification['created_at'];
+      if (createdAt == null) return 'unknown';
+      
+      final createdTime = DateTime.parse(createdAt);
+      final now = DateTime.now();
+      final difference = now.difference(createdTime);
+      
+      if (difference.inHours < 1) return 'recent';
+      if (difference.inDays < 1) return 'today';
+      if (difference.inDays < 7) return 'week';
+      return 'old';
+    } catch (e) {
+      return 'unknown';
+    }
+  }
+
   List<Map<String, dynamic>> _filterNotifications(List<Map<String, dynamic>> notifications) {
+    final now = DateTime.now();
+    final sevenDaysAgo = now.subtract(const Duration(days: 7));
+    
     List<Map<String, dynamic>> filtered = notifications.where((notification) {
-      // Filter by simplified read status categories
-      if (_selectedCategory == 'Unread' && notification['is_read'] == true) {
-        return false;
+      // Parse notification date
+      DateTime? notificationDate;
+      try {
+        if (notification['created_at'] != null) {
+          notificationDate = DateTime.parse(notification['created_at']);
+        }
+      } catch (e) {
+        // If we can't parse the date, include it to avoid losing notifications
+        notificationDate = now;
       }
-      if (_selectedCategory == 'Read' && notification['is_read'] != true) {
-        return false;
+      
+      // Apply smart filtering categories
+      switch (_selectedCategory) {
+        case 'Recent':
+          // Show unread notifications OR notifications from last 7 days
+          final isUnread = notification['is_read'] != true;
+          final isFromLastWeek = notificationDate != null && notificationDate.isAfter(sevenDaysAgo);
+          if (!isUnread && !isFromLastWeek) {
+            return false;
+          }
+          break;
+          
+        case 'Unread':
+          // Only unread notifications
+          if (notification['is_read'] == true) {
+            return false;
+          }
+          break;
+          
+        case 'All':
+          // Show all notifications - no filtering by read status or date
+          break;
+          
+        case 'Important':
+          // High/urgent priority notifications regardless of read status
+          final priority = notification['priority'] ?? 'normal';
+          if (priority != 'high' && priority != 'urgent') {
+            return false;
+          }
+          break;
       }
       
       // Search filter
@@ -276,7 +435,7 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
         }
       }
 
-      // Legacy unread filter (can be removed if not used elsewhere)
+      // Legacy unread filter (kept for backward compatibility)
       if (_showUnreadOnly && notification['is_read'] == true) {
         return false;
       }
@@ -310,6 +469,8 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
 
   Widget _buildNotificationCard(Map<String, dynamic> notification, bool isDark) {
     final isRead = notification['is_read'] ?? false;
+    final isRecentlyRead = _isRecentlyRead(notification);
+    final ageCategory = _getNotificationAgeCategory(notification);
     final title = notification['title'] ?? 'No Title';
     final message = notification['message'] ?? 'No Message';
     final type = notification['type'] ?? 'info';
@@ -327,38 +488,69 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
       print('Error parsing date: $e');
     }
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: isRead ? null : LinearGradient(
-          colors: isDark 
-            ? [const Color(0xFF1E293B), const Color(0xFF334155)]
-            : [Colors.white, const Color(0xFFF8FAFC)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    // Enhanced visual styling based on notification state
+    Color borderColor;
+    Color backgroundColor;
+    double opacity;
+    double borderWidth;
+    List<BoxShadow> boxShadows;
+    
+    if (!isRead) {
+      // Unread notifications - prominent styling
+      borderColor = const Color(0xFF2563EB).withOpacity(0.3);
+      backgroundColor = isDark ? const Color(0xFF1E293B) : Colors.white;
+      opacity = 1.0;
+      borderWidth = 1.5;
+      boxShadows = [
+        BoxShadow(
+          color: const Color(0xFF2563EB).withOpacity(0.1),
+          blurRadius: 8.0,
+          offset: const Offset(0, 4),
+          spreadRadius: 1.0,
         ),
-        color: isRead 
-          ? (isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC))
-          : null,
-        border: Border.all(
-          color: isRead
-              ? (isDark ? Colors.grey[700]!.withOpacity(0.3) : Colors.grey[300]!.withOpacity(0.5))
-              : const Color(0xFF2563EB).withOpacity(0.2),
-          width: isRead ? 1 : 1.5,
+      ];
+    } else if (isRecentlyRead) {
+      // Recently read notifications - muted but visible
+      borderColor = isDark ? const Color(0xFF10B981).withOpacity(0.2) : const Color(0xFF6EE7B7).withOpacity(0.3);
+      backgroundColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFF0FDF4);
+      opacity = 0.85;
+      borderWidth = 1.2;
+      boxShadows = [
+        BoxShadow(
+          color: isDark ? Colors.black.withOpacity(0.15) : Colors.grey.withOpacity(0.08),
+          blurRadius: 4.0,
+          offset: const Offset(0, 2),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: isRead 
-              ? (isDark ? Colors.black.withOpacity(0.1) : Colors.grey.withOpacity(0.05))
-              : const Color(0xFF2563EB).withOpacity(0.1),
-            blurRadius: isRead ? 2.0 : 8.0,
-            offset: Offset(0, isRead ? 1 : 4),
-            spreadRadius: isRead ? 0 : 1.0,
+      ];
+    } else {
+      // Older read notifications - minimal but accessible
+      borderColor = isDark ? Colors.grey[700]!.withOpacity(0.3) : Colors.grey[300]!.withOpacity(0.5);
+      backgroundColor = isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC);
+      opacity = 0.75;
+      borderWidth = 1.0;
+      boxShadows = [
+        BoxShadow(
+          color: isDark ? Colors.black.withOpacity(0.1) : Colors.grey.withOpacity(0.05),
+          blurRadius: 2.0,
+          offset: const Offset(0, 1),
+        ),
+      ];
+    }
+
+    return Opacity(
+      opacity: opacity,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: backgroundColor,
+          border: Border.all(
+            color: borderColor,
+            width: borderWidth,
           ),
-        ],
-      ),
-      child: Material(
+          boxShadow: boxShadows,
+        ),
+        child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -397,14 +589,49 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
                           Row(
                             children: [
                               Expanded(
-                                child: Text(
-                                  title,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
-                                    color: isDark ? Colors.white : const Color(0xFF1F2937),
-                                    height: 1.3,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      title,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
+                                        color: isDark ? Colors.white : const Color(0xFF1F2937),
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                    // Recently Read badge
+                                    if (isRecentlyRead) ...[
+                                      const SizedBox(height: 4),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isDark 
+                                            ? const Color(0xFF10B981).withOpacity(0.2) 
+                                            : const Color(0xFFECFDF5),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: isDark 
+                                              ? const Color(0xFF10B981).withOpacity(0.3)
+                                              : const Color(0xFF6EE7B7),
+                                            width: 0.5,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'Recently Read',
+                                          style: TextStyle(
+                                            color: isDark 
+                                              ? const Color(0xFF6EE7B7)
+                                              : const Color(0xFF047857),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                            letterSpacing: 0.2,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                               if (priority == 'urgent' || priority == 'high')
@@ -426,7 +653,7 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  timeago.format(createdTime),
+                                  PhilippineTime.formatDateTime(PhilippineTime.fromUtc(createdTime)),
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: isDark ? Colors.grey[500] : Colors.grey[500],
@@ -469,6 +696,7 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
               ],
             ),
           ),
+        ),
         ),
       ),
     );

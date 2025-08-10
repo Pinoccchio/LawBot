@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/ai_risk_assessment_service.dart';
+import '../utils/philippine_time.dart';
 
 enum CrimeType {
   // 📱 COMMUNICATION & SOCIAL MEDIA CRIMES - Cyber Crime Investigation Cell
@@ -261,7 +262,7 @@ class EvidenceFile {
       filePath: file.path,
       fileType: fileType,
       fileSize: fileSize,
-      uploadedAt: DateTime.now(),
+      uploadedAt: PhilippineTime.now(),
     );
   }
 
