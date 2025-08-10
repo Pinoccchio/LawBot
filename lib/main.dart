@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 // Import the generated file
 import 'firebase_options.dart';
 import 'config/supabase_config.dart';
+import 'services/fcm_service.dart';
 import 'providers/theme_provider.dart';
 import 'providers/language_provider.dart';
 import 'providers/notification_provider.dart';
@@ -24,10 +26,13 @@ void main() async {
   // Ensure that plugin services are initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase (Auth only)
+  // Initialize Firebase (Auth & FCM)
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Set up background message handler before any other Firebase operations
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   // Initialize Supabase (Database only) - Simple configuration
   await Supabase.initialize(

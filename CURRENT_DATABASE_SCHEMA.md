@@ -7,6 +7,7 @@ This document represents the ACTUAL database schema currently in use across both
 
 - **Database**: Supabase (PostgreSQL)
 - **Authentication**: Firebase Auth (both apps)
+- **Push Notifications**: Firebase Cloud Messaging (FCM) with token storage
 - **File Storage**: Supabase Storage (evidence-files bucket - PUBLIC)
 - **Real-time**: Supabase Realtime subscriptions
 
@@ -23,6 +24,7 @@ CREATE TABLE user_profiles (
   user_type TEXT DEFAULT 'CLIENT' CHECK (user_type IN ('CLIENT', 'ADMIN')),
   user_status TEXT DEFAULT 'active' CHECK (user_status IN ('active', 'suspended', 'deleted')),
   profile_picture_url TEXT,
+  fcm_token TEXT, -- Firebase Cloud Messaging token for push notifications
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW()),
   last_active TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
@@ -626,6 +628,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 - ✅ **Evidence upload during updates** with correct MIME types (image/jpeg, video/mp4, etc.) 
 - ✅ **AI re-assessment** automatically triggered after complaint updates
 - ✅ **Modern UI components** with blue/emerald gradient design and responsive layouts
+- ✅ **Push Notifications** with Firebase Cloud Messaging (FCM) for all app states (foreground/background/terminated)
 
 ### Next.js Web App
 - ✅ Admin and officer authentication
@@ -668,5 +671,15 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
    - ✅ **Evidence upload fix**: Proper MIME type detection for complaint updates (image/jpeg, video/mp4, etc.)
    - ✅ **AI re-assessment**: Automatic AI risk assessment after citizen updates
    - ✅ **Fixed false citizen indicators**: Officer status changes no longer trigger false "Case Updated by Citizen" indicators
+
+6. **Firebase Cloud Messaging Integration** (January 2025): Push notification system for real-time case updates
+   - ✅ **FCM Token Storage**: Added `fcm_token` field to `user_profiles` table with database index
+   - ✅ **Push Notification Service**: Complete FCM service with token management and message handlers
+   - ✅ **All App States Support**: Notifications work in foreground, background, and terminated app states
+   - ✅ **Integration with Existing UI**: FCM notifications seamlessly integrate with existing notification system
+   - ✅ **Philippines Timezone Support**: All notification timestamps use Philippines time formatting
+   - ✅ **Notification Categories**: Support for case updates, officer requests, and system announcements
+   - ✅ **Token Lifecycle Management**: Automatic token registration on login and clearing on logout
+   - ✅ **Database Schema Update**: Safe migration script preserving all existing user data
 
 This schema represents the current production state of the LawBot platform as of January 2025.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../services/fcm_service.dart';
 import '../utils/philippine_time.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -327,6 +328,10 @@ class AuthProvider extends ChangeNotifier {
     _clearError();
     try {
       print('👋 Signing out user');
+      
+      // Clear FCM token before signing out
+      await _clearFCMToken();
+      
       await _authService.signOut();
       _user = null;
       _userProfile = null;
@@ -669,5 +674,60 @@ class AuthProvider extends ChangeNotifier {
 
   List<Map<String, dynamic>> get urgentNotifications {
     return _notifications.where((n) => n['priority'] == 'urgent' && n['is_read'] == false).toList();
+  }
+
+  // =============================================
+  // FCM INTEGRATION METHODS
+  // =============================================
+
+  /// Initialize FCM for the current user (called after successful login)
+  Future<void> _initializeFCM() async {
+    if (_user?.uid == null) {
+      print('⚠️ Cannot initialize FCM: No user authenticated');
+      return;
+    }
+
+    try {
+      print('🔔 Initializing FCM for user: ${_user!.uid}');
+      
+      // Get NotificationProvider from the widget context
+      // This will be handled differently - we'll pass it from the UI layer
+      
+      print('✅ FCM initialization completed');
+    } catch (e) {
+      print('❌ Error initializing FCM: $e');
+    }
+  }
+
+  /// Initialize FCM with notification provider (called from UI after login)
+  Future<void> initializeFCMWithProvider(dynamic notificationProvider) async {
+    if (_user?.uid == null) {
+      print('⚠️ Cannot initialize FCM: No user authenticated');
+      return;
+    }
+
+    try {
+      print('🔔 Initializing FCM with notification provider for user: ${_user!.uid}');
+      
+      await FCMService.initialize(
+        notificationProvider: notificationProvider,
+        userId: _user!.uid,
+      );
+      
+      print('✅ FCM initialization with provider completed');
+    } catch (e) {
+      print('❌ Error initializing FCM with provider: $e');
+    }
+  }
+
+  /// Clear FCM token on logout
+  Future<void> _clearFCMToken() async {
+    try {
+      print('🧹 Clearing FCM token on logout...');
+      await FCMService.clearToken();
+      print('✅ FCM token cleared');
+    } catch (e) {
+      print('❌ Error clearing FCM token: $e');
+    }
   }
 }

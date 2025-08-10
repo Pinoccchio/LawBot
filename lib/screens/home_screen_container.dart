@@ -12,6 +12,7 @@ import 'tabs/settings_tab.dart';
 import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/realtime_provider.dart';
+import '../widgets/notification_badge.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgresChangeFilter, PostgresChangeEvent, PostgresChangeFilterType;
 
@@ -34,6 +35,7 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _subscribeToUserProfile();
       _initializeRealtimeProvider();
+      _initializeFCM();
       // _subscribeToNotifications(); // Removed for frontend-only notifications
     });
   }
@@ -93,6 +95,24 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
       }
     } catch (e) {
       print('❌ Error initializing real-time provider: $e');
+    }
+  }
+
+  // Initialize Firebase Cloud Messaging for push notifications
+  void _initializeFCM() async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
+      
+      if (authProvider.user != null) {
+        print('🔔 Initializing FCM for push notifications...');
+        await authProvider.initializeFCMWithProvider(notificationProvider);
+        print('✅ FCM initialization completed');
+      } else {
+        print('⚠️ Cannot initialize FCM: User not authenticated');
+      }
+    } catch (e) {
+      print('❌ Error initializing FCM: $e');
     }
   }
 
@@ -392,32 +412,34 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
               ),
             ],
           ),
-          child: BottomNavigationBar(
-            currentIndex: _currentIndex,
-            onTap: (index) {
-              if (mounted) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              }
-            },
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            selectedItemColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
-            unselectedItemColor: isDark ? Colors.grey[500] : Colors.grey[600],
-            selectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-              letterSpacing: 0.5,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 12,
-              letterSpacing: 0.5,
-            ),
-            showSelectedLabels: true,
-            showUnselectedLabels: true,
+          child: Consumer<NotificationProvider>(
+            builder: (context, notificationProvider, child) {
+              return BottomNavigationBar(
+                currentIndex: _currentIndex,
+                onTap: (index) {
+                  if (mounted) {
+                    setState(() {
+                      _currentIndex = index;
+                    });
+                  }
+                },
+                type: BottomNavigationBarType.fixed,
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                selectedItemColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
+                unselectedItemColor: isDark ? Colors.grey[500] : Colors.grey[600],
+                selectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  letterSpacing: 0.5,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                  letterSpacing: 0.5,
+                ),
+                showSelectedLabels: true,
+                showUnselectedLabels: true,
             items: [
               BottomNavigationBarItem(
                 icon: const Icon(Icons.report_problem_outlined),
@@ -434,10 +456,18 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
                 activeIcon: const Icon(Icons.history),
                 label: languageProvider.translate('history') ?? 'History',
               ),
-              // Notifications tab (frontend-only, no badge)
+              // Notifications tab with badge
               BottomNavigationBarItem(
-                icon: const Icon(Icons.notifications_outlined),
-                activeIcon: const Icon(Icons.notifications),
+                icon: BottomNavNotificationBadge(
+                  count: notificationProvider.unreadNotificationCount,
+                  isDark: isDark,
+                  child: const Icon(Icons.notifications_outlined),
+                ),
+                activeIcon: BottomNavNotificationBadge(
+                  count: notificationProvider.unreadNotificationCount,
+                  isDark: isDark,
+                  child: const Icon(Icons.notifications),
+                ),
                 label: languageProvider.translate('notifications') ?? 'Notifications',
               ),
               BottomNavigationBarItem(
@@ -450,7 +480,9 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
                 activeIcon: const Icon(Icons.settings),
                 label: languageProvider.translate('settings') ?? 'Settings',
               ),
-            ],
+                ],
+              );
+            },
           ),
         ),
       ),

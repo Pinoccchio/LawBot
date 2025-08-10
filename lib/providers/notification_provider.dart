@@ -497,4 +497,49 @@ class NotificationProvider extends ChangeNotifier {
       print('❌ Error in force refresh: $e');
     }
   }
+
+  // =============================================
+  // FCM INTEGRATION METHODS
+  // =============================================
+
+  /// Add notification from FCM message (for push notification integration)
+  Future<void> addNotification(dynamic notificationModel) async {
+    try {
+      // Convert notification model to map format
+      Map<String, dynamic> notification;
+      
+      if (notificationModel is Map<String, dynamic>) {
+        notification = notificationModel;
+      } else {
+        // Assuming it's a NotificationModel object with toJson() method
+        notification = notificationModel.toJson();
+      }
+      
+      print('📱 Adding FCM notification: ${notification['title']}');
+      
+      // Add to the beginning of notifications list
+      _notifications.insert(0, notification);
+      
+      // Update local stats
+      _updateNotificationStats();
+      
+      // Notify listeners to update UI
+      notifyListeners();
+      
+      print('✅ FCM notification added to provider');
+      
+    } catch (e) {
+      print('❌ Error adding FCM notification: $e');
+    }
+  }
+
+  /// Get FCM notification preferences
+  bool get fcmNotificationsEnabled => _notificationsEnabled;
+
+  /// Enable/disable FCM notifications
+  Future<void> setFCMNotifications(bool enabled) async {
+    await setNotifications(enabled);
+    // Note: The actual FCM token registration/clearing should be handled
+    // by the FCM service based on this setting
+  }
 }

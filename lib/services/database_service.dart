@@ -1641,4 +1641,91 @@ class DatabaseService {
       throw 'Failed to batch update AI assessments: $e';
     }
   }
+
+  // =============================================
+  // FCM TOKEN OPERATIONS
+  // =============================================
+
+  /// Update user's FCM token for push notifications
+  static Future<void> updateUserFCMToken(String userId, String fcmToken) async {
+    try {
+      final supabase = Supabase.instance.client;
+      
+      await supabase
+          .from('user_profiles')
+          .update({
+            'fcm_token': fcmToken,
+            'updated_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
+          })
+          .eq('firebase_uid', userId);
+
+      print('✅ FCM token updated for user: $userId');
+    } catch (e) {
+      print('❌ Error updating FCM token: $e');
+      throw 'Failed to update FCM token: $e';
+    }
+  }
+
+  /// Clear user's FCM token (on logout)
+  static Future<void> clearUserFCMToken(String userId) async {
+    try {
+      final supabase = Supabase.instance.client;
+      
+      await supabase
+          .from('user_profiles')
+          .update({
+            'fcm_token': null,
+            'updated_at': PhilippineTime.toUtc(PhilippineTime.now()).toIso8601String(),
+          })
+          .eq('firebase_uid', userId);
+
+      print('✅ FCM token cleared for user: $userId');
+    } catch (e) {
+      print('❌ Error clearing FCM token: $e');
+      // Don't throw error for token clearing as it's not critical
+    }
+  }
+
+  /// Get FCM token for a specific user (for server-side push notifications)
+  static Future<String?> getUserFCMToken(String userId) async {
+    try {
+      final supabase = Supabase.instance.client;
+      
+      final response = await supabase
+          .from('user_profiles')
+          .select('fcm_token')
+          .eq('firebase_uid', userId)
+          .maybeSingle();
+
+      return response?['fcm_token'] as String?;
+    } catch (e) {
+      print('❌ Error getting FCM token: $e');
+      return null;
+    }
+  }
+
+  /// Get FCM tokens for multiple users (for batch notifications)
+  static Future<List<String>> getUsersFCMTokens(List<String> userIds) async {
+    try {
+      final supabase = Supabase.instance.client;
+      
+      final response = await supabase
+          .from('user_profiles')
+          .select('fcm_token')
+          .inFilter('firebase_uid', userIds);
+
+      final tokens = <String>[];
+      for (final row in response) {
+        final token = row['fcm_token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          tokens.add(token);
+        }
+      }
+
+      return tokens;
+    } catch (e) {
+      print('❌ Error getting multiple FCM tokens: $e');
+      return [];
+    }
+  }
 }
