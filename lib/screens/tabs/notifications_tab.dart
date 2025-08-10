@@ -52,9 +52,13 @@ class _NotificationsTabState extends State<NotificationsTab> with SingleTickerPr
 
     try {
       final notificationProvider = context.read<NotificationProvider>();
-      await notificationProvider.refreshNotifications();
+      
+      // Use the enhanced force immediate refresh for user-triggered refreshes
+      await notificationProvider.forceImmediateRefresh();
+      
+      print('🔄 Manual refresh completed - notifications and badge count updated');
     } catch (e) {
-      print('Error loading notifications: $e');
+      print('❌ Error loading notifications: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

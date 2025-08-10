@@ -42,6 +42,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Future<void> _loadCompleteComplaintDetails() async {
+    if (!mounted) return;
     setState(() {
       _isLoadingDetails = true;
       _loadingError = null;
@@ -50,6 +51,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     try {
       final complaintId = widget.complaint.id;
       if (complaintId == null) {
+        if (!mounted) return;
         setState(() {
           _completeComplaint = widget.complaint; // Fallback to original
           _isLoadingDetails = false;
@@ -66,6 +68,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         // Load update history
         final updateHistory = await _complaintService.getComplaintUpdateHistory(complaintId);
         
+        if (!mounted) return;
         setState(() {
           _completeComplaint = completeComplaint;
           _updateHistory = updateHistory;
@@ -73,6 +76,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         });
         print('✅ Successfully loaded complaint with ${completeComplaint.statusHistory.length} status updates and ${updateHistory.length} field updates');
       } else {
+        if (!mounted) return;
         setState(() {
           _completeComplaint = displayComplaint; // Fallback to original
           _isLoadingDetails = false;
@@ -82,6 +86,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       }
     } catch (e) {
       print('❌ Error loading complete complaint details: $e');
+      if (!mounted) return;
       setState(() {
         _completeComplaint = displayComplaint; // Fallback to original
         _isLoadingDetails = false;
@@ -3318,6 +3323,7 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
           File(widget.file.filePath),
         );
       } else {
+        if (!mounted) return;
         setState(() {
           _errorMessage = 'Video file not found';
         });
@@ -3325,10 +3331,12 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
       }
 
       await _controller!.initialize();
+      if (!mounted) return;
       setState(() {
         _isInitialized = true;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Error loading video: $e';
       });

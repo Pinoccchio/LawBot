@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import '../services/database_service.dart';
 import '../utils/philippine_time.dart';
 
@@ -12,6 +13,8 @@ class NotificationProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _notifications = [];
   Map<String, dynamic> _notificationStats = {};
   bool _notificationsLoading = false;
+  Timer? _autoRefreshTimer;
+  bool _isAutoRefreshEnabled = true;
 
   bool get notificationsEnabled => _notificationsEnabled;
   List<Map<String, dynamic>> get notifications => _notifications;
@@ -20,6 +23,7 @@ class NotificationProvider extends ChangeNotifier {
   int get unreadNotificationCount => _notificationStats['unread_notifications'] ?? 0;
   int get urgentNotificationCount => _notificationStats['urgent_notifications'] ?? 0;
   bool get hasUnreadNotifications => unreadNotificationCount > 0;
+  bool get isAutoRefreshEnabled => _isAutoRefreshEnabled;
   
   String get notificationBadgeText {
     final count = unreadNotificationCount;
@@ -29,6 +33,7 @@ class NotificationProvider extends ChangeNotifier {
   NotificationProvider() {
     _loadNotificationSettings();
     _loadNotifications();
+    _startAutoRefresh();
   }
 
   // Load notification settings from SharedPreferences
@@ -357,6 +362,9 @@ class NotificationProvider extends ChangeNotifier {
           }
           
           notifyListeners();
+          
+          // Trigger refresh after state change to ensure badge accuracy
+          _triggerRefreshAfterStateChange();
         }
       }
       
@@ -396,6 +404,9 @@ class NotificationProvider extends ChangeNotifier {
         }
         
         notifyListeners();
+        
+        // Trigger refresh after state change to ensure badge accuracy
+        _triggerRefreshAfterStateChange();
       }
       
       return success;
@@ -415,6 +426,9 @@ class NotificationProvider extends ChangeNotifier {
         _notifications.removeWhere((n) => n['id'] == notificationId);
         _updateNotificationStats();
         notifyListeners();
+        
+        // Trigger refresh after state change to ensure badge accuracy
+        _triggerRefreshAfterStateChange();
       }
       
       return success;
@@ -462,8 +476,12 @@ class NotificationProvider extends ChangeNotifier {
         print('➕ Added new notification');
       }
       
-      // Update statistics
+      // Update statistics (local calculation)
       _updateNotificationStats();
+      
+      // Also refresh from database for accurate badge count
+      _refreshBadgeCountFromDatabase();
+      
       notifyListeners();
       
       print('✅ Real-time notification processed successfully');
@@ -496,6 +514,107 @@ class NotificationProvider extends ChangeNotifier {
     } catch (e) {
       print('❌ Error in force refresh: $e');
     }
+  }
+
+  /// Refresh badge count from database (for real-time accuracy)
+  Future<void> _refreshBadgeCountFromDatabase() async {
+    try {
+      // Get fresh stats from database without updating the notifications list
+      final freshStats = await _databaseService.getNotificationStats();
+      _notificationStats = freshStats;
+      
+      print('🔄 Badge count refreshed from database: ${_notificationStats['unread_notifications']}');
+    } catch (e) {
+      print('❌ Error refreshing badge count from database: $e');
+    }
+  }
+
+  /// Public method to manually refresh badge count
+  Future<void> refreshBadgeCount() async {
+    await _refreshBadgeCountFromDatabase();
+    notifyListeners();
+  }
+
+  /// Start auto-refresh timer for badge count
+  void _startAutoRefresh() {
+    if (!_isAutoRefreshEnabled) return;
+    
+    // Cancel existing timer if any
+    _autoRefreshTimer?.cancel();
+    
+    // Start new timer - refresh badge count every 30 seconds
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (_isAutoRefreshEnabled) {
+        print('⏰ Auto-refreshing badge count...');
+        _refreshBadgeCountFromDatabase();
+        notifyListeners();
+      }
+    });
+    
+    print('⏰ Auto-refresh timer started (30 second intervals)');
+  }
+
+  /// Force immediate refresh (triggered by user actions like pull-to-refresh)
+  Future<void> forceImmediateRefresh() async {
+    try {
+      print('🚀 Force immediate refresh triggered by user action');
+      
+      // Refresh both full notifications and badge count
+      await refreshNotifications();
+      await _refreshBadgeCountFromDatabase();
+      
+      // Reset auto-refresh timer to avoid immediate duplicate refresh
+      if (_isAutoRefreshEnabled) {
+        _startAutoRefresh();
+      }
+      
+      notifyListeners();
+      print('✅ Force immediate refresh completed');
+    } catch (e) {
+      print('❌ Error in force immediate refresh: $e');
+    }
+  }
+
+
+  /// Trigger refresh when notification state changes (mark as read, delete, etc.)
+  Future<void> _triggerRefreshAfterStateChange() async {
+    try {
+      // Wait a small delay to allow database operations to complete
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Refresh badge count from database for accuracy
+      await _refreshBadgeCountFromDatabase();
+      notifyListeners();
+      
+      print('🔄 Badge count refreshed after state change');
+    } catch (e) {
+      print('❌ Error refreshing after state change: $e');
+    }
+  }
+
+  /// Stop auto-refresh timer
+  void _stopAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = null;
+    print('⏹️ Auto-refresh timer stopped');
+  }
+
+  /// Enable/disable auto-refresh
+  void setAutoRefresh(bool enabled) {
+    _isAutoRefreshEnabled = enabled;
+    if (enabled) {
+      _startAutoRefresh();
+    } else {
+      _stopAutoRefresh();
+    }
+    notifyListeners();
+  }
+
+  /// Dispose method to clean up resources  
+  @override
+  void dispose() {
+    _stopAutoRefresh();
+    super.dispose();
   }
 
   // =============================================

@@ -12,6 +12,7 @@ import 'tabs/settings_tab.dart';
 import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/realtime_provider.dart';
+import '../providers/global_refresh_provider.dart';
 import '../widgets/notification_badge.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgresChangeFilter, PostgresChangeEvent, PostgresChangeFilterType;
@@ -36,6 +37,7 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
       _subscribeToUserProfile();
       _initializeRealtimeProvider();
       _initializeFCM();
+      _initializeGlobalRefresh();
       // _subscribeToNotifications(); // Removed for frontend-only notifications
     });
   }
@@ -84,10 +86,16 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
   void _initializeRealtimeProvider() async {
     try {
       final realtimeProvider = Provider.of<RealtimeProvider>(context, listen: false);
+      final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       
       if (authProvider.user != null) {
         print('🔄 Initializing real-time provider for user: ${authProvider.user!.uid}');
+        
+        // IMPORTANT: Link NotificationProvider to RealtimeProvider for badge updates
+        realtimeProvider.setNotificationProvider(notificationProvider);
+        print('🔗 Linked NotificationProvider to RealtimeProvider');
+        
         await realtimeProvider.initialize();
         print('✅ Real-time provider initialized successfully');
       } else {
@@ -113,6 +121,27 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
       }
     } catch (e) {
       print('❌ Error initializing FCM: $e');
+    }
+  }
+
+  // Initialize global refresh provider and link with other providers
+  void _initializeGlobalRefresh() async {
+    try {
+      print('🔄 Initializing global refresh provider...');
+      
+      final globalRefreshProvider = Provider.of<GlobalRefreshProvider>(context, listen: false);
+      final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      // Link providers for coordinated refresh
+      globalRefreshProvider.linkProviders(
+        notificationProvider: notificationProvider,
+        authProvider: authProvider,
+      );
+      
+      print('✅ Global refresh provider initialized and linked');
+    } catch (e) {
+      print('❌ Error initializing global refresh provider: $e');
     }
   }
 
@@ -216,6 +245,18 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
       });
     }
   }
+
+  // Method to trigger global refresh from any tab
+  Future<void> _triggerGlobalRefresh() async {
+    try {
+      final globalRefreshProvider = Provider.of<GlobalRefreshProvider>(context, listen: false);
+      await globalRefreshProvider.refreshAll();
+      print('✅ Global refresh triggered successfully');
+    } catch (e) {
+      print('❌ Error triggering global refresh: $e');
+    }
+  }
+
 
   Future<bool?> _showExitConfirmationDialog(BuildContext context) async {
     final themeProvider = context.read<ThemeProvider>();
@@ -374,9 +415,12 @@ class _HomeScreenContainerState extends State<HomeScreenContainer> {
     final languageProvider = context.watch<LanguageProvider>();
     final isDark = themeProvider.isDarkMode;
 
-    // UPDATED: Create tabs with navigation callback and proper order
+    // UPDATED: Create tabs with navigation callback and global refresh
     final List<Widget> _tabs = [
-      ReportsTab(onNavigateToTab: _changeTab),  // Index 0: Reports
+      ReportsTab(
+        onNavigateToTab: _changeTab,
+        onGlobalRefresh: _triggerGlobalRefresh,
+      ),  // Index 0: Reports
       const ResourcesTab(),                     // Index 1: Resources
       const HistoryTab(),                       // Index 2: History
       const NotificationsTab(),                 // Index 3: Notifications (NEW)

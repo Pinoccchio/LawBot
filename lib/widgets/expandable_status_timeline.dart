@@ -252,16 +252,20 @@ class _ExpandableStatusTimelineState extends State<ExpandableStatusTimeline> {
               children: [
                 // Status and timestamp
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      statusUpdate.status.displayName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: statusColor,
-                        fontSize: 14,
+                    Flexible(
+                      child: Text(
+                        statusUpdate.status.displayName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: statusColor,
+                          fontSize: 14,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       PhilippineTime.getSpecificTimeString(statusUpdate.timestamp),
                       style: TextStyle(

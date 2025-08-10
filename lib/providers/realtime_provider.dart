@@ -42,6 +42,13 @@ class RealtimeProvider with ChangeNotifier {
     try {
       print('🔄 Initializing real-time provider...');
       
+      // Log notification provider status
+      if (_notificationProvider != null) {
+        print('✅ NotificationProvider is linked and ready');
+      } else {
+        print('⚠️ NotificationProvider not yet linked - notifications will be queued');
+      }
+      
       // Initialize the real-time service
       await _realtimeService.initialize();
       
@@ -53,6 +60,7 @@ class RealtimeProvider with ChangeNotifier {
       notifyListeners();
       
       print('✅ Real-time provider initialized successfully');
+      print('📊 Connection info: ${getConnectionInfo()}');
     } catch (e) {
       _isConnected = false;
       _connectionError = e.toString();
@@ -140,23 +148,44 @@ class RealtimeProvider with ChangeNotifier {
 
   /// Handle notification update
   void _handleNotificationUpdate(Map<String, dynamic> notification) {
-    print('🔔 Received notification update: ${notification['title']}');
-    
-    // Add to recent notifications (keep only last 50)
-    _recentNotifications.insert(0, notification);
-    if (_recentNotifications.length > 50) {
-      _recentNotifications = _recentNotifications.take(50).toList();
+    try {
+      print('🔔 Received notification update: ${notification['title']} (ID: ${notification['id']})');
+      
+      // Validate notification data
+      if (notification['id'] == null || notification['title'] == null) {
+        print('⚠️ Invalid notification data - missing required fields');
+        return;
+      }
+      
+      // Add to recent notifications (keep only last 50)
+      _recentNotifications.insert(0, notification);
+      if (_recentNotifications.length > 50) {
+        _recentNotifications = _recentNotifications.take(50).toList();
+      }
+      print('📝 Added notification to recent list (total: ${_recentNotifications.length})');
+      
+      // Forward to NotificationProvider with enhanced error handling
+      if (_notificationProvider != null) {
+        print('🔄 Forwarding notification to NotificationProvider...');
+        try {
+          _notificationProvider!.handleRealtimeNotificationUpdate(notification);
+          print('✅ Notification successfully forwarded to NotificationProvider');
+        } catch (e) {
+          print('❌ Error forwarding notification to NotificationProvider: $e');
+        }
+      } else {
+        print('⚠️ NotificationProvider not set, notification not forwarded');
+        print('📋 Notification details: ${notification}');
+      }
+      
+      // Force UI update
+      notifyListeners();
+      print('🔄 RealtimeProvider notified listeners');
+      
+    } catch (e) {
+      print('❌ Error handling notification update: $e');
+      print('📋 Notification data: ${notification}');
     }
-    
-    // Forward to NotificationProvider if available
-    if (_notificationProvider != null) {
-      print('🔄 Forwarding notification to NotificationProvider');
-      _notificationProvider!.handleRealtimeNotificationUpdate(notification);
-    } else {
-      print('⚠️ NotificationProvider not set, notification not forwarded');
-    }
-    
-    notifyListeners();
   }
 
   /// Update complaint status in local lists

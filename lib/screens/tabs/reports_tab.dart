@@ -13,8 +13,13 @@ import '../report_detail_screen.dart';
 
 class ReportsTab extends StatefulWidget {
   final Function(int)? onNavigateToTab;
+  final Future<void> Function()? onGlobalRefresh;
 
-  const ReportsTab({super.key, this.onNavigateToTab});
+  const ReportsTab({
+    super.key, 
+    this.onNavigateToTab,
+    this.onGlobalRefresh,
+  });
 
   @override
   State<ReportsTab> createState() => _ReportsTabState();
@@ -501,7 +506,18 @@ class _ReportsTabState extends State<ReportsTab> {
               Icons.refresh_rounded,
               color: isDark ? Colors.white : const Color(0xFF2563EB),
             ),
-            onPressed: () => _loadComplaints(),
+            onPressed: () async {
+              // Trigger global refresh if available, otherwise local refresh
+              if (widget.onGlobalRefresh != null) {
+                print('🔄 Triggering global refresh from Reports tab...');
+                await widget.onGlobalRefresh!();
+                // Also refresh local data to ensure it's up to date
+                _loadComplaints();
+              } else {
+                print('⚠️ Global refresh not available, using local refresh');
+                _loadComplaints();
+              }
+            },
           ),
         ],
         automaticallyImplyLeading: false,

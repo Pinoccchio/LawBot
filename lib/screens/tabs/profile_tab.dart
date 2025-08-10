@@ -569,18 +569,6 @@ class _ProfileTabState extends State<ProfileTab> {
                   onTap: () => _showDeleteAccountDialog(context, authProvider),
                 ),
 
-                // Cybercrime reporting system features section
-                _buildSectionHeader(
-                  icon: Icons.report_outlined,
-                  title: 'Report Activity',
-                  isDark: isDark,
-                ),
-                _buildEmptyStateCard(
-                  isDark: isDark,
-                  icon: Icons.report_problem_outlined,
-                  title: 'No cybercrime reports yet',
-                  description: 'Submit your first cybercrime report in the Reports tab',
-                ),
               ] else
                 _buildGuestContent(isDark),
               const SizedBox(height: 32),

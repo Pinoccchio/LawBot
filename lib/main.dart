@@ -13,6 +13,7 @@ import 'providers/notification_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/connectivity_provider.dart';
 import 'providers/realtime_provider.dart';
+import 'providers/global_refresh_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/auth/sign_in_screen.dart';
@@ -56,6 +57,7 @@ class LawBotApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ConnectivityProvider()),
         ChangeNotifierProvider(create: (_) => RealtimeProvider()),
+        ChangeNotifierProvider(create: (_) => GlobalRefreshProvider()),
         // Set up provider dependencies
         ProxyProvider2<NotificationProvider, RealtimeProvider, RealtimeProvider>(
           update: (context, notificationProvider, realtimeProvider, previous) {
