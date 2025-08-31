@@ -57,7 +57,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   List<DatabaseCrimeType> _availableCrimeTypes = [];
   DatabaseCrimeType? _selectedCrimeType;
   DatabaseCrimeType? _previousCrimeType;
-  PNPOfficer? _selectedOfficer;
   
   final List<EvidenceFile> _evidenceFiles = [];
   bool _isSubmitting = false;
@@ -91,11 +90,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Debounced AI updates timer (for dropdown changes)
   Timer? _debouncedAIUpdatesTimer;
   
-  // Financial loss change timer (for urgency-based officer reload)
-  Timer? _financialLossTimer;
   
-  // Track urgency state to prevent unnecessary officer reloads
-  bool? _lastUrgencyState;
   
   // AI Loading states
   bool _isLoadingCredibilityScore = false;
@@ -113,111 +108,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     'Complete Stranger',
   ];
 
-  // Helper method to determine if current case is urgent
-  bool _determineIfUrgentCase() {
-    return PNPUnitsService.isUrgentCase(
-      aiRiskScore: _currentAIAssessment?.aiRiskScore,
-      aiPriority: _currentAIAssessment?.aiPriority,
-      financialLoss: double.tryParse(_financialLossController.text),
-      crimeType: _selectedCrimeType?.name,
-    );
-  }
 
-  // Reload officers when urgency changes due to AI assessment
-  Future<void> _reloadOfficersIfUrgencyChanged() async {
-    if (_selectedCrimeType == null) return;
-    
-    print('🔄 Checking if officer reload needed due to urgency change...');
-    final currentUrgency = _determineIfUrgentCase();
-    
-    // Check if urgency actually changed to avoid unnecessary reloads
-    if (_lastUrgencyState != null && _lastUrgencyState == currentUrgency) {
-      print('📋 Urgency unchanged (${currentUrgency ? "URGENT" : "NORMAL"}), skipping officer reload');
-      return;
-    }
-    
-    // Store current officers and selected officer to compare
-    final currentOfficers = _selectedCrimeType!.availableOfficers;
-    final previouslySelectedOfficer = _selectedOfficer;
-    
-    try {
-      // Get officers for current crime type with updated urgency
-      final updatedOfficers = await _pnpUnitsService.getAvailableOfficersForCrimeType(
-        _selectedCrimeType!.name,
-        isUrgent: currentUrgency,
-      );
-      
-      // Check if officer list actually changed to avoid unnecessary updates
-      final officersChanged = !_officerListsEqual(currentOfficers, updatedOfficers);
-      
-      if (!officersChanged) {
-        print('📋 Officer list unchanged, skipping update');
-        return;
-      }
-      
-      // If user had selected an officer, try to preserve it
-      PNPOfficer? preservedOfficer = previouslySelectedOfficer;
-      if (previouslySelectedOfficer != null) {
-        // Check if the previously selected officer is still in the updated list
-        final stillAvailable = updatedOfficers.any((o) => o.id == previouslySelectedOfficer.id);
-        
-        if (!stillAvailable) {
-          // If not in updated list, check if we should include them anyway (for user experience)
-          // For urgent cases, include previously selected officers even if they're "busy"
-          if (currentUrgency && previouslySelectedOfficer.availabilityStatus == 'busy') {
-            print('🚨 Keeping previously selected busy officer for urgent case: ${previouslySelectedOfficer.displayName}');
-            updatedOfficers.insert(0, previouslySelectedOfficer); // Add to beginning of list
-          } else if (previouslySelectedOfficer.availabilityStatus == 'available') {
-            print('🔄 Re-adding available officer that was filtered out: ${previouslySelectedOfficer.displayName}');
-            updatedOfficers.insert(0, previouslySelectedOfficer); // Add to beginning of list  
-          } else {
-            print('⚠️ Previously selected officer no longer available: ${previouslySelectedOfficer.displayName} (${previouslySelectedOfficer.availabilityStatus})');
-            preservedOfficer = null;
-          }
-        } else {
-          print('✅ Previously selected officer still available: ${previouslySelectedOfficer.displayName}');
-        }
-      }
-      
-      // Update the available officers using copyWithOfficers to preserve object identity
-      setState(() {
-        _selectedCrimeType = _selectedCrimeType!.copyWithOfficers(updatedOfficers);
-        _selectedOfficer = preservedOfficer;
-      });
-      
-      print('✅ Officers reloaded based on urgency: ${currentUrgency ? "URGENT" : "NORMAL"} (${updatedOfficers.length} available)');
-      
-      if (preservedOfficer != null) {
-        print('👮 Preserved officer selection: ${preservedOfficer.displayName}');
-      }
-      
-      // Update urgency state to prevent unnecessary future reloads
-      _lastUrgencyState = currentUrgency;
-      
-    } catch (e) {
-      print('❌ Error reloading officers: $e');
-      // Keep current state on error - don't clear officers
-    }
-  }
   
-  // Helper method to compare officer lists
-  bool _officerListsEqual(List<PNPOfficer> list1, List<PNPOfficer> list2) {
-    if (list1.length != list2.length) return false;
-    
-    final ids1 = list1.map((o) => o.id).toSet();
-    final ids2 = list2.map((o) => o.id).toSet();
-    
-    return ids1.containsAll(ids2) && ids2.containsAll(ids1);
-  }
 
-  // Handle financial loss changes (affects urgency)
-  void _onFinancialLossChanged() {
-    // Debounce financial loss changes to avoid excessive officer reloads
-    _financialLossTimer?.cancel();
-    _financialLossTimer = Timer(const Duration(milliseconds: 1000), () {
-      _reloadOfficersIfUrgencyChanged();
-    });
-  }
 
   @override
   void initState() {
@@ -233,8 +126,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     _platformWebsiteController.addListener(_updateCredibilityScore);
     _financialLossController.addListener(_updateCredibilityScore);
     
-    // Add listener for financial loss changes (affects urgency)
-    _financialLossController.addListener(_onFinancialLossChanged);
     
     // Add missing controller listeners for comprehensive AI updates
     _incidentLocationController.addListener(_updateCredibilityScore);
@@ -300,16 +191,17 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   // Load crime types from database
   Future<void> _loadCrimeTypes() async {
     print('🔄 Loading crime types for complaint form...');
-    setState(() {
-      _isLoadingCrimeTypes = true;
-      _crimeTypesError = null;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoadingCrimeTypes = true;
+        _crimeTypesError = null;
+      });
+    }
 
     try {
       print('📡 Calling PNP Units Service...');
-      // Determine if we should load officers for urgent cases based on current AI assessment
-      final isUrgentCase = _determineIfUrgentCase();
-      final crimeTypesWithUnits = await _pnpUnitsService.getCrimeTypesWithUnits(isUrgentCase: isUrgentCase);
+      // Load crime types with units (officer assignment will be handled by admin)
+      final crimeTypesWithUnits = await _pnpUnitsService.getCrimeTypesWithUnits(isUrgentCase: false);
       
       print('📊 Received ${crimeTypesWithUnits.length} crime types from service');
       
@@ -324,10 +216,12 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           print('  - Unit: ${unit.unitName} (${unit.status}) - Crime types: ${unit.crimeTypes.length}');
         }
         
-        setState(() {
-          _crimeTypesError = 'No crime types available. Found ${allUnits.length} units in database. Please contact administrator.';
-          _isLoadingCrimeTypes = false;
-        });
+        if (mounted) {
+          setState(() {
+            _crimeTypesError = 'No crime types available. Found ${allUnits.length} units in database. Please contact administrator.';
+            _isLoadingCrimeTypes = false;
+          });
+        }
         return;
       }
 
@@ -350,18 +244,20 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         print('  - ${ct.name} → ${ct.assignedUnitName} (${ct.availableOfficers.length} officers)');
       }
 
-      setState(() {
-        _availableCrimeTypes = dynamicCrimeTypes;
-        _isLoadingCrimeTypes = false;
-        // Initialize urgency state
-        _lastUrgencyState = isUrgentCase;
-      });
+      if (mounted) {
+        setState(() {
+          _availableCrimeTypes = dynamicCrimeTypes;
+          _isLoadingCrimeTypes = false;
+        });
+      }
     } catch (e) {
       print('❌ Error loading crime types: $e');
-      setState(() {
-        _crimeTypesError = 'Failed to load crime types: $e';
-        _isLoadingCrimeTypes = false;
-      });
+      if (mounted) {
+        setState(() {
+          _crimeTypesError = 'Failed to load crime types: $e';
+          _isLoadingCrimeTypes = false;
+        });
+      }
     }
   }
 
@@ -375,11 +271,13 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         print('✅ User profile loaded successfully');
         
         // Pre-fill form fields with user data
-        setState(() {
-          _fullNameController.text = userProfile['full_name'] ?? '';
-          _emailController.text = userProfile['email'] ?? '';
-          _phoneController.text = userProfile['phone_number'] ?? '';
-        });
+        if (mounted) {
+          setState(() {
+            _fullNameController.text = userProfile['full_name'] ?? '';
+            _emailController.text = userProfile['email'] ?? '';
+            _phoneController.text = userProfile['phone_number'] ?? '';
+          });
+        }
         
         print('📝 Form pre-filled with user data: ${userProfile['full_name']}, ${userProfile['email']}, ${userProfile['phone_number']}');
       } else {
@@ -613,8 +511,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         
         print('🤖 AI Assessment completed: ${assessment.aiPriority} priority, ${assessment.aiRiskScore}% risk, ${assessment.confidenceScore}% confidence');
         
-        // Reload officers based on urgency determined by AI assessment
-        await _reloadOfficersIfUrgencyChanged();
+        // AI assessment completed - no officer reload needed since admin assigns
       }
     } catch (e) {
       print('⚠️ Quick AI assessment failed: $e');
@@ -628,12 +525,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     }
   }
 
-  /// Toggle AI insights visibility
-  void _toggleAIInsights() {
-    setState(() {
-      _showAIInsights = !_showAIInsights;
-    });
-  }
 
   /// Check if all required suspect fields are completed
   bool _isSuspectSectionComplete() {
@@ -681,10 +572,12 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   /// Reset pattern detection state (call when form is cleared or new crime type selected)
   void _resetPatternDetectionState() {
     _patternDetectionTimer?.cancel();
-    setState(() {
-      _patternAlertShown = false;
-      _isPatternCheckInProgress = false;
-    });
+    if (mounted) {
+      setState(() {
+        _patternAlertShown = false;
+        _isPatternCheckInProgress = false;
+      });
+    }
     print('🔄 Pattern detection state reset');
   }
 
@@ -792,11 +685,10 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       _resetPatternDetectionState();
     }
     
-    setState(() {
-      _previousCrimeType = _selectedCrimeType;
-      _selectedCrimeType = crimeType;
-      _selectedOfficer = null; // Reset officer selection when crime type changes
-      _lastUrgencyState = null; // Reset urgency state for new crime type
+    if (mounted) {
+      setState(() {
+        _previousCrimeType = _selectedCrimeType;
+        _selectedCrimeType = crimeType;
       
       // Update evidence guidance for new crime type
       if (crimeType != null) {
@@ -818,7 +710,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         _currentCredibilityScore = null;
         _showCredibilityMeter = false;
       }
-    });
+      });
+    }
   }
   
   // Clear controllers for fields that are no longer visible
@@ -879,12 +772,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     }
   }
 
-  // Handle officer selection
-  void _onOfficerSelected(PNPOfficer? officer) {
-    setState(() {
-      _selectedOfficer = officer;
-    });
-  }
 
   // Get color based on officer availability status
   Color _getAvailabilityStatusColor(String? availabilityStatus) {
@@ -934,14 +821,16 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       }
 
       if (files != null && files.isNotEmpty) {
-        setState(() {
-          for (final file in files!) {
-            if (_evidenceFiles.length < 5) {
-              final evidenceFile = EvidenceFile.fromFile(File(file.path));
-              _evidenceFiles.add(evidenceFile);
+        if (mounted) {
+          setState(() {
+            for (final file in files!) {
+              if (_evidenceFiles.length < 5) {
+                final evidenceFile = EvidenceFile.fromFile(File(file.path));
+                _evidenceFiles.add(evidenceFile);
+              }
             }
-          }
-        });
+          });
+        }
         
         // Trigger AI updates when evidence files are added
         print('📎 Evidence files added, triggering AI updates');
@@ -1040,9 +929,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
   }
 
   void _removeFile(int index) {
-    setState(() {
-      _evidenceFiles.removeAt(index);
-    });
+    if (mounted) {
+      setState(() {
+        _evidenceFiles.removeAt(index);
+      });
+    }
     // Trigger AI updates when evidence files are removed
     print('🗑️ Evidence file removed, triggering AI updates');
     _triggerAllAIUpdates();
@@ -1059,10 +950,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       return;
     }
 
-    if (_selectedOfficer == null) {
-      _showErrorSnackBar('Please select an investigating officer');
-      return;
-    }
 
     if (_selectedIncidentDateTime == null) {
       _showErrorSnackBar('Please select the date and time of incident');
@@ -1085,9 +972,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isSubmitting = true;
+      });
+    }
 
     try {
       print('🔍 ===== DEBUGGING COMPLAINT SUBMISSION =====');
@@ -1109,7 +998,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       
       print('📋 ===== FORM DATA DEBUGGING =====');
       print('🏷️ Crime Type: ${_selectedCrimeType?.name} (${_selectedCrimeType?.displayName})');
-      print('👮 Selected Officer: ${_selectedOfficer?.fullName} (ID: ${_selectedOfficer?.id})');
       print('🏢 Assigned Unit: ${_selectedCrimeType?.assignedUnit}');
       print('💰 Financial Loss: $financialLoss');
       print('📅 Incident Date: $_selectedIncidentDateTime');
@@ -1139,7 +1027,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             ? _incidentLocationController.text.trim() 
             : null,
         estimatedFinancialLoss: financialLoss,
-        assignedOfficer: _selectedOfficer, // 🔧 FIXED: Pass selected officer
+        assignedOfficer: null, // Officers will be assigned by admin
       );
 
       // Submit to database service (need to create this method)
@@ -1183,9 +1071,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         attackVector: _attackVectorController.text.trim().isEmpty ? null : _attackVectorController.text.trim(),
         contentDescription: _contentDescriptionController.text.trim().isEmpty ? null : _contentDescriptionController.text.trim(),
         impactAssessment: _impactAssessmentController.text.trim().isEmpty ? null : _impactAssessmentController.text.trim(),
-        // 🔧 FIXED: Add officer assignment fields
-        assignedOfficer: _selectedOfficer?.fullName,
-        assignedOfficerId: _selectedOfficer?.id,
+        // Officer assignment will be done by admin
+        assignedOfficer: null,
+        assignedOfficerId: null,
       );
 
       print('📋 ===== COMPLAINT OBJECT DEBUGGING =====');
@@ -1209,9 +1097,6 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
       print('📄 Content Description: ${regularComplaint.contentDescription}');
       print('📊 Impact Assessment: ${regularComplaint.impactAssessment}');
       
-      print('👮 ===== OFFICER ASSIGNMENT =====');
-      print('👮 Assigned Officer: ${regularComplaint.assignedOfficer}');
-      print('👮 Assigned Officer ID: ${regularComplaint.assignedOfficerId}');
       
       print('🚀 ===== SUBMITTING WITH AI ASSESSMENT =====');
       // Submit with AI assessment
@@ -1230,9 +1115,11 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
     } catch (e) {
       _showErrorSnackBar('Failed to submit complaint: $e');
     } finally {
-      setState(() {
-        _isSubmitting = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 
@@ -1328,8 +1215,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         // Officer and unit assignment (FIXED: Now includes all required fields)
         'assigned_unit': complaint.assignedUnit.unitName,
         'unit_id': complaint.assignedUnit.id,
-        'assigned_officer': _selectedOfficer?.fullName,
-        'assigned_officer_id': _selectedOfficer?.id,
+        'assigned_officer': null,
+        'assigned_officer_id': null,
         
         // Timestamps
         'created_at': PhilippineTime.toUtc(now).toIso8601String(),
@@ -1345,16 +1232,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
 
       final complaintId = response['id'] as String;
 
-      // Assign the selected officer (required by complainant)
-      await _pnpUnitsService.supabase.from('case_assignments').insert({
-        'complaint_id': complaintId,
-        'officer_id': _selectedOfficer!.id,
-        'assigned_by': 'Complainant',
-        'assignment_type': 'primary',
-        'status': 'active',
-        'notes': 'Officer selected by complainant during report submission',
-        'created_at': PhilippineTime.toUtc(now).toIso8601String(),
-      });
+      // Officer assignment will be done by admin later
 
       // Upload evidence files if any
       if (complaint.evidenceFiles.isNotEmpty) {
@@ -1584,51 +1462,40 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Your cybercrime complaint has been successfully submitted to ${_selectedCrimeType?.assignedUnitName ?? 'PNP Anti-Cybercrime Group'}. Your selected officer will handle the investigation.',
+              'Your cybercrime complaint has been successfully submitted to ${_selectedCrimeType?.assignedUnitName ?? 'PNP Anti-Cybercrime Group'}. An investigating officer will be assigned to your case shortly, and you will be notified once assigned.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: isDark ? Colors.grey[300] : Colors.grey[600],
               ),
             ),
-            if (_selectedOfficer != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Assigned Officer',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue[700],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _selectedOfficer!.displayName,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black,
-                      ),
-                    ),
-                    Text(
-                      _selectedOfficer!.workloadDescription,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.grey[400] : Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.withOpacity(0.3)),
               ),
-            ],
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    color: Colors.green[700],
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Our administrators will assign the most suitable officer for your case based on specialization and workload. You will receive a notification once an officer is assigned.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green[700],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
@@ -1970,268 +1837,56 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                             ),
                             const SizedBox(height: 16),
                             const Divider(),
-                            Text(
-                              'Select Investigating Officer *',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Choose your preferred investigating officer from the assigned unit',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isDark ? Colors.grey[400] : Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            
-                            // Officer Selection Dropdown
-                            if (_selectedCrimeType!.availableOfficers.isNotEmpty) ...[
-                              DropdownButtonFormField<PNPOfficer>(
-                                value: _selectedOfficer,
-                                hint: Text(
-                                  'Choose an officer (${_selectedCrimeType!.availableOfficers.length} available)',
-                                  style: TextStyle(
-                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                decoration: InputDecoration(
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  filled: true,
-                                  fillColor: isDark 
-                                      ? const Color(0xFF1E293B) 
-                                      : Colors.grey[50],
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                ),
-                                dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                                style: TextStyle(
-                                  color: isDark ? Colors.white : Colors.black,
-                                  fontSize: 14,
-                                ),
-                                isExpanded: true,
-                                menuMaxHeight: 250,
-                                items: _selectedCrimeType!.availableOfficers.map((officer) {
-                                  Color workloadColor = _getAvailabilityStatusColor(officer.availabilityStatus);
-                                  final bool isUrgent = _determineIfUrgentCase();
-                                  final bool canSelect = officer.canBeSelected(isUrgentCase: isUrgent);
-                                  
-                                  return DropdownMenuItem(
-                                    value: canSelect ? officer : null, // Disable selection for unavailable officers
-                                    enabled: canSelect,
-                                    child: Opacity(
-                                      opacity: canSelect ? 1.0 : 0.5, // Dim disabled officers
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 32,
-                                            height: 32,
-                                            decoration: BoxDecoration(
-                                              color: canSelect 
-                                                  ? const Color(0xFF2563EB).withOpacity(0.1)
-                                                  : Colors.grey.withOpacity(0.1),
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                            child: Icon(
-                                              Icons.person,
-                                              color: canSelect 
-                                                  ? const Color(0xFF2563EB)
-                                                  : Colors.grey,
-                                              size: 16,
-                                            ),
-                                          ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                officer.displayName,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                  color: canSelect 
-                                                      ? (isDark ? Colors.white : Colors.black87)
-                                                      : Colors.grey,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Container(
-                                                    width: 6,
-                                                    height: 6,
-                                                    decoration: BoxDecoration(
-                                                      color: workloadColor,
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Expanded(
-                                                    child: Text(
-                                                      canSelect 
-                                                          ? officer.workloadDescription
-                                                          : '${officer.workloadDescription} - Cannot accept ${isUrgent ? "any" : "normal"} cases',
-                                                      style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: canSelect ? workloadColor : Colors.grey,
-                                                        fontWeight: FontWeight.w500,
-                                                      ),
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: _onOfficerSelected,
-                                validator: (value) {
-                                  if (value == null) {
-                                    return 'Please select an investigating officer';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              
-                              // Officer availability explanation
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isDark 
+                                    ? const Color(0xFF059669).withOpacity(0.1)
+                                    : const Color(0xFF10B981).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
                                   color: isDark 
-                                      ? const Color(0xFF2563EB).withOpacity(0.1)
-                                      : const Color(0xFF3B82F6).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: isDark 
-                                        ? const Color(0xFF2563EB).withOpacity(0.3)
-                                        : const Color(0xFF3B82F6).withOpacity(0.3),
+                                      ? const Color(0xFF059669).withOpacity(0.3)
+                                      : const Color(0xFF10B981).withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.info_outline,
+                                    color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                                    size: 16,
                                   ),
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      Icons.info_outline,
-                                      color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-                                      size: 16,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Officer Availability Status:',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-                                            ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Officer Assignment',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
                                           ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            '🟢 Available officers can accept all cases\n'
-                                            '🟡 Busy officers can only accept urgent cases\n'
-                                            '🔴 Overloaded/Unavailable officers cannot be selected',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: isDark ? Colors.grey[400] : Colors.grey[700],
-                                              height: 1.3,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ] else ...[
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.red.withOpacity(0.3)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.error, color: Colors.red[700], size: 20),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'No officers available for this crime type. Please try again later or contact support.',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.red[700],
                                         ),
-                                      ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'A specialized investigating officer will be assigned to your case by our administrators after submission. You will be notified once an officer is assigned.',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: isDark ? Colors.grey[400] : Colors.grey[700],
+                                            height: 1.3,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                             
-                            // Show selected officer info
-                            if (_selectedOfficer != null) ...[
-                              const SizedBox(height: 12),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.green.withOpacity(0.3)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 28,
-                                      height: 28,
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: const Icon(Icons.check, color: Colors.green, size: 16),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            'Selected Officer: ${_selectedOfficer!.displayName}',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.green[700],
-                                            ),
-                                          ),
-                                          Text(
-                                            _selectedOfficer!.workloadDescription,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.green[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
                           ],
                         ),
                       ),
@@ -3367,15 +3022,17 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           );
 
           if (pickedTime != null) {
-            setState(() {
-              _selectedIncidentDateTime = DateTime(
-                pickedDate.year,
-                pickedDate.month,
-                pickedDate.day,
-                pickedTime.hour,
-                pickedTime.minute,
-              );
-            });
+            if (mounted) {
+              setState(() {
+                _selectedIncidentDateTime = DateTime(
+                  pickedDate.year,
+                  pickedDate.month,
+                  pickedDate.day,
+                  pickedTime.hour,
+                  pickedTime.minute,
+                );
+              });
+            }
             // Trigger AI updates when date/time is selected
             print('📅 Incident date/time updated, triggering AI updates');
             _triggerAllAIUpdates();

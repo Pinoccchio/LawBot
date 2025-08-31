@@ -651,12 +651,31 @@ class _ReportsTabState extends State<ReportsTab> {
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _navigateToNewComplaint,
-        backgroundColor: const Color(0xFF2563EB),
+        backgroundColor: isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB),
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('New Complaint'),
+        elevation: isDark ? 8 : 6,
+        icon: Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: const Icon(
+            Icons.add_rounded,
+            size: 18,
+          ),
+        ),
+        label: const Text(
+          'Report',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+        ),
+        extendedPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
         ),
       ),
     );
@@ -978,25 +997,6 @@ class _ReportsTabState extends State<ReportsTab> {
             ),
             textAlign: TextAlign.center,
           ),
-          if (_complaints.isEmpty) ...[
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: _navigateToNewComplaint,
-              icon: const Icon(Icons.add),
-              label: const Text('Submit Report'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

@@ -170,7 +170,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ],
             ),
             child: const Icon(
-              Icons.smart_toy,
+              Icons.security,
               size: 50,
               color: Colors.white,
             ),
@@ -179,7 +179,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Title
           Text(
-            languageProvider.translate('welcome_to_lawbot'),
+            'Welcome to LawBot',
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -191,7 +191,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Subtitle
           Text(
-            languageProvider.translate('ai_legal_assistant_philippines'),
+            'AI-Powered Cybercrime Reporting for the Philippines',
             style: TextStyle(
               fontSize: 16,
               color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -203,20 +203,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Features List
           _buildFeatureItem(
-            Icons.gavel,
-            languageProvider.translate('philippine_cybercrime_laws'),
+            Icons.shield,
+            'Official PNP Integration - Direct reporting to specialized units',
+            isDark,
+          ),
+          const SizedBox(height: 12),
+          _buildFeatureItem(
+            Icons.psychology,
+            'AI-Enhanced Processing - Smart case prioritization and guidance',
             isDark,
           ),
           const SizedBox(height: 12),
           _buildFeatureItem(
             Icons.language,
-            languageProvider.translate('bilingual_support'),
-            isDark,
-          ),
-          const SizedBox(height: 12),
-          _buildFeatureItem(
-            Icons.security,
-            languageProvider.translate('secure_mobile_experience'),
+            'Designed for Filipinos - Supports English and Filipino languages',
             isDark,
           ),
           const SizedBox(height: 20),
@@ -252,7 +252,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               alignment: Alignment.center,
               children: [
                 Icon(
-                  Icons.chat_bubble_outline,
+                  Icons.report_problem,
                   size: 60,
                   color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
                 ),
@@ -271,7 +271,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
-                      Icons.smart_toy,
+                      Icons.psychology,
                       color: Colors.white,
                       size: 16,
                     ),
@@ -284,7 +284,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Title
           Text(
-            languageProvider.translate('ai_powered_legal_chat'),
+            'Report Cybercrimes with AI Guidance',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -296,7 +296,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Description
           Text(
-            languageProvider.translate('chatbot_description'),
+            'Get intelligent guidance for cybercrime reporting with our advanced AI system that helps prioritize cases and suggests relevant evidence.',
             style: TextStyle(
               fontSize: 14,
               color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -322,19 +322,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               children: [
                 _buildStepItem(
                   "1",
-                  languageProvider.translate('ask_question'),
+                  'Select your cybercrime type from 67+ options',
                   isDark,
                 ),
                 const SizedBox(height: 8),
                 _buildStepItem(
                   "2",
-                  languageProvider.translate('get_legal_guidance'),
+                  'AI provides evidence guidance and case assessment',
                   isDark,
                 ),
                 const SizedBox(height: 8),
                 _buildStepItem(
                   "3",
-                  languageProvider.translate('save_to_history'),
+                  'Case automatically routed to appropriate PNP unit',
                   isDark,
                 ),
               ],
@@ -373,7 +373,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               alignment: Alignment.center,
               children: [
                 Icon(
-                  Icons.library_books_outlined,
+                  Icons.badge,
                   size: 60,
                   color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
                 ),
@@ -397,7 +397,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ],
                     ),
                     child: const Icon(
-                      Icons.bookmark,
+                      Icons.gavel,
                       color: Colors.white,
                       size: 12,
                     ),
@@ -423,7 +423,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ],
                     ),
                     child: const Icon(
-                      Icons.history,
+                      Icons.visibility,
                       color: Colors.white,
                       size: 12,
                     ),
@@ -436,7 +436,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Title
           Text(
-            'Organize & Access',
+            'Professional Law Enforcement Integration',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -448,7 +448,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
           // Description
           Text(
-            'Keep track of your legal conversations, save important advice, and access comprehensive legal resources whenever you need them.',
+            'Your cybercrime reports are handled professionally by specialized PNP units with real-time case tracking and secure evidence management.',
             style: TextStyle(
               fontSize: 14,
               color: isDark ? Colors.grey[400] : Colors.grey[600],
@@ -473,26 +473,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: Column(
               children: [
                 _buildFeatureItem(
-                  Icons.history,
-                  'Chat History - Review all your legal conversations',
+                  Icons.local_police,
+                  'Direct PNP Integration - Cases routed to specialized units',
                   isDark,
                 ),
                 const SizedBox(height: 12),
                 _buildFeatureItem(
-                  Icons.bookmark,
-                  'Saved Advice - Bookmark important legal guidance',
+                  Icons.analytics,
+                  'AI Risk Assessment - Intelligent case prioritization',
                   isDark,
                 ),
                 const SizedBox(height: 12),
                 _buildFeatureItem(
-                  Icons.library_books,
-                  'Legal Resources - Access comprehensive law references',
+                  Icons.track_changes,
+                  'Real-time Case Tracking - Live status updates and progress',
                   isDark,
                 ),
                 const SizedBox(height: 12),
                 _buildFeatureItem(
-                  Icons.category,
-                  'Organized by Category - Find information by legal topic',
+                  Icons.folder_special,
+                  'Secure Evidence Management - Professional file handling',
                   isDark,
                 ),
               ],

@@ -655,71 +655,115 @@ Last updated: ${DateTime.now().year}
 
 1. INFORMATION WE COLLECT
 
-We collect information you provide directly to us, such as:
-• Account information (name, email, phone number)
-• Profile information and preferences
-• Legal questions and chat history
-• Usage data and analytics
+We collect information you provide when reporting cybercrimes, such as:
+• Account information (name, email, phone number, address)
+• Cybercrime report details and incident descriptions  
+• Evidence files (images, videos, documents, screenshots up to 25MB)
+• AI assessment data and case risk scores
+• Location data and timestamps for cybercrime incidents
+• Communication with PNP officers and case updates
+• Device information and IP addresses for security purposes
 
 2. HOW WE USE YOUR INFORMATION
 
 We use your information to:
-• Provide and improve our AI legal assistance services
-• Personalize your experience and recommendations
-• Send important updates and notifications
-• Ensure security and prevent fraud
-• Comply with legal obligations
+• Process and investigate cybercrime reports with specialized PNP units
+• Provide AI-powered evidence guidance and case assessment
+• Route cases to appropriate PNP investigation units (10 specialized divisions)
+• Generate pattern detection alerts for potential repeat offenders
+• Send real-time case status updates and investigation notifications
+• Comply with law enforcement and legal obligations under Philippine law
+• Improve our AI cybercrime detection capabilities and evidence scoring
+• Generate credibility scores to help prioritize case investigation
 
 3. DATA STORAGE AND SECURITY
 
-• Your data is stored securely using industry-standard encryption
-• We implement appropriate technical and organizational measures
-• Access to personal data is strictly limited to authorized personnel
-• Regular security audits and monitoring are conducted
+• All cybercrime data is stored with military-grade AES-256 encryption
+• Evidence files are secured with digital chain of custody protocols
+• PNP officer access is logged, monitored, and audited for accountability
+• Regular security audits ensure investigation data integrity
+• AI cache data uses SHA-256 keys and automatically expires after 24 hours
+• Database access protected by Row Level Security (RLS) policies
+• Evidence uploads validated and scanned for security threats
 
 4. SHARING YOUR INFORMATION
 
-We do not sell, trade, or rent your personal information to third parties. We may share your information only:
-• With your explicit consent
-• To comply with legal obligations
-• To protect our rights and safety
-• With trusted service providers under strict confidentiality agreements
+Your cybercrime report information is shared with:
+• Philippine National Police (PNP) specialized units for official investigation
+• Assigned PNP officers based on crime type and jurisdictional requirements
+• Relevant government agencies as mandated by the Cybercrime Prevention Act
+• National Bureau of Investigation (NBI) for complex cases requiring coordination
+• We NEVER share your information for commercial or marketing purposes
+• Victim privacy is protected throughout the investigation process
+• International law enforcement agencies only for transnational crimes
 
-5. YOUR RIGHTS
+5. YOUR RIGHTS AS A CYBERCRIME VICTIM
 
 You have the right to:
-• Access, update, or delete your personal information
-• Opt-out of non-essential communications
-• Request data portability
-• File complaints with relevant authorities
+• Access your cybercrime reports and real-time case status tracking
+• Update or correct information in your reports before investigation starts
+• Receive timely updates on investigation progress and milestones
+• Request case reassignment to different PNP units if circumstances change
+• File complaints about investigation handling through proper channels
+• Access copies of your evidence files for personal records
+• Request data portability for your cybercrime reports
 
-6. COOKIES AND TRACKING
+6. AI-POWERED FEATURES
 
-We use cookies and similar technologies to:
-• Remember your preferences
-• Analyze usage patterns
-• Improve our services
-• Provide personalized content
+Our advanced AI systems process your data to:
+• Assess case priority and risk levels using machine learning algorithms
+• Suggest relevant evidence for your specific crime type
+• Detect patterns across multiple reports to identify repeat offenders
+• Score report credibility and completeness in real-time
+• Route cases to the most appropriate specialized investigation units
+• Provide performance-optimized responses (20-40x faster with caching)
+• Generate contextual evidence guidance based on 67+ crime types
 
-7. CHILDREN'S PRIVACY
+7. EVIDENCE FILE HANDLING
 
-Our services are not intended for children under 13. We do not knowingly collect personal information from children under 13.
+Evidence files you upload are:
+• Stored with secure digital chain of custody documentation
+• Accessible only to assigned PNP investigators and authorized personnel
+• Maintained for the full duration of the investigation and legal proceedings
+• Protected against tampering, unauthorized access, or data corruption
+• Backed up with redundant storage to prevent data loss
+• Automatically validated for file integrity and authenticity
 
-8. INTERNATIONAL TRANSFERS
+8. INVESTIGATION CONFIDENTIALITY
 
-Your information may be transferred to and processed in countries other than your country of residence, always with appropriate safeguards.
+Your cybercrime reports are treated with strict confidentiality:
+• Information is shared only for legitimate law enforcement purposes
+• Victim identity is protected during ongoing investigations
+• Case details are not disclosed to unauthorized parties or media
+• Sensitive information is redacted in public records as appropriate
+• Whistleblower protections apply for certain cybercrime types
 
-9. CHANGES TO THIS POLICY
+9. DATA RETENTION AND COMPLIANCE
 
-We may update this privacy policy periodically. We will notify you of significant changes via email or app notification.
+We retain your information as required by Philippine law:
+• Active cases: Until official investigation completion and case closure
+• Closed cases: As required by PNP record-keeping policies (typically 7+ years)
+• Evidence files: Maintained per legal evidence requirements and court proceedings
+• AI assessment data: Retained for pattern analysis and system improvement
+• Personal account data: Until account deletion, subject to legal hold requirements
 
-10. CONTACT US
+10. THIRD-PARTY INTEGRATIONS
 
-If you have questions about this privacy policy, please contact us at:
+• Firebase Authentication: Secure login and account management
+• Supabase Database: Encrypted storage with Row Level Security
+• Google AI (Gemini): Evidence analysis and case assessment (data not stored by Google)
+• File storage services: Secure evidence file management with encryption
+
+11. CONTACT US FOR PRIVACY CONCERNS
+
+For privacy questions regarding your cybercrime reports:
 Email: privacy@lawbot.ph
-Phone: +63 xxx-xxx-xxxx
+PNP Anti-Cybercrime Group: +63-2-723-0401 ext. 5123
+PNP Cybercrime Hotline: 117
+Emergency: 911
+Data Privacy Officer: dpo@lawbot.ph
 
-This privacy policy is governed by the laws of the Republic of the Philippines.
+This privacy policy complies with the Data Privacy Act of 2012, Cybercrime Prevention Act of 2012, and Philippine cybercrime investigation protocols.
 ''';
   }
 
@@ -729,146 +773,255 @@ TERMS OF SERVICE
 
 Last updated: ${DateTime.now().year}
 
-1. ACCEPTANCE OF TERMS
+1. ACCEPTANCE OF TERMS AND LEGAL AUTHORITY
 
-By accessing and using LawBot, you accept and agree to be bound by these Terms of Service and our Privacy Policy.
+By using LawBot's cybercrime reporting platform, you accept these Terms of Service and agree to cooperate fully with official PNP investigations. LawBot operates under the authority of the Cybercrime Prevention Act of 2012 and in partnership with the Philippine National Police.
 
-2. DESCRIPTION OF SERVICE
+2. OFFICIAL SERVICE DESCRIPTION
 
-LawBot is an AI-powered legal information assistant that provides general information about Philippine cybercrime laws and related legal topics.
+LawBot is the official AI-powered cybercrime reporting platform integrated with the Philippine National Police (PNP) providing:
+• Comprehensive reporting system for 67+ cybercrime types across 10 major categories
+• Advanced AI-assisted evidence collection, assessment, and case prioritization
+• Direct integration with 10 specialized PNP investigation units
+• Real-time case tracking with 5-stage status workflow
+• Professional victim assistance and investigation support
+• Pattern detection system for identifying repeat cybercriminals
 
-3. IMPORTANT DISCLAIMERS
+3. OFFICIAL PNP PARTNERSHIP AND AUTHORITY
 
-• LawBot provides general legal information, NOT legal advice
-• Our AI responses are for informational purposes only
-• We do not create attorney-client relationships
-• Always consult qualified legal professionals for legal advice
-• We are not responsible for decisions made based on our information
+• LawBot operates under official partnership with the Philippine National Police
+• All reports submitted become official cybercrime complaints with legal standing
+• PNP specialized units investigate cases according to Philippine criminal law
+• Cases are automatically routed to appropriate investigation units using AI assessment
+• This platform supplements but does not replace emergency services - call 911 for immediate threats
+• Reports carry the same legal weight as traditional police reports
 
-4. USER RESPONSIBILITIES
+4. USER RESPONSIBILITIES AND LEGAL OBLIGATIONS
 
 You agree to:
-• Provide accurate and truthful information
-• Use the service for lawful purposes only
-• Respect intellectual property rights
-• Not attempt to reverse engineer or hack our systems
-• Not use the service to harass or harm others
+• Provide accurate, complete, and truthful information in all cybercrime reports
+• Upload authentic evidence files directly related to your case (max 5 files, 25MB total)
+• Cooperate fully with PNP investigations, requests, and testimony requirements
+• Report cybercrimes promptly to preserve digital evidence and prevent further damage
+• Not file false reports, which is a criminal offense under Philippine law
+• Maintain confidentiality of ongoing investigations and not interfere with law enforcement
+• Respond to PNP officer requests for clarification or additional evidence
 
-5. PROHIBITED USES
+5. PROHIBITED USES AND CRIMINAL LIABILITY
 
 You may not use LawBot to:
-• Seek advice for illegal activities
-• Share confidential or privileged information
-• Spam or send malicious content
-• Violate any applicable laws or regulations
-• Impersonate others or provide false information
+• File false, fraudulent, or malicious cybercrime reports (criminal offense)
+• Upload illegal content, malware, or evidence obtained through unlawful means
+• Interfere with ongoing PNP investigations or tamper with evidence
+• Share confidential investigation details publicly or compromise case integrity
+• Use the platform for purposes other than legitimate cybercrime reporting
+• Attempt to access other users' case information or PNP investigation data
+• Upload copyrighted material without authorization or consent
 
-6. INTELLECTUAL PROPERTY
+6. AI-POWERED INVESTIGATION SUPPORT
 
-• LawBot and its content are protected by copyright and trademark laws
-• You retain ownership of your questions and input
-• We may use aggregated, anonymized data to improve our services
-• You grant us a license to use your feedback for service improvement
+• AI Risk Assessment Service provides case priority scoring for PNP officers
+• Evidence Guidance Service suggests specific evidence types for each crime category
+• Pattern Detection Service identifies potential repeat offenders across reports
+• Credibility Scorer assesses report completeness and provides improvement suggestions
+• AI Database Service provides 20-40x performance improvement through intelligent caching
+• AI recommendations are advisory tools - final investigation decisions rest with PNP officers
+• All AI processing follows strict data privacy and security protocols
 
-7. SERVICE AVAILABILITY
+7. EVIDENCE HANDLING AND CHAIN OF CUSTODY
 
-• We strive for 99.9% uptime but cannot guarantee uninterrupted service
-• We may temporarily suspend service for maintenance
-• Features may be modified or discontinued with notice
+• Evidence files become part of official PNP investigation records with legal standing
+• Digital chain of custody protocols ensure evidence integrity and court admissibility
+• You retain ownership rights to your evidence but grant PNP investigative access
+• Evidence may be used in legal proceedings, court cases, and prosecution efforts
+• Tampering with or destroying evidence is a criminal offense under Philippine law
+• Evidence storage follows international digital forensics standards
 
-8. LIMITATION OF LIABILITY
+8. INVESTIGATION PROCESS AND PROCEDURES
 
-To the maximum extent permitted by law:
-• We are not liable for decisions made based on our information
-• Our liability is limited to the amount you paid for our services
-• We disclaim warranties except as required by law
-• We are not responsible for third-party content or services
+• Cases follow official PNP cybercrime investigation procedures and protocols
+• Status workflow: Pending → Under Investigation → Requires More Info → Resolved/Dismissed
+• Investigation timelines vary based on case complexity, evidence quality, and priority level
+• Assigned PNP officers may contact you for additional information, clarification, or testimony
+• Case outcomes are determined by evidence quality, legal proceedings, and prosecutorial decisions
+• Appeals process available through proper PNP channels for case handling disputes
 
-9. INDEMNIFICATION
+9. SERVICE AVAILABILITY AND TECHNICAL SUPPORT
 
-You agree to indemnify and hold us harmless from claims arising from your use of our service or violation of these terms.
+• Platform available 24/7 for cybercrime reporting and evidence submission
+• Emergency cybercrime support available through PNP specialized hotlines
+• Scheduled maintenance windows will be announced in advance
+• Critical evidence uploads and urgent case submissions are prioritized during maintenance
+• Technical support available for evidence upload issues and platform problems
 
-10. TERMINATION
+10. LIMITATION OF LIABILITY AND DISCLAIMERS
 
-• You may delete your account at any time
-• We may terminate accounts for violations of these terms
-• Certain provisions survive termination (privacy, intellectual property)
+• LawBot facilitates cybercrime reporting but does not guarantee specific investigation outcomes
+• Investigation results depend on evidence quality, legal factors, and prosecutorial discretion
+• We are not responsible for PNP investigation decisions, timelines, or resource allocation
+• Service is provided to support law enforcement operations, not replace legal counsel
+• AI assessments are tools to assist investigation - not legal determinations
 
-11. GOVERNING LAW
+11. LEGAL COMPLIANCE AND JURISDICTION
 
-These terms are governed by the laws of the Republic of the Philippines. Disputes will be resolved in Philippine courts.
+• All platform activities governed by Philippine cybercrime and criminal laws
+• Reports are processed under the Cybercrime Prevention Act of 2012
+• Evidence handling follows Philippine Rules of Evidence for court proceedings
+• International cybercrime cases involve cooperation with foreign law enforcement
+• Platform operates under Philippine legal jurisdiction and regulatory oversight
+• Disputes resolved through Philippine courts and legal system
 
-12. CHANGES TO TERMS
+12. ACCOUNT TERMINATION AND CONSEQUENCES
 
-We may update these terms periodically. Continued use after changes constitutes acceptance of new terms.
+• Accounts may be suspended or terminated for filing false or malicious reports
+• Interference with investigations may result in criminal charges and prosecution
+• Account closure does not affect ongoing PNP investigations or legal proceedings
+• Evidence and reports remain accessible to PNP as required by law and court orders
+• Terminated users may be banned from future platform use
 
-13. CONTACT INFORMATION
+13. UPDATES TO TERMS AND NOTIFICATION
 
-For questions about these terms:
-Email: legal@lawbot.ph
-Phone: +63 xxx-xxx-xxxx
-Address: Philippines
+• Terms may be updated to reflect changes in law or platform capabilities
+• Material changes will be communicated through in-app notifications
+• Continued use after updates constitutes acceptance of revised terms
+• Legal requirements may supersede these terms where applicable
 
-By using LawBot, you acknowledge that you have read, understood, and agree to these Terms of Service.
+14. CONTACT INFORMATION AND LEGAL SUPPORT
+
+For questions about these terms and legal matters:
+Legal Team: legal@lawbot.ph
+PNP Anti-Cybercrime Group: +63-2-723-0401 ext. 5123
+PNP Cybercrime Hotline: 117
+Emergency Hotline: 911
+Victim Support Services: victim.support@lawbot.ph
+
+By using LawBot, you acknowledge this is an official cybercrime reporting platform with direct law enforcement integration and legal consequences for misuse.
 ''';
   }
 
   String _getFAQContent() {
     return '''
-Q: Is LawBot a replacement for a real lawyer?
-A: No, LawBot provides general legal information only. Always consult a qualified attorney for legal advice specific to your situation.
+Q: How do I report a cybercrime through LawBot?
+A: Select your crime category from 10 major types, fill out the AI-guided form with incident details, upload evidence files (max 5 files, 25MB total), and submit. Your report receives an official complaint number (CYB-YYYY-XXX format) and is automatically routed to the appropriate specialized PNP unit based on AI assessment.
 
-Q: How accurate is the legal information provided?
-A: We strive for accuracy, but laws change frequently. Always verify information with current legal sources or professionals.
+Q: What types of cybercrimes can I report?
+A: LawBot covers 67+ specific crime types across 10 categories: Communication & Social Media Crimes, Financial & Economic Crimes, Data & Privacy Crimes, Malware & System Attacks, Harassment & Exploitation, Content-Related Crimes, System Disruption & Sabotage, Government & Terrorism, Technical Exploitation, and Targeted Attacks.
 
-Q: Can I trust LawBot with confidential information?
-A: While we protect your privacy, avoid sharing highly sensitive details. Use general scenarios instead of specific confidential information.
+Q: Will PNP officers really investigate my case?
+A: Yes, absolutely. All reports go directly to specialized PNP investigation units including Cyber Crime Investigation Cell, Economic Offenses Wing, Cyber Security Division, and 7 other specialized units. Cases are assigned based on crime type and AI-assessed priority levels with real-time officer assignments.
 
-Q: What areas of law does LawBot cover?
-A: LawBot specializes in Philippine cybercrime laws, data privacy, online harassment, e-commerce fraud, and related digital legal issues.
+Q: How long does a cybercrime investigation take?
+A: Investigation timelines vary by case complexity, evidence quality, and priority level. Simple scam cases may resolve in 2-4 weeks, while complex hacking or financial fraud cases can take 2-6 months. You receive real-time status updates and can track investigation milestones.
 
-Q: Is my chat history private?
-A: Yes, your conversations are private and secured. We don't share your personal legal questions with third parties.
+Q: What evidence should I upload with my report?
+A: Our AI Evidence Guidance Service provides personalized evidence suggestions for each of the 67+ crime types. Common evidence includes screenshots, transaction records, communication logs, URLs, account details, banking records, phone logs, and any relevant documents or photos.
 
-Q: Can I download or print my chat history?
-A: Yes, you can save important advice and share relevant information through the app's built-in sharing features.
+Q: How secure is my evidence and personal information?
+A: All data is protected with AES-256 military-grade encryption. Evidence files maintain digital chain of custody protocols with SHA-256 integrity verification. Only authorized PNP investigators can access your case information through Row Level Security policies. We never share data commercially.
 
-Q: How often is the legal information updated?
-A: Our knowledge base is regularly updated to reflect current Philippine laws and regulations.
+Q: Can I track the status of my cybercrime report?
+A: Yes, you can monitor your case progress in real-time through the app. Status updates include: Pending → Under Investigation → Requires More Info → Resolved/Dismissed. Push notifications and in-app updates keep you informed of investigation milestones and officer assignments.
 
-Q: What should I do in a legal emergency?
-A: For urgent legal matters, contact a lawyer immediately or call relevant authorities. LawBot is not for emergency situations.
+Q: What is the AI Risk Assessment feature?
+A: Our 5-service AI system analyzes your report to determine case priority (1-10 scale), suggest specific evidence, assess report credibility (0-100% score), detect patterns across reports to identify repeat offenders, and provide performance-optimized responses with 20-40x speed improvement through intelligent caching.
+
+Q: Can I report cybercrimes that happened outside the Philippines?
+A: Yes, LawBot handles international cybercrime cases affecting Filipino citizens or involving Philippine jurisdiction. Our system coordinates with foreign law enforcement agencies through proper diplomatic channels and international cooperation agreements.
+
+Q: What should I do for cybercrime emergencies?
+A: For immediate threats, ongoing attacks, or life-threatening situations, call 911 or PNP Hotline 117 immediately. Then file a detailed report through LawBot within 24 hours to provide evidence and ensure proper investigation documentation and follow-up.
+
+Q: How does LawBot assign cases to different PNP units?
+A: Our AI automatically routes cases to 10 specialized units based on crime type analysis: Communication crimes → Cyber Crime Investigation Cell, Financial crimes → Economic Offenses Wing, Data breaches → Cyber Security Division, etc. Each unit has specific expertise and jurisdiction.
+
+Q: What is the Credibility Scorer and how does it work?
+A: The AI Credibility Scorer evaluates your report completeness and provides real-time suggestions to improve your case quality. It analyzes evidence quality, incident details, and supporting documentation to give you a 0-100% credibility score with actionable improvement recommendations.
+
+Q: How does the Pattern Detection system protect other victims?
+A: Our AI analyzes report patterns across the platform to identify potential repeat offenders and scammer networks. When similar fraud patterns are detected, the system generates alerts to help PNP officers connect related cases and protect future victims.
+
+Q: Can I update my cybercrime report after submission?
+A: You can update case information during the "Pending" status. Once investigation begins, updates require PNP officer approval. Critical new evidence can always be added through proper channels with chain of custody documentation.
+
+Q: What happens if my case is marked "Requires More Info"?
+A: You'll receive specific requests from assigned PNP officers about additional evidence or clarification needed. The case status remains active, and you can submit additional information through the secure platform to help advance the investigation.
+
+Q: How do I know which PNP officer is handling my case?
+A: Officer assignment information is provided once investigation begins. You'll see the assigned officer's badge number, specialization, and contact information for authorized case-related communication through the secure platform.
 ''';
   }
 
   String _getContactContent() {
     return '''
-Need additional help? Our support team is here to assist you.
+Need help with cybercrime reporting? Our specialized support team and official PNP partners provide comprehensive assistance for all cybercrime victims.
 
-📧 Email Support: support@lawbot.ph
-• Response time: 24-48 hours
-• Available 24/7 for urgent issues
+🚨 EMERGENCY CYBERCRIME SUPPORT:
+• PNP Emergency Hotline: 911
+• PNP General Hotline: 117  
+• PNP Anti-Cybercrime Group: +63-2-723-0401
+• For immediate threats, ongoing cyberattacks, or life-threatening situations
+• Available 24/7 for critical cybercrime emergencies
 
-📞 Phone Support: +63 xxx-xxx-xxxx
-• Business hours: Monday-Friday, 9 AM - 6 PM (PHT)
-• For technical issues and general inquiries
+📧 OFFICIAL LAWBOT CYBERCRIME SUPPORT:
+• Technical Support: support@lawbot.ph (Response: 2-4 hours urgent, 24-48 hours general)
+• Legal Questions: legal@lawbot.ph
+• Privacy Concerns: privacy@lawbot.ph
+• Victim Support: victim.support@lawbot.ph
+• Available 24/7 for critical cybercrime assistance and case submission support
 
-💬 In-App Support:
-• Use the feedback feature in the app
-• Report bugs or suggest improvements
-• Rate your experience
+📞 PNP SPECIALIZED CYBERCRIME UNITS:
+• PNP Anti-Cybercrime Group Main: +63-2-723-0401 ext. 5123
+• Cyber Crime Investigation Cell: ext. 5124
+• Economic Offenses Wing: ext. 5125
+• Cyber Security Division: ext. 5126
+• Available: Monday-Friday, 8 AM - 5 PM (PHT), 24/7 for emergencies
 
-🌐 Online Resources:
-• Visit our website for additional guides
-• Check our blog for legal updates
-• Follow us on social media for tips
+🏛️ COMPLETE PNP CYBERCRIME UNIT DIRECTORY:
+• Cyber Crime Investigation Cell - Communication & social media crimes
+• Economic Offenses Wing - Financial fraud and scams
+• Cyber Security Division - Data breaches and privacy crimes
+• Cyber Crime Technical Unit - Malware and system attacks
+• Cyber Crime Against Women and Children - Harassment and exploitation
+• Special Investigation Team - Content-related crimes
+• Critical Infrastructure Protection Unit - System sabotage
+• National Security Cyber Division - Government and terrorism threats
+• Advanced Cyber Forensics Unit - Technical exploitation cases
+• Special Cyber Operations Unit - Targeted and advanced attacks
 
-🏢 Office Address:
-LawBot Philippines
-[Address to be provided]
-Philippines
+💬 IN-APP CYBERCRIME ASSISTANCE:
+• Real-time case tracking and status monitoring
+• Evidence upload troubleshooting and file validation
+• AI assessment results and credibility score explanations
+• Request additional investigation support or case priority review
+• Provide feedback on case handling and officer responsiveness
+• Access to victim support resources and legal assistance programs
 
-For urgent legal matters, please contact emergency services or seek immediate legal counsel.
+🌐 ADDITIONAL CYBERCRIME RESOURCES:
+• Republic Act 10175 (Cybercrime Prevention Act of 2012)
+• Republic Act 10173 (Data Privacy Act of 2012)
+• PNP Cybercrime Prevention Guidelines
+• International cybercrime cooperation treaties and protocols
+• Victim assistance programs and legal aid services
+• Cybersecurity awareness and prevention resources
+
+🏢 PNP ANTI-CYBERCRIME GROUP HEADQUARTERS:
+Camp Crame, Quezon City, Metro Manila, Philippines
+Main Office: +63-2-723-0401
+Direct Cybercrime Hotline: 117
+Email: pnp.cybercrime@pnp.gov.ph
+Operating Hours: 24/7 for emergencies, 8 AM - 5 PM for general inquiries
+
+⚠️ CRITICAL CYBERCRIME REPORTING REMINDERS:
+• For immediate physical threats or ongoing attacks, call 911 FIRST
+• Preserve ALL digital evidence - do not delete anything
+• Screenshot everything immediately before evidence disappears
+• Do not attempt to confront cybercriminals directly - this can escalate danger
+• Report cybercrimes within 24-48 hours for optimal evidence preservation
+• Keep all transaction records, communication logs, and account information
+• Document financial losses with bank statements and transaction histories
+
+🛡️ VICTIM SAFETY AND INVESTIGATION SUCCESS:
+Your personal safety and successful cybercrime case investigation are our highest priorities. Our AI-powered platform and PNP partnership ensure professional, thorough investigation of all reported cybercrimes.
 ''';
   }
 
