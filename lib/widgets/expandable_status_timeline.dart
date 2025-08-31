@@ -309,8 +309,10 @@ class _ExpandableStatusTimelineState extends State<ExpandableStatusTimeline> {
 
   Color _getStatusColor(ComplaintStatus status) {
     switch (status) {
-      case ComplaintStatus.pending:
+      case ComplaintStatus.toBeAssigned:
         return const Color(0xFFF59E0B); // Amber
+      case ComplaintStatus.assigned:
+        return const Color(0xFF14B8A6); // Teal
       case ComplaintStatus.underInvestigation:
         return const Color(0xFF3B82F6); // Blue
       case ComplaintStatus.requiresMoreInfo:

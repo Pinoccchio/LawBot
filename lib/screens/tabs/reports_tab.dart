@@ -165,7 +165,7 @@ class _ReportsTabState extends State<ReportsTab> {
         estimatedFinancialLoss: data['estimated_loss']?.toDouble(),
         status: ComplaintStatus.values.firstWhere(
           (e) => e.displayName == data['status'],
-          orElse: () => ComplaintStatus.pending,
+          orElse: () => ComplaintStatus.toBeAssigned,
         ),
         priority: data['priority'] ?? 'low', // Case priority from database
         riskScore: data['risk_score'] ?? 30, // AI risk assessment
@@ -255,7 +255,7 @@ class _ReportsTabState extends State<ReportsTab> {
         ],
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(days: 2)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -277,13 +277,13 @@ class _ReportsTabState extends State<ReportsTab> {
         email: 'rosa.valencia@email.com',
         phoneNumber: '+63 928 777 9999',
         incidentDateTime: now.subtract(const Duration(days: 1)),
-        status: ComplaintStatus.pending,
+        status: ComplaintStatus.toBeAssigned,
         createdAt: now.subtract(const Duration(hours: 6)),
         updatedAt: now.subtract(const Duration(hours: 6)),
         complaintNumber: 'CYB-2024-002',
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(hours: 6)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -305,7 +305,7 @@ class _ReportsTabState extends State<ReportsTab> {
         complaintNumber: 'CYB-2024-003',
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(days: 10)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -327,7 +327,7 @@ class _ReportsTabState extends State<ReportsTab> {
         email: 'elena.ramirez@email.com',
         phoneNumber: '+63 922 333 4444',
         incidentDateTime: now.subtract(const Duration(hours: 18)),
-        status: ComplaintStatus.pending,
+        status: ComplaintStatus.toBeAssigned,
         createdAt: now.subtract(const Duration(hours: 12)),
         updatedAt: now.subtract(const Duration(hours: 12)),
         complaintNumber: 'CYB-2024-004',
@@ -343,7 +343,7 @@ class _ReportsTabState extends State<ReportsTab> {
         ],
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(hours: 12)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -365,7 +365,7 @@ class _ReportsTabState extends State<ReportsTab> {
         complaintNumber: 'CYB-2024-005',
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(days: 5)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -384,8 +384,8 @@ class _ReportsTabState extends State<ReportsTab> {
   List<Complaint> get filteredComplaints {
     if (_selectedFilter == 'All') {
       return _complaints;
-    } else if (_selectedFilter == 'Pending') {
-      return _complaints.where((c) => c.status == ComplaintStatus.pending).toList();
+    } else if (_selectedFilter == 'To Be Assigned') {
+      return _complaints.where((c) => c.status == ComplaintStatus.toBeAssigned).toList();
     } else if (_selectedFilter == 'Under Investigation') {
       return _complaints.where((c) => c.status == ComplaintStatus.underInvestigation).toList();
     } else if (_selectedFilter == 'Requires More Info') {
@@ -394,7 +394,7 @@ class _ReportsTabState extends State<ReportsTab> {
     return _complaints;
   }
 
-  List<String> get filterOptions => ['All', 'Pending', 'Under Investigation', 'Requires More Info'];
+  List<String> get filterOptions => ['All', 'To Be Assigned', 'Under Investigation', 'Requires More Info'];
 
   void _navigateToNewComplaint() async {
     final result = await Navigator.of(context).push(
@@ -557,8 +557,8 @@ class _ReportsTabState extends State<ReportsTab> {
                         Expanded(
                           child: _buildSummaryCard(
                             context,
-                            title: '${_complaints.where((c) => c.status == ComplaintStatus.pending).length}',
-                            subtitle: 'Pending',
+                            title: '${_complaints.where((c) => c.status == ComplaintStatus.toBeAssigned).length}',
+                            subtitle: 'To Be Assigned',
                             icon: Icons.hourglass_empty,
                             color: Colors.orange,
                             isDark: isDark,
@@ -1004,7 +1004,7 @@ class _ReportsTabState extends State<ReportsTab> {
 
   Color _getStatusColor(ComplaintStatus status) {
     switch (status) {
-      case ComplaintStatus.pending:
+      case ComplaintStatus.toBeAssigned:
         return Colors.orange;
       case ComplaintStatus.underInvestigation:
         return Colors.purple;
@@ -1014,6 +1014,8 @@ class _ReportsTabState extends State<ReportsTab> {
         return Colors.red;
       case ComplaintStatus.requiresMoreInfo:
         return Colors.blue;
+      case ComplaintStatus.assigned:
+        return Colors.purple; // Same as underInvestigation since this status is obsolete
     }
   }
 

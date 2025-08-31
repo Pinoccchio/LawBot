@@ -317,7 +317,7 @@ class RealtimeService {
         estimatedFinancialLoss: data['estimated_loss']?.toDouble(),
         status: ComplaintStatus.values.firstWhere(
           (e) => e.displayName == data['status'],
-          orElse: () => ComplaintStatus.pending,
+          orElse: () => ComplaintStatus.toBeAssigned,
         ),
         priority: data['priority'] ?? 'low',
         riskScore: data['risk_score'] ?? 30,

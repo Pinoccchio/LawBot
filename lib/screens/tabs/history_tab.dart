@@ -176,7 +176,7 @@ class _HistoryTabState extends State<HistoryTab> {
         complaintNumber: 'CYB-2023-078',
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(days: 30)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -204,7 +204,7 @@ class _HistoryTabState extends State<HistoryTab> {
         complaintNumber: 'CYB-2023-052',
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(days: 45)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -232,7 +232,7 @@ class _HistoryTabState extends State<HistoryTab> {
         complaintNumber: 'CYB-2023-033',
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(days: 60)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -260,7 +260,7 @@ class _HistoryTabState extends State<HistoryTab> {
         complaintNumber: 'CYB-2023-001',
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(days: 90)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -294,7 +294,7 @@ class _HistoryTabState extends State<HistoryTab> {
         complaintNumber: 'CYB-2022-089',
         statusHistory: [
           StatusUpdate(
-            status: ComplaintStatus.pending,
+            status: ComplaintStatus.toBeAssigned,
             timestamp: now.subtract(const Duration(days: 120)),
             updatedBy: 'System',
             remarks: 'Complaint submitted successfully',
@@ -805,7 +805,7 @@ class _HistoryTabState extends State<HistoryTab> {
 
   Color _getStatusColor(ComplaintStatus status) {
     switch (status) {
-      case ComplaintStatus.pending:
+      case ComplaintStatus.toBeAssigned:
         return Colors.orange;
       case ComplaintStatus.underInvestigation:
         return Colors.purple;
@@ -815,6 +815,8 @@ class _HistoryTabState extends State<HistoryTab> {
         return Colors.red;
       case ComplaintStatus.requiresMoreInfo:
         return Colors.blue;
+      case ComplaintStatus.assigned:
+        return Colors.purple; // Same as underInvestigation since this status is obsolete
     }
   }
 }

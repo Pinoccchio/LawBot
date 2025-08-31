@@ -72,7 +72,8 @@ class DatabaseCrimeType {
 }
 
 enum ComplaintStatus {
-  pending('Pending', 'Your complaint has been received and is being reviewed'),
+  toBeAssigned('To Be Assigned', 'Your complaint has been received and is awaiting assignment to a PNP officer'),
+  assigned('Assigned', 'A PNP officer has been assigned to your complaint'),
   underInvestigation('Under Investigation', 'PNP officers are actively investigating your complaint'),
   resolved('Resolved', 'Your complaint has been resolved'),
   dismissed('Dismissed', 'Your complaint has been dismissed'),
@@ -194,7 +195,7 @@ class DatabaseComplaint {
     required this.incidentDateTime,
     this.incidentLocation,
     this.estimatedFinancialLoss,
-    this.status = ComplaintStatus.pending,
+    this.status = ComplaintStatus.toBeAssigned,
     this.priority = 'low',
     this.riskScore = 30,
     required this.assignedUnit,
@@ -245,7 +246,7 @@ class DatabaseComplaint {
       updatedAt: now,
       statusHistory: [
         StatusUpdate(
-          status: ComplaintStatus.pending,
+          status: ComplaintStatus.toBeAssigned,
           timestamp: now,
           updatedBy: 'System',
           remarks: 'Complaint submitted successfully',

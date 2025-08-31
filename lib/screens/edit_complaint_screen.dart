@@ -1900,6 +1900,8 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
     switch (status) {
       case 'Pending':
         return Colors.orange;
+      case 'Assigned':
+        return Colors.teal;
       case 'Under Investigation':
         return Colors.purple;
       case 'Requires More Information':
@@ -1917,6 +1919,8 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
     switch (status) {
       case 'Pending':
         return Icons.hourglass_empty;
+      case 'Assigned':
+        return Icons.person_add;
       case 'Under Investigation':
         return Icons.search;
       case 'Requires More Information':

@@ -554,7 +554,7 @@ class DatabaseService {
         'incident_date_time': complaint.incidentDateTime.toUtc().toIso8601String(),
         'incident_location': complaint.incidentLocation,
         'estimated_loss': complaint.estimatedFinancialLoss,
-        'status': 'Pending',
+        'status': 'To Be Assigned',
         // 🚀 AI-driven scores (replaces hard-coded calculations)
         'priority': aiPriorityScoring?.priority ?? 'medium',
         'risk_score': aiPriorityScoring?.riskScore ?? 50,
@@ -582,7 +582,7 @@ class DatabaseService {
       // Add initial status history
       await _addStatusUpdate(
         complaintId,
-        'Pending',
+        'To Be Assigned',
         'System',
         'Complaint submitted successfully',
       );
@@ -634,7 +634,7 @@ class DatabaseService {
     }
   }
 
-  // Get user's active complaints (Pending, Under Investigation, Requires More Info)
+  // Get user's active complaints (To Be Assigned, Under Investigation, Requires More Info)
   Future<List<Map<String, dynamic>>> getUserActiveComplaints() async {
     try {
       if (currentUserId == null) {
@@ -649,7 +649,7 @@ class DatabaseService {
           .from('complaints')
           .select('*')
           .eq('user_id', currentUserId!)
-          .inFilter('status', ['Pending', 'Under Investigation', 'Requires More Information'])
+          .inFilter('status', ['To Be Assigned', 'Under Investigation', 'Requires More Information'])
           .order('created_at', ascending: false);
 
       if (response == null || (response as List).isEmpty) {
@@ -1090,7 +1090,7 @@ class DatabaseService {
       for (final complaint in allComplaints) {
         final status = complaint['status'] as String;
         switch (status) {
-          case 'Pending':
+          case 'To Be Assigned':
             stats['pending'] = (stats['pending'] ?? 0) + 1;
             break;
           case 'Under Investigation':
@@ -1227,7 +1227,7 @@ class DatabaseService {
         'incident_date_time': complaint.incidentDateTime.toUtc().toIso8601String(),
         'incident_location': complaint.incidentLocation,
         'estimated_loss': complaint.estimatedFinancialLoss,
-        'status': 'Pending',
+        'status': 'To Be Assigned',
         // 🚀 AI-driven scores (replaces hard-coded calculations)
         'priority': aiPriorityScoring?.priority ?? 'medium',
         'risk_score': aiPriorityScoring?.riskScore ?? 50,
@@ -1331,7 +1331,7 @@ class DatabaseService {
       // Add initial status history
       await _addStatusUpdate(
         complaintId,
-        'Pending',
+        'To Be Assigned',
         'System',
         'Complaint submitted successfully with ${aiAssessment != null ? 'AI' : 'rule-based'} assessment',
       );
@@ -1505,7 +1505,7 @@ class DatabaseService {
             )
           ''')
           .eq('user_id', currentUserId!)
-          .inFilter('status', ['Pending', 'Under Investigation', 'Requires More Information'])
+          .inFilter('status', ['To Be Assigned', 'Under Investigation', 'Requires More Information'])
           .order('created_at', ascending: false);
 
       print('✅ Fetched ${response.length} active complaints with AI data');

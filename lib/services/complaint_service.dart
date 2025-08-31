@@ -108,7 +108,7 @@ class ComplaintService {
       final statusUpdates = statusHistory.map((data) => StatusUpdate(
         status: ComplaintStatus.values.firstWhere(
           (e) => e.displayName == data['status'],
-          orElse: () => ComplaintStatus.pending,
+          orElse: () => ComplaintStatus.toBeAssigned,
         ),
         timestamp: DateTime.parse(data['timestamp']),
         updatedBy: data['updated_by'],
@@ -223,8 +223,8 @@ class ComplaintService {
             status: ComplaintStatus.values.firstWhere(
               (e) => e.displayName == data['status'],
               orElse: () {
-                print('⚠️ [ComplaintService] Unknown status: ${data['status']}, defaulting to pending');
-                return ComplaintStatus.pending;
+                print('⚠️ [ComplaintService] Unknown status: ${data['status']}, defaulting to toBeAssigned');
+                return ComplaintStatus.toBeAssigned;
               },
             ),
             timestamp: DateTime.parse(data['timestamp']),
@@ -458,7 +458,7 @@ class ComplaintService {
         estimatedFinancialLoss: data['estimated_loss']?.toDouble(),
         status: ComplaintStatus.values.firstWhere(
           (e) => e.displayName == data['status'],
-          orElse: () => ComplaintStatus.pending,
+          orElse: () => ComplaintStatus.toBeAssigned,
         ),
         priority: data['priority'] ?? 'low',
         riskScore: data['risk_score'] ?? 30,

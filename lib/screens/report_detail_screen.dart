@@ -2011,8 +2011,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   Color _getStatusColor(ComplaintStatus status) {
     switch (status) {
-      case ComplaintStatus.pending:
+      case ComplaintStatus.toBeAssigned:
         return Colors.orange;
+      case ComplaintStatus.assigned:
+        return Colors.teal;
       case ComplaintStatus.underInvestigation:
         return Colors.purple;
       case ComplaintStatus.resolved:
