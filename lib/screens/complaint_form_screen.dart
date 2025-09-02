@@ -1159,6 +1159,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
         'full_name': complaint.fullName,
         'email': complaint.email,
         'phone_number': complaint.phoneNumber,
+        // Convert Philippine time to UTC for consistent database storage
         'incident_date_time': PhilippineTime.toUtc(complaint.incidentDateTime).toIso8601String(),
         'incident_location': complaint.incidentLocation,
         'estimated_loss': complaint.estimatedFinancialLoss,
@@ -3024,6 +3025,9 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
           if (pickedTime != null) {
             if (mounted) {
               setState(() {
+                // Create DateTime object and treat it as Philippine time
+                // This ensures the exact time the user selected is preserved
+                // The PhilippineTime utility will handle proper UTC conversion for storage
                 _selectedIncidentDateTime = DateTime(
                   pickedDate.year,
                   pickedDate.month,
@@ -3031,6 +3035,8 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
                   pickedTime.hour,
                   pickedTime.minute,
                 );
+                
+                print('🕐 User selected incident time: ${PhilippineTime.formatDateTime(_selectedIncidentDateTime!)}');
               });
             }
             // Trigger AI updates when date/time is selected
@@ -3057,7 +3063,7 @@ class _ComplaintFormScreenState extends State<ComplaintFormScreen> {
             Expanded(
               child: Text(
                 _selectedIncidentDateTime != null
-                    ? '${PhilippineTime.formatChatHistoryTime(_selectedIncidentDateTime!.toIso8601String())}'
+                    ? PhilippineTime.formatDateTime(_selectedIncidentDateTime!)
                     : 'Select date and time of incident',
                 style: TextStyle(
                   color: _selectedIncidentDateTime != null

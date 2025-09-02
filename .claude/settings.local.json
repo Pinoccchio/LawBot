@@ -20,7 +20,11 @@
       "Bash(git checkout:*)",
       "Bash(grep:*)",
       "Bash(npm run dev:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(claude --version)",
+      "Bash(claude doctor)",
+      "Bash(cmd /c:*)",
+      "Bash(npm install:*)"
     ],
     "deny": []
   }

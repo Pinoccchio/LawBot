@@ -3,6 +3,12 @@ import 'package:intl/intl.dart';
 class PhilippineTime {
   // Philippine timezone offset is UTC+8
   static const int philippineOffsetHours = 8;
+  
+  /// USAGE GUIDE:
+  /// 1. When creating DateTime from user input: treat as Philippine time directly
+  /// 2. When storing to database: use toUtc() to convert Philippine time to UTC
+  /// 3. When displaying from database: use formatDatabaseTime() or fromUtc() + formatDateTime()
+  /// 4. When creating DateTime for current time: use now() to get current Philippine time
 
   /// Get current Philippine time
   static DateTime now() {
@@ -16,6 +22,8 @@ class PhilippineTime {
   }
 
   /// Convert Philippine time to UTC for database storage
+  /// IMPORTANT: Input must be a Philippine time DateTime object (not local device time)
+  /// This method assumes the input DateTime represents Philippine time (UTC+8)
   static DateTime toUtc(DateTime philippineDateTime) {
     return philippineDateTime.subtract(const Duration(hours: philippineOffsetHours));
   }

@@ -4,19 +4,20 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../models/complaint_model.dart';
 import '../models/dynamic_field_config.dart';
+import '../providers/theme_provider.dart';
 import '../services/complaint_service.dart';
 import '../services/credibility_scorer_service.dart';
-import '../services/evidence_guidance_service.dart';
 import '../services/database_service.dart';
-import '../providers/theme_provider.dart';
+import '../services/evidence_guidance_service.dart';
+import '../utils/philippine_time.dart';
 
 class EditComplaintScreen extends StatefulWidget {
   final Complaint complaint;
 
-  const EditComplaintScreen({Key? key, required this.complaint}) : super(key: key);
+  const EditComplaintScreen({super.key, required this.complaint});
 
   @override
-  _EditComplaintScreenState createState() => _EditComplaintScreenState();
+  State<EditComplaintScreen> createState() => _EditComplaintScreenState();
 }
 
 class _EditComplaintScreenState extends State<EditComplaintScreen> {
@@ -46,6 +47,9 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
   // Status History
   List<Map<String, dynamic>> _statusHistory = [];
   bool _isLoadingStatusHistory = true;
+  
+  // Incident DateTime editing
+  DateTime? _selectedIncidentDateTime;
 
   @override
   void initState() {
@@ -88,6 +92,9 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
     
     // Copy existing evidence files
     _existingEvidenceFiles.addAll(widget.complaint.evidenceFiles);
+    
+    // Initialize incident date time for editing
+    _selectedIncidentDateTime = widget.complaint.incidentDateTime;
     
     // Get initial evidence suggestions
     _getEvidenceSuggestions();
@@ -386,7 +393,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: const Color(0xFF2563EB).withOpacity(0.1),
+          color: const Color(0xFF2563EB).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, color: const Color(0xFF2563EB)),
@@ -425,16 +432,22 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
       // Prepare update data with validation and trimming
       final Map<String, dynamic> updates = {};
       for (final field in _modifiedFields) {
-        final value = _formData[field];
-        // Validate suspect_relationship field to fix database constraint
-        if (field == 'suspect_relationship' || field == 'suspectRelationship') {
-          updates[field] = _validateSuspectRelationship(value);
+        // Special handling for incident_date_time
+        if (field == 'incident_date_time' && _selectedIncidentDateTime != null) {
+          // Convert Philippine time to UTC for database storage
+          updates[field] = PhilippineTime.toUtc(_selectedIncidentDateTime!).toIso8601String();
         } else {
-          // Trim extra spaces from text values
-          if (value is String) {
-            updates[field] = value.trim();
+          final value = _formData[field];
+          // Validate suspect_relationship field to fix database constraint
+          if (field == 'suspect_relationship' || field == 'suspectRelationship') {
+            updates[field] = _validateSuspectRelationship(value);
           } else {
-            updates[field] = value;
+            // Trim extra spaces from text values
+            if (value is String) {
+              updates[field] = value.trim();
+            } else {
+              updates[field] = value;
+            }
           }
         }
       }
@@ -480,7 +493,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
+                color: Colors.red.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -546,7 +559,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                color: Colors.green.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -577,9 +590,9 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: Colors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                 ),
                 child: Column(
                   children: [
@@ -681,7 +694,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Row(
@@ -723,7 +736,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
                 color: isModified 
-                    ? Colors.orange.withOpacity(0.5)
+                    ? Colors.orange.withValues(alpha: 0.5)
                     : (isDark ? Colors.grey[600]! : Colors.grey[300]!),
               ),
             ),
@@ -731,7 +744,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
                 color: isModified 
-                    ? Colors.orange.withOpacity(0.5)
+                    ? Colors.orange.withValues(alpha: 0.5)
                     : (isDark ? Colors.grey[600]! : Colors.grey[300]!),
               ),
             ),
@@ -744,7 +757,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
             ),
             filled: true,
             fillColor: isModified 
-                ? Colors.orange.withOpacity(0.05) 
+                ? Colors.orange.withValues(alpha: 0.05) 
                 : (isDark ? const Color(0xFF1E293B) : Colors.grey[50]),
           ),
           maxLines: fieldName == 'description' ? 5 : 1,
@@ -818,13 +831,13 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
       decoration: BoxDecoration(
         border: Border.all(
           color: isModified 
-              ? Colors.orange.withOpacity(0.5)
+              ? Colors.orange.withValues(alpha: 0.5)
               : (isDark ? Colors.grey[600]! : Colors.grey[400]!),
           width: 1,
         ),
         borderRadius: BorderRadius.circular(12),
         color: isModified 
-            ? Colors.orange.withOpacity(0.05) 
+            ? Colors.orange.withValues(alpha: 0.05) 
             : (isDark ? const Color(0xFF1E293B) : Colors.grey[50]),
       ),
       child: DropdownButtonFormField<String>(
@@ -914,7 +927,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
+                  color: Colors.orange.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Row(
@@ -1001,8 +1014,8 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
         boxShadow: [
           BoxShadow(
             color: isDark
-                ? Colors.black.withOpacity(0.3)
-                : Colors.grey.withOpacity(0.1),
+                ? Colors.black.withValues(alpha: 0.3)
+                : Colors.grey.withValues(alpha: 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1016,7 +1029,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: effectiveIconColor.withOpacity(0.1),
+                  color: effectiveIconColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
@@ -1078,9 +1091,9 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: Colors.blue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                        border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1105,7 +1118,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: Colors.orange.withOpacity(0.1),
+                                    color: Colors.orange.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: const Row(
@@ -1152,7 +1165,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
+                      color: Colors.orange.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -1178,6 +1191,86 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                   icon: Icons.description,
                   children: [
                     _buildFieldComparison('description', 'Description'),
+                    
+                    const SizedBox(height: 20),
+                    
+                    // Incident Date and Time Editor
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Incident Date & Time',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : const Color(0xFF1E293B),
+                            ),
+                          ),
+                        ),
+                        if (_modifiedFields.contains('incident_date_time'))
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.edit, size: 14, color: Colors.orange),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Modified',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.orange,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDateTimePicker(isDark),
+                    
+                    // Show original date/time if modified
+                    if (_modifiedFields.contains('incident_date_time')) ...[ 
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.grey[800] : Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isDark ? Colors.grey[700]! : Colors.grey[300]!,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.history,
+                              size: 14,
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Original: ${PhilippineTime.formatDateTime(widget.complaint.incidentDateTime)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  fontStyle: FontStyle.italic,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 
@@ -1225,7 +1318,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: Colors.green.withOpacity(0.1),
+                                color: Colors.green.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Icon(
@@ -1285,7 +1378,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                             color: isDark ? const Color(0xFF334155) : Colors.blue[50],
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: Colors.blue.withOpacity(0.3),
+                              color: Colors.blue.withValues(alpha: 0.3),
                             ),
                           ),
                           child: Row(
@@ -1342,7 +1435,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
+                      color: Colors.blue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
@@ -1397,9 +1490,9 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: _getCredibilityColor().withOpacity(0.1),
+                        color: _getCredibilityColor().withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _getCredibilityColor().withOpacity(0.3)),
+                        border: Border.all(color: _getCredibilityColor().withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         children: [
@@ -1410,7 +1503,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                                 width: 60,
                                 height: 60,
                                 decoration: BoxDecoration(
-                                  color: _getCredibilityColor().withOpacity(0.2),
+                                  color: _getCredibilityColor().withValues(alpha: 0.2),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Center(
@@ -1455,10 +1548,10 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
+                          color: Colors.orange.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: Colors.orange.withOpacity(0.3),
+                            color: Colors.orange.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Column(
@@ -1584,7 +1677,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
       ),
       if (_isLoading)
         Container(
-          color: Colors.black.withOpacity(0.5),
+          color: Colors.black.withValues(alpha: 0.5),
           child: const Center(
             child: CircularProgressIndicator(),
           ),
@@ -1695,9 +1788,9 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.indigo.withOpacity(0.1),
+            color: Colors.indigo.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.indigo.withOpacity(0.3)),
+            border: Border.all(color: Colors.indigo.withValues(alpha: 0.3)),
           ),
           child: Row(
             children: [
@@ -1755,7 +1848,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
+                  color: statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: statusColor, width: 2),
                 ),
@@ -1779,15 +1872,15 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isFirst 
-                    ? statusColor.withOpacity(0.5)
+                    ? statusColor.withValues(alpha: 0.5)
                     : (isDark ? Colors.grey[600] : Colors.grey[300])!,
                   width: isFirst ? 2 : 1,
                 ),
                 boxShadow: [
                   BoxShadow(
                     color: isDark 
-                      ? Colors.black.withOpacity(0.2) 
-                      : Colors.grey.withOpacity(0.1),
+                      ? Colors.black.withValues(alpha: 0.2) 
+                      : Colors.grey.withValues(alpha: 0.1),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -1825,7 +1918,7 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.1),
+                            color: statusColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -1853,9 +1946,9 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.1),
+                        color: Colors.amber.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1979,6 +2072,118 @@ class _EditComplaintScreenState extends State<EditComplaintScreen> {
     // If no match found, return 'Unknown' as safe default
     print('⚠️ Invalid suspect_relationship value: "$normalized", defaulting to "Unknown"');
     return 'Unknown';
+  }
+
+  /// Date and Time Picker Widget for editing incident date/time
+  Widget _buildDateTimePicker(bool isDark) {
+    return InkWell(
+      onTap: () async {
+        final DateTime? pickedDate = await showDatePicker(
+          context: context,
+          initialDate: _selectedIncidentDateTime ?? DateTime.now().subtract(const Duration(days: 1)),
+          firstDate: DateTime(2020),
+          lastDate: DateTime.now(),
+          builder: (context, child) {
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: isDark
+                    ? ColorScheme.dark(primary: const Color(0xFF3B82F6))
+                    : ColorScheme.light(primary: const Color(0xFF2563EB)),
+              ),
+              child: child!,
+            );
+          },
+        );
+
+        if (pickedDate != null && mounted) {
+          final TimeOfDay? pickedTime = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay.fromDateTime(_selectedIncidentDateTime ?? DateTime.now()),
+            builder: (context, child) {
+              return Theme(
+                data: Theme.of(context).copyWith(
+                  colorScheme: isDark
+                      ? ColorScheme.dark(primary: const Color(0xFF3B82F6))
+                      : ColorScheme.light(primary: const Color(0xFF2563EB)),
+                ),
+                child: child!,
+              );
+            },
+          );
+
+          if (pickedTime != null) {
+            if (mounted) {
+              final originalDateTime = _selectedIncidentDateTime;
+              setState(() {
+                // Create DateTime object and treat it as Philippine time
+                // This ensures the exact time the user selected is preserved
+                _selectedIncidentDateTime = DateTime(
+                  pickedDate.year,
+                  pickedDate.month,
+                  pickedDate.day,
+                  pickedTime.hour,
+                  pickedTime.minute,
+                );
+                
+                // Track this as a modified field if the date/time changed
+                if (originalDateTime != _selectedIncidentDateTime) {
+                  _modifiedFields.add('incident_date_time');
+                } else {
+                  _modifiedFields.remove('incident_date_time');
+                }
+                
+                if (_selectedIncidentDateTime != null) {
+                  print('🕐 Incident time updated: ${PhilippineTime.formatDateTime(_selectedIncidentDateTime!)}');
+                }
+              });
+            }
+            // Recalculate credibility score when date/time changes
+            _calculateCredibilityScore();
+          }
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: _modifiedFields.contains('incident_date_time') 
+                ? Colors.orange.withValues(alpha: 0.5)
+                : (isDark ? Colors.grey[600]! : Colors.grey[400]!),
+          ),
+          borderRadius: BorderRadius.circular(12),
+          color: _modifiedFields.contains('incident_date_time')
+              ? Colors.orange.withValues(alpha: 0.05) 
+              : (isDark ? const Color(0xFF1E293B) : Colors.grey[50]),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_today,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _selectedIncidentDateTime != null
+                    ? PhilippineTime.formatDateTime(_selectedIncidentDateTime!)
+                    : 'Select incident date and time',
+                style: TextStyle(
+                  color: _selectedIncidentDateTime != null
+                      ? (isDark ? Colors.white : Colors.black)
+                      : (isDark ? Colors.grey[400] : Colors.grey[600]),
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.arrow_drop_down,
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
